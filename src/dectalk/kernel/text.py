@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
+from dectalk.kernel.normalize import try_date, try_phone, try_url
 from dectalk.kernel.numbers import number_to_words
 
 # Punctuation that ends a sentence and warrants a silence afterwards.
@@ -74,49 +75,72 @@ def _normalize_token(raw: str) -> Iterable[Token]:
     """Strip surrounding punctuation and emit the appropriate token(s).
 
     Trailing sentence punctuation produces a long pause; trailing
-    clause punctuation produces a short pause. Numeric tokens are spoken
-    via :func:`number_to_words`. Hyphenated compounds are split into
-    their parts. Currency-prefixed tokens (``$5``) get a "DOLLARS"
-    word appended.
+    clause punctuation produces a short pause. Recognised date / phone
+    / URL patterns are routed through :mod:`dectalk.kernel.normalize`;
+    numeric tokens are spoken via :func:`number_to_words`; hyphenated
+    compounds are split into their parts. Currency-prefixed tokens
+    (``$5``) get a "DOLLARS" word appended.
     """
-    word = raw
-    trailing_pause: TokenKind | None = None
+    # URLs are matched on the raw token: ``://`` and ``.`` are part of
+    # their syntax and must not be stripped first.
+    url_words = try_url(raw)
+    if url_words is not None:
+        for w in url_words:
+            yield Token(TokenKind.WORD, w)
+        return
 
-    # Strip trailing punctuation, recording the strongest pause class seen.
-    while word and not (word[-1].isalnum()):
-        last = word[-1]
-        if last in _SENTENCE_PUNCT:
-            trailing_pause = TokenKind.PAUSE_LONG
-        elif last in _CLAUSE_PUNCT and trailing_pause is None:
-            trailing_pause = TokenKind.PAUSE_SHORT
-        word = word[:-1]
+    word, trailing_pause = _strip_trailing_punct(raw)
 
-    # Currency: a leading $ before digits.
-    currency_suffix = None
+    currency_suffix: str | None = None
     if word.startswith("$") and word[1:].replace(",", "").isdigit():
         currency_suffix = "DOLLARS"
         word = word[1:].replace(",", "")
 
-    # Strip leading punctuation that isn't part of a number.
     while word and not word[0].isalnum():
         word = word[1:]
 
-    # Hyphenated compounds: split and emit each piece in turn. Common in
-    # dates ("twenty-four") and noun compounds ("self-driving").
-    parts = word.split("-") if "-" in word else [word]
+    body = list(_body_words(word))
 
+    for w in body:
+        yield Token(TokenKind.WORD, w)
+    if currency_suffix is not None:
+        yield Token(TokenKind.WORD, currency_suffix)
+    if trailing_pause is not None:
+        yield Token(trailing_pause)
+
+
+def _strip_trailing_punct(raw: str) -> tuple[str, TokenKind | None]:
+    """Strip trailing punctuation; return the strongest pause class seen."""
+    word = raw
+    pause: TokenKind | None = None
+    while word and not word[-1].isalnum():
+        last = word[-1]
+        if last in _SENTENCE_PUNCT:
+            pause = TokenKind.PAUSE_LONG
+        elif last in _CLAUSE_PUNCT and pause is None:
+            pause = TokenKind.PAUSE_SHORT
+        word = word[:-1]
+    return word, pause
+
+
+def _body_words(word: str) -> Iterable[str]:
+    """Expand the inner-word body into spoken word tokens."""
+    if not word:
+        return
+
+    # Date / phone matchers swallow the whole token if they fire.
+    for matcher in (try_date, try_phone):
+        matched = matcher(word)
+        if matched is not None:
+            yield from matched
+            return
+
+    # Hyphen splitting: "self-driving" -> SELF DRIVING, "twenty-four" -> ...
+    parts = word.split("-") if "-" in word else [word]
     for part in parts:
         if not part:
             continue
-        # Strip stray commas inside large numbers ("1,000").
         if part.replace(",", "").isdigit():
-            for w in number_to_words(int(part.replace(",", ""))):
-                yield Token(TokenKind.WORD, w)
+            yield from number_to_words(int(part.replace(",", "")))
         else:
-            yield Token(TokenKind.WORD, part.upper())
-
-    if currency_suffix is not None:
-        yield Token(TokenKind.WORD, currency_suffix)
-
-    if trailing_pause is not None:
-        yield Token(trailing_pause)
+            yield part.upper()
