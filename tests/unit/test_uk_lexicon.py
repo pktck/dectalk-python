@@ -16,11 +16,11 @@ def test_uk_lexicon_loads() -> None:
 
 
 def test_uk_overrides_us_for_shared_words() -> None:
-    us = lookup("world", lang="us")
-    uk = lookup("world", lang="uk")
+    """Tomato is the canonical US/UK pronunciation difference."""
+    us = lookup("tomato", lang="us")
+    uk = lookup("tomato", lang="uk")
     assert us is not None
     assert uk is not None
-    # The override drops the rhotic /R/ — phoneme lists should differ.
     assert us != uk
 
 
