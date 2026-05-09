@@ -1,0 +1,102 @@
+[project]
+name = "dectalk"
+version = "0.1.0"
+description = "Cross-platform Python port of DECtalk text-to-speech."
+readme = "README.md"
+authors = [
+    { name = "Claude", email = "noreply@anthropic.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "sounddevice>=0.4.6",
+]
+
+[project.scripts]
+dectalk = "dectalk.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.8.17,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff: linter + formatter. PEP 8 + pydocstyle (Google convention).
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [
+    "src/dectalk/data",  # checked-in proprietary data, never linted
+]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",       # pycodestyle
+    "F",            # pyflakes
+    "I",            # isort
+    "N",            # pep8-naming
+    "D",            # pydocstyle
+    "UP",           # pyupgrade
+    "B",            # bugbear
+    "ANN",          # missing type annotations
+    "RUF",          # ruff-specific
+    "SIM",          # simplify
+    "TID",          # tidy imports
+    "PL",           # pylint subset
+]
+ignore = [
+    "D203",  # one-blank-line-before-class (conflicts with D211)
+    "D213",  # multi-line-summary-second-line (conflicts with D212)
+    "PLR0913",  # too-many-arguments — many translated C functions take many params
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D", "ANN", "PLR2004"]  # tests don't need docstrings or magic-value bans
+"src/dectalk/__init__.py" = ["D104"]       # package-level docstring lives in README
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+
+# ---------------------------------------------------------------------------
+# Pyright: strict type checking.
+# ---------------------------------------------------------------------------
+[tool.pyright]
+include = ["src", "tests"]
+exclude = [
+    "**/__pycache__",
+    "src/dectalk/data",
+]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = "warning"
+reportImplicitOverride = "error"
+reportUninitializedInstanceVariable = "error"
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "slow: marks tests as slow (deselect with -m 'not slow')",
+    "audio: tests that require audio playback hardware",
+]

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev, "claude/**"]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  lint-and-type:
+    name: Lint & type-check (${{ matrix.os }}, Py ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Pyright strict type check
+        run: uv run pyright
+
+      - name: Pytest
+        run: uv run pytest -v
+
+      - name: Smoke test - synthesize a sine WAV
+        run: uv run python -m dectalk --write-test /tmp/dectalk-smoke.wav
+        if: runner.os != 'Windows'
+
+      - name: Smoke test - synthesize a sine WAV (Windows)
+        run: uv run python -m dectalk --write-test "$env:TEMP\dectalk-smoke.wav"
+        if: runner.os == 'Windows'
+
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run shellcheck on scripts/
+        run: |
+          if [ -d scripts ] && ls scripts/*.sh >/dev/null 2>&1; then
+            shellcheck scripts/*.sh
+          else
+            echo "No shell scripts to check."
+          fi
