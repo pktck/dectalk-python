@@ -209,9 +209,13 @@ def _run_binary(binary_dir: Path, text: str, out_path: Path) -> NDArray[np.int16
     env.setdefault("DTK_PROGRAM_PATH", str(binary_dir))
     env.setdefault("DTK_DIC", str(binary_dir / "dic"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # `cwd=binary_dir` is required so the binary finds its data files,
+    # but that means a relative `out_path` resolves under binary_dir,
+    # not the caller's directory. Always pass an absolute path.
+    abs_out = out_path.resolve()
     try:
         subprocess.run(
-            [str(say), "-a", text, "-fo", str(out_path), "-e", "1"],
+            [str(say), "-a", text, "-fo", str(abs_out), "-e", "1"],
             capture_output=True,
             check=True,
             env=env,
@@ -220,9 +224,9 @@ def _run_binary(binary_dir: Path, text: str, out_path: Path) -> NDArray[np.int16
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return None
-    if not out_path.exists():
+    if not abs_out.exists():
         return None
-    return _read_wav(out_path)
+    return _read_wav(abs_out)
 
 
 # ------------------------------------------------------- intrinsic checks
