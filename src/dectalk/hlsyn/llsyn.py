@@ -96,29 +96,33 @@ class LLFrame:
     Ah: int = 0
     Af: int = 0
 
-    F1: int = 0
-    B1: int = 0
+    # Defaults follow the neutral-vowel resting positions used by the C
+    # synthesizer's LLInit. Zero formants would cause set_zero_pair to divide
+    # by zero (the C silently produces +inf and continues; we'd rather start
+    # from a valid filter state).
+    F1: int = 500
+    B1: int = 60
     DF1: int = 0
     DB1: int = 0
-    F2: int = 0
-    B2: int = 0
-    F3: int = 0
-    B3: int = 0
-    F4: int = 0
-    B4: int = 0
-    F5: int = 0
-    B5: int = 0
-    F6: int = 0
-    B6: int = 0
+    F2: int = 1500
+    B2: int = 90
+    F3: int = 2500
+    B3: int = 150
+    F4: int = 3500
+    B4: int = 200
+    F5: int = 4500
+    B5: int = 250
+    F6: int = 5500
+    B6: int = 500
 
-    FNP: int = 0
-    BNP: int = 0
-    FNZ: int = 0
-    BNZ: int = 0
-    FTP: int = 0
-    BTP: int = 0
-    FTZ: int = 0
-    BTZ: int = 0
+    FNP: int = 270
+    BNP: int = 100
+    FNZ: int = 270
+    BNZ: int = 100
+    FTP: int = 2150
+    BTP: int = 180
+    FTZ: int = 2150
+    BTZ: int = 180
 
     A2f: int = 0
     A3f: int = 0
