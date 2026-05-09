@@ -305,14 +305,21 @@ def _voicing_source_sample(synth: LLSynth, frame: LLFrame) -> float:
         return synth.spectral_tilt.advance(0.0)
 
     if spkr.SS == SOURCE_LF:
+        # The original C source has a missing-braces bug: the
+        # `output = AdvanceResonator(&spectral_tilt, 0.f)` line at the
+        # end of the case is at the same indentation as the if but,
+        # without braces on the else, falls through unconditionally.
+        # That means tilt.advance() is called twice during the open
+        # phase: once with the (pulse-shaped) voicing source as input,
+        # then once with 0. The second call is what's returned, but it
+        # carries the state set up by the first call (tilt is an IIR
+        # filter; its output decays from the previous input). We
+        # replicate that behaviour to match the reference bit-for-bit.
         if state.glottis_open:
-            return synth.spectral_tilt.advance(
-                synth.glottal_pulse.advance(state.voicing_amp * 0.0795 if state.pulse else 0.0)
-            )
-        synth.glottal_pulse.clear()
-        # The C source has a closing brace bug here: the second statement
-        # falls through unconditionally, so we always advance the spectral
-        # tilt with zero on the closed phase. Replicating that behaviour.
+            voiced = synth.glottal_pulse.advance(state.voicing_amp * 0.0795 if state.pulse else 0.0)
+            synth.spectral_tilt.advance(voiced)
+        else:
+            synth.glottal_pulse.clear()
         return synth.spectral_tilt.advance(0.0)
 
     return 0.0
