@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dectalk.ph.prosody import f0_contour, looks_like_question
+from dectalk.ph.prosody import duration_factors, f0_contour, looks_like_question
 
 
 def test_empty_phonemes_returns_empty() -> None:
@@ -47,3 +47,26 @@ def test_single_phoneme() -> None:
     """Edge case: contour for a 1-element segment."""
     contour = f0_contour(["AH"])
     assert len(contour) == 1
+
+
+def test_stress_boosts_primary_vowel_f0() -> None:
+    """Primary stress (digit 1) should yield higher F0 than unstressed (digit 0)."""
+    contour = f0_contour(["B", "AH0", "N", "AE1", "N", "AH0"])
+    # AE1 (primary stress) should be higher than the surrounding AH0s.
+    assert contour[3] > contour[1]
+    assert contour[3] > contour[5]
+
+
+def test_duration_factors_match_stress_digits() -> None:
+    factors = duration_factors(["B", "AH0", "N", "AE1", "N", "AH0"])
+    assert factors == [1.0, 0.85, 1.0, 1.20, 1.0, 0.85]
+
+
+def test_duration_factor_unaffected_for_consonants_and_silence() -> None:
+    factors = duration_factors(["S", "SIL", "T"])
+    assert factors == [1.0, 1.0, 1.0]
+
+
+def test_duration_factor_secondary_stress() -> None:
+    factors = duration_factors(["AH2"])
+    assert factors[0] == 1.05

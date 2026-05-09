@@ -28,7 +28,7 @@ from dectalk.hlsyn.synthesize import ll_synthesize
 from dectalk.hlsyn.vowels import default_speaker
 from dectalk.include.phonemes import get_phoneme
 from dectalk.ph.phoneme_frames import get_frames
-from dectalk.ph.prosody import f0_contour
+from dectalk.ph.prosody import duration_factors, f0_contour
 
 # Fraction of each segment used for the transition into the segment from
 # the previous phoneme. The remaining samples are at the steady-state target.
@@ -113,15 +113,25 @@ def _phoneme_target_frames(code: str) -> tuple[LLFrame, ...]:
 def _segment_durations(codes: Sequence[str], rate_factor: float) -> list[int]:
     """Compute per-phoneme sample durations.
 
+    Multiplies each phoneme's nominal duration by the speaking-rate
+    factor and the stress-derived duration factor (see
+    :func:`dectalk.ph.prosody.duration_factors`).
+
     Args:
         codes: Sequence of ARPABET phoneme codes.
-        rate_factor: Speaking-rate multiplier (1.0 = nominal). Smaller is
-            faster.
+        rate_factor: Speaking-rate multiplier (1.0 = nominal).
 
     Returns:
         List of integer sample counts, one per phoneme.
     """
-    return [max(1, round(get_phoneme(c).duration_ms * 0.001 * 11025 * rate_factor)) for c in codes]
+    stress_factors = duration_factors(codes)
+    return [
+        max(
+            1,
+            round(get_phoneme(c).duration_ms * 0.001 * 11025 * rate_factor * sf),
+        )
+        for c, sf in zip(codes, stress_factors, strict=True)
+    ]
 
 
 def synthesize_phonemes(

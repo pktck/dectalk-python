@@ -74,9 +74,10 @@ def _normalize_token(raw: str) -> Iterable[Token]:
     """Strip surrounding punctuation and emit the appropriate token(s).
 
     Trailing sentence punctuation produces a long pause; trailing
-    clause punctuation produces a short pause. Numeric tokens are read
-    digit-by-digit until the prosody/normalisation pass can handle them
-    properly.
+    clause punctuation produces a short pause. Numeric tokens are spoken
+    via :func:`number_to_words`. Hyphenated compounds are split into
+    their parts. Currency-prefixed tokens (``$5``) get a "DOLLARS"
+    word appended.
     """
     word = raw
     trailing_pause: TokenKind | None = None
@@ -90,17 +91,32 @@ def _normalize_token(raw: str) -> Iterable[Token]:
             trailing_pause = TokenKind.PAUSE_SHORT
         word = word[:-1]
 
-    # Strip leading punctuation; we don't track these as separate tokens
-    # because the bundled lexicon doesn't pronounce them.
+    # Currency: a leading $ before digits.
+    currency_suffix = None
+    if word.startswith("$") and word[1:].replace(",", "").isdigit():
+        currency_suffix = "DOLLARS"
+        word = word[1:].replace(",", "")
+
+    # Strip leading punctuation that isn't part of a number.
     while word and not word[0].isalnum():
         word = word[1:]
 
-    if word:
-        if word.isdigit():
-            for w in number_to_words(int(word)):
+    # Hyphenated compounds: split and emit each piece in turn. Common in
+    # dates ("twenty-four") and noun compounds ("self-driving").
+    parts = word.split("-") if "-" in word else [word]
+
+    for part in parts:
+        if not part:
+            continue
+        # Strip stray commas inside large numbers ("1,000").
+        if part.replace(",", "").isdigit():
+            for w in number_to_words(int(part.replace(",", ""))):
                 yield Token(TokenKind.WORD, w)
         else:
-            yield Token(TokenKind.WORD, word.upper())
+            yield Token(TokenKind.WORD, part.upper())
+
+    if currency_suffix is not None:
+        yield Token(TokenKind.WORD, currency_suffix)
 
     if trailing_pause is not None:
         yield Token(trailing_pause)

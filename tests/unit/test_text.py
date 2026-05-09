@@ -77,3 +77,24 @@ def test_pause_strength_dominated_by_strongest() -> None:
         Token(TokenKind.WORD, "WAIT"),
         Token(TokenKind.PAUSE_LONG),
     ]
+
+
+def test_hyphen_splits_compound() -> None:
+    tokens = tokenize("self-driving car")
+    assert [t.text for t in tokens] == ["SELF", "DRIVING", "CAR"]
+
+
+def test_currency_prefix_emits_dollars() -> None:
+    tokens = tokenize("$5")
+    assert [t.text for t in tokens] == ["FIVE", "DOLLARS"]
+
+
+def test_currency_with_thousands_separator() -> None:
+    tokens = tokenize("$1,000")
+    assert [t.text for t in tokens] == ["ONE", "THOUSAND", "DOLLARS"]
+
+
+def test_hyphenated_number() -> None:
+    """Hyphenated numbers like 'twenty-four' should not be word-classed."""
+    tokens = tokenize("twenty-four")
+    assert [t.text for t in tokens] == ["TWENTY", "FOUR"]
