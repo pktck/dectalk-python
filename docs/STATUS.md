@@ -26,7 +26,9 @@ actual progress.
 - Verified: `/ah/` synthesis spectrum has peaks at F1=737 Hz / F2=1103 Hz (targets 730 / 1090).
 
 ### Phase 2 — US English text pipeline (DONE)
-- `dic/lexicon.py` + `data/lexicon_us.txt` — bundled mini-lexicon (~290 words) in CMUDict format.
+- `dic/lexicon.py` + `data/lexicon_us_full.txt` — bundled full DECtalk dictionary, 15054 entries, generated from the FONIX source via `scripts/build_full_lexicon.py`.
+- `dic/dectalk_phonemes.py` — DECtalk phonemic ASCII → ARPABET converter.
+- `data/lexicon_us.txt` — small (~290 entry) starter lexicon retained as fallback when the full file isn't present.
 - `dic/__init__.py` — `lookup()` with lazy-cached lexicon load.
 - `kernel/text.py` — tokenizer with hyphen splitting, currency prefix handling, sentence/clause pause classification.
 - `kernel/numbers.py` — `number_to_words()` for integers up to 10**12.
@@ -41,7 +43,8 @@ actual progress.
 - `speak()` parses commands and applies them per-segment so voice/rate can switch mid-utterance.
 
 ### Phase 4 — UK English (DONE)
-- `data/lexicon_uk.txt` — UK overrides (drops rhotic /r/, adds COLOUR/THEATRE/PROGRAMME, RP DANCE/GRASS/PATH).
+- `data/lexicon_uk_full.txt` — bundled full DECtalk UK dictionary, 18173 entries, generated from the FONIX source.
+- `data/lexicon_uk.txt` — small RP overrides retained as fallback.
 - `lookup()` and `speak()` accept a `lang="us"|"uk"` keyword.
 
 ### Phase 6 partial — Polish (DONE / partial)
@@ -52,7 +55,11 @@ actual progress.
 ## Pending
 
 ### Phase 5 — Romance + Germanic languages (NOT STARTED)
-Each language needs its own LTS rules, lexicon overrides, and phoneme-inventory extensions (French nasal vowels, German front rounded vowels and `/x ç/`). A single language is comparable in effort to UK English's overrides plus an LTS rewrite plus phoneme additions.
+The DECtalk source ships dictionaries for French, German, Spanish (Castilian), and Latin American Spanish, but they use language-specific extensions to the phoneme alphabet (nasal vowels, front rounded vowels, German `/x ç/`, and others) that our US-tuned converter and Klatt phoneme→frame table don't yet handle. Bundling the raw dictionaries would produce garbled output. Proper multi-language support needs:
+- Extended phoneme inventory in `include/phonemes.py` for each language's distinct sounds.
+- Per-language entries in `dic/dectalk_phonemes.py` for character → phoneme mapping.
+- New `_VOWEL_FORMANTS` / `_CONSONANT_FRAMES` entries in `ph/phoneme_frames.py`.
+- Language-aware LTS rules (or none, relying on the dictionary).
 
 ### Phase 6 remaining — Line-by-line C parity (PARTIAL)
 The `hlsyn/` Klatt module is line-by-line ported. The front-end modules (`dic`, `lts`, `ph`, `kernel`, `cmd`) are clean Python implementations rather than literal C ports. The HLSyn high-level circuit (`circuit.c`, `hlframe.c`, `inithl.c` — anatomical-parameter vocoder) is not ported because the Klatt-direct path already produces audio. Singing mode and full DECtalk parity testing also remain.

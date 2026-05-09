@@ -49,23 +49,37 @@ phones = dectalk.text_to_phonemes("Hello, world!")
 # -> ['HH', 'AH0', 'L', 'OW1', 'SIL', 'W', 'ER1', 'L', 'D', 'SIL']
 ```
 
-## Larger lexicon (CMUDict)
+## Lexicon
 
-The bundled mini-lexicon is intentionally small (~290 words). For broader
-coverage, plug in CMUDict (public domain, ~125K words):
+The package ships with the full DECtalk 4.2CD dictionary converted to
+ARPABET — about **15K words for US English** and **18K for UK English**.
+Words missing from the dictionary fall through to a rule-based
+letter-to-sound engine, so any English text round-trips successfully.
+
+### Building / refreshing the bundled lexicon
+
+`scripts/build_full_lexicon.py` regenerates the bundled file from a
+DECtalk source dictionary:
 
 ```bash
-# Download CMUDict once
-curl -L https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict -o cmudict.dict
+uv run python scripts/build_full_lexicon.py \
+    --source /path/to/dectalk/src/dapi/src/dic/Dic_us.txt \
+    --out src/dectalk/data/lexicon_us_full.txt
+```
 
-# Use it on the CLI
-uv run python -m dectalk --lexicon cmudict.dict "the quick brown fox jumps over the lazy dog"
+### Using a different lexicon at runtime
+
+For an alternative dictionary (e.g. CMUDict, public domain, ~125K
+words), use `--lexicon`:
+
+```bash
+uv run python -m dectalk --lexicon cmudict.dict "the quick brown fox"
 ```
 
 ```python
-import dectalk
 from dectalk.dic import set_extra_lexicon
 set_extra_lexicon("cmudict.dict")
+import dectalk
 samples = dectalk.speak("the quick brown fox")
 ```
 
