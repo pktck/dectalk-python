@@ -85,6 +85,12 @@ reportMissingTypeStubs = "warning"
 reportImplicitOverride = "error"
 reportUninitializedInstanceVariable = "error"
 
+# Per-environment relaxations for the tests directory: tests legitimately
+# poke at private helpers and internal tables to verify behaviour.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportPrivateUsage = "none"
+
 # ---------------------------------------------------------------------------
 # Pytest
 # ---------------------------------------------------------------------------

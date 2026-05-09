@@ -18,7 +18,8 @@ def default_speaker(sr_hz: int = 11025) -> Speaker:
     """Build a generic Klatt speaker definition for testing.
 
     Approximates Perfect Paul: 11025 Hz sample rate, 5 cascade formants,
-    natural KLGLOT88 source, modest gain.
+    natural KLGLOT88 source, modest gain. The gain values are tuned so a
+    typical fricative-heavy phoneme stream stays below int16 saturation.
 
     Args:
         sr_hz: Sample rate. DECtalk's native rate is 11025 Hz.
@@ -38,8 +39,8 @@ def default_speaker(sr_hz: int = 11025) -> Speaker:
         CP=0,
         OS=0,
         GV=60,
-        GH=60,
-        GF=60,
+        GH=50,  # aspiration gain — lower than voicing
+        GF=45,  # frication gain — lowered to avoid /S/-clipping at default amps
     )
 
 

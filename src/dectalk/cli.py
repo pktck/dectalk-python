@@ -18,6 +18,7 @@ from dectalk.hlsyn.llsyn import LLSynth
 from dectalk.hlsyn.synthesize import ll_synthesize
 from dectalk.hlsyn.vowels import VOWELS, default_speaker
 from dectalk.nt.audio import play, sine_tone, write_wav
+from dectalk.ph.sequencer import synthesize_phonemes
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -69,6 +70,21 @@ def _build_parser() -> argparse.ArgumentParser:
         default=1.0,
         help="Vowel duration in seconds (default: 1.0).",
     )
+    parser.add_argument(
+        "--phonemes",
+        type=str,
+        default=None,
+        metavar='"P1 P2 ..."',
+        help="Synthesize a space-separated ARPABET phoneme sequence. "
+        "Example: --phonemes \"HH AH L OW\" pronounces 'hello'. "
+        "Combine with -o to write WAV.",
+    )
+    parser.add_argument(
+        "--rate",
+        type=float,
+        default=1.0,
+        help="Speaking rate multiplier for --phonemes (1.0 nominal, > 1 slower, < 1 faster).",
+    )
     return parser
 
 
@@ -117,6 +133,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.vowel is not None:
         wave = _synthesize_vowel(args.vowel, args.duration)
+        if args.output is not None:
+            write_wav(wave, args.output)
+        else:
+            play(wave)
+        return 0
+
+    if args.phonemes is not None:
+        codes = args.phonemes.split()
+        wave = synthesize_phonemes(codes, rate=args.rate)
         if args.output is not None:
             write_wav(wave, args.output)
         else:
