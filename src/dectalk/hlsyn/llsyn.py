@@ -130,11 +130,16 @@ class LLFrame:
     A5f: int = 0
     A6f: int = 0
     Ab: int = 0
-    B2F: int = 0
-    B3F: int = 0
-    B4F: int = 0
-    B5F: int = 0
-    B6F: int = 0
+    # Parallel-formant bandwidths. The C code populates these from the
+    # dictionary; defaulting to 0 here would make the parallel pole pair
+    # undamped (infinite Q) and the F4-F6 parallel resonators would ring
+    # at their centre frequencies forever once excited by any frication
+    # noise. Use the same widths as the cascade as a safe default.
+    B2F: int = 250
+    B3F: int = 300
+    B4F: int = 400
+    B5F: int = 500
+    B6F: int = 700
 
     ANV: int = 0
     A1V: int = 0
