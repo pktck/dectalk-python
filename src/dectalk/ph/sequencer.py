@@ -22,6 +22,7 @@ from typing import Final
 import numpy as np
 from numpy.typing import NDArray
 
+from dectalk.data.voices import VoicePreset
 from dectalk.hlsyn.llsyn import LLFrame, LLSynth, Speaker
 from dectalk.hlsyn.synthesize import ll_synthesize
 from dectalk.hlsyn.vowels import default_speaker
@@ -36,6 +37,26 @@ _TRANSITION_FRACTION: Final[float] = 0.5
 # amplitudes can spike during dense /S/-/CH/ sequences; we apply a soft
 # normalisation only when the unscaled peak exceeds this threshold.
 _TARGET_PEAK_INT16: Final[int] = 28000
+
+
+def _apply_preset(frame: LLFrame, preset: VoicePreset | None) -> LLFrame:
+    """Scale formants by ``preset.head_scale`` and stamp ``preset.f0_x10``.
+
+    Silence frames (F0 == 0) are passed through unchanged so they stay
+    silent regardless of the preset's baseline pitch.
+    """
+    if preset is None:
+        return frame
+    out_kwargs: dict[str, int] = {}
+    for f in fields(frame):
+        v = getattr(frame, f.name)
+        if f.name in {"F1", "F2", "F3", "F4", "F5", "F6", "FNP", "FNZ", "FTP", "FTZ"}:
+            v = round(v * preset.head_scale)
+        out_kwargs[f.name] = v
+    if frame.F0 != 0:
+        out_kwargs["F0"] = preset.f0_x10
+        out_kwargs["OQ"] = preset.breathy
+    return LLFrame(**out_kwargs)
 
 
 def _interpolate_frame(start: LLFrame, end: LLFrame, alpha: float) -> LLFrame:
@@ -86,19 +107,30 @@ def synthesize_phonemes(
     *,
     speaker: Speaker | None = None,
     rate: float = 1.0,
+    preset: VoicePreset | None = None,
 ) -> NDArray[np.int16]:
     """Synthesize a sequence of ARPABET phonemes into int16 PCM samples.
 
     Args:
         codes: Iterable of ARPABET symbols (case-insensitive). Stress
             digits (``"AH1"``) are accepted and discarded.
-        speaker: Klatt speaker; defaults to :func:`default_speaker`.
+        speaker: Klatt speaker; takes precedence over ``preset.speaker``.
+            Defaults to :func:`default_speaker` when both are None.
         rate: Speaking-rate multiplier, > 1 slower, < 1 faster.
+        preset: Optional voice preset that supplies the speaker, head-size
+            scaling on formants, and a baseline F0. When None, the
+            default neutral voice is used.
 
     Returns:
         1-D ``int16`` array of PCM samples at ``speaker.SR``.
     """
-    spkr = speaker if speaker is not None else default_speaker()
+    if speaker is not None:
+        spkr = speaker
+    elif preset is not None:
+        spkr = preset.speaker
+    else:
+        spkr = default_speaker()
+
     code_list = [c for c in codes if c.strip()]
     if not code_list:
         return np.zeros(0, dtype=np.int16)
@@ -108,16 +140,18 @@ def synthesize_phonemes(
     chunks: list[NDArray[np.int16]] = []
 
     # Build a flat list of (target_frame, sample_count) covering every phoneme,
-    # treating diphthongs as two equal-length sub-segments.
+    # treating diphthongs as two equal-length sub-segments. Apply the voice
+    # preset's head-size scaling and F0 to every target along the way.
     plan: list[tuple[LLFrame, int]] = []
     for code, total_samples in zip(code_list, durations, strict=True):
         targets = _phoneme_target_frames(code)
-        if len(targets) == 1:
-            plan.append((targets[0], total_samples))
+        scaled = tuple(_apply_preset(t, preset) for t in targets)
+        if len(scaled) == 1:
+            plan.append((scaled[0], total_samples))
         else:
             half = total_samples // 2
-            plan.append((targets[0], half))
-            plan.append((targets[1], total_samples - half))
+            plan.append((scaled[0], half))
+            plan.append((scaled[1], total_samples - half))
 
     prev_frame = plan[0][0]
     for target, sample_count in plan:

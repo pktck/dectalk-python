@@ -52,14 +52,16 @@ def test_leading_punctuation_is_stripped() -> None:
     assert tokens == [Token(TokenKind.WORD, "HELLO")]
 
 
-def test_digits_are_spelled_out() -> None:
-    tokens = tokenize("call 911")
-    assert tokens == [
-        Token(TokenKind.WORD, "CALL"),
-        Token(TokenKind.WORD, "NINE"),
-        Token(TokenKind.WORD, "ONE"),
-        Token(TokenKind.WORD, "ONE"),
-    ]
+def test_numbers_are_spoken_as_words() -> None:
+    tokens = tokenize("year 2024")
+    text = [t.text for t in tokens if t.kind is TokenKind.WORD]
+    # 2024 -> "TWO THOUSAND TWENTY FOUR" via the number_to_words helper.
+    assert text == ["YEAR", "TWO", "THOUSAND", "TWENTY", "FOUR"]
+
+
+def test_small_number_in_text() -> None:
+    tokens = tokenize("17")
+    assert [t.text for t in tokens] == ["SEVENTEEN"]
 
 
 def test_empty_input_returns_empty_list() -> None:

@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from dectalk.data.voices import PRESETS, VoicePreset, get_preset
 from dectalk.dic import lookup
 from dectalk.kernel.text import Token, TokenKind, tokenize
 from dectalk.lts import lts
@@ -52,12 +53,30 @@ def text_to_phonemes(text: str, *, lts_fallback: bool = True) -> list[str]:
     return _tokens_to_phonemes(tokenize(text), lts_fallback=lts_fallback)
 
 
-def speak(text: str, *, rate: float = 1.0, lts_fallback: bool = True) -> NDArray[np.int16]:
+def _resolve_voice(voice: str | VoicePreset | None) -> VoicePreset | None:
+    """Coerce a voice argument (None | name | preset) to a preset or None."""
+    if voice is None:
+        return None
+    if isinstance(voice, VoicePreset):
+        return voice
+    return get_preset(voice)
+
+
+def speak(
+    text: str,
+    *,
+    rate: float = 1.0,
+    voice: str | VoicePreset | None = None,
+    lts_fallback: bool = True,
+) -> NDArray[np.int16]:
     """Synthesize the given text into PCM samples (no playback / file output).
 
     Args:
         text: Input string.
         rate: Speaking-rate multiplier; > 1 slower, < 1 faster.
+        voice: Voice preset to use. Either a short name (``"paul"``,
+            ``"betty"``, ...) or a :class:`VoicePreset`. When None, a
+            neutral default voice is used.
         lts_fallback: Whether to pronounce out-of-lexicon words via the
             letter-to-sound rules.
 
@@ -67,25 +86,39 @@ def speak(text: str, *, rate: float = 1.0, lts_fallback: bool = True) -> NDArray
     Raises:
         UnknownWordError: If a word in ``text`` is not in the lexicon and
             ``lts_fallback`` is disabled.
+        KeyError: If ``voice`` is a name that doesn't match a known preset.
     """
     phonemes = text_to_phonemes(text, lts_fallback=lts_fallback)
-    return synthesize_phonemes(phonemes, rate=rate)
+    return synthesize_phonemes(phonemes, rate=rate, preset=_resolve_voice(voice))
 
 
-def to_wav(text: str, path: str | Path, *, rate: float = 1.0, lts_fallback: bool = True) -> None:
+def to_wav(
+    text: str,
+    path: str | Path,
+    *,
+    rate: float = 1.0,
+    voice: str | VoicePreset | None = None,
+    lts_fallback: bool = True,
+) -> None:
     """Synthesize ``text`` and write the resulting audio to a WAV file.
 
     Args:
         text: Input string.
         path: Output WAV path. Parent directory must exist.
         rate: Speaking-rate multiplier.
+        voice: See :func:`speak`.
         lts_fallback: See :func:`speak`.
 
     Raises:
         UnknownWordError: See :func:`speak`.
     """
-    samples = speak(text, rate=rate, lts_fallback=lts_fallback)
+    samples = speak(text, rate=rate, voice=voice, lts_fallback=lts_fallback)
     write_wav(samples, path)
+
+
+def available_voices() -> list[str]:
+    """Return the list of available voice preset names."""
+    return sorted(PRESETS.keys())
 
 
 def _tokens_to_phonemes(tokens: Iterable[Token], *, lts_fallback: bool) -> list[str]:

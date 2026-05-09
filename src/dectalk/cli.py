@@ -14,7 +14,8 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from dectalk.api import UnknownWordError, speak
+from dectalk.api import UnknownWordError, available_voices, speak
+from dectalk.data.voices import get_preset
 from dectalk.hlsyn.llsyn import LLSynth
 from dectalk.hlsyn.synthesize import ll_synthesize
 from dectalk.hlsyn.vowels import VOWELS, default_speaker
@@ -85,7 +86,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--rate",
         type=float,
         default=1.0,
-        help="Speaking rate multiplier for --phonemes (1.0 nominal, > 1 slower, < 1 faster).",
+        help="Speaking rate multiplier (1.0 nominal, > 1 slower, < 1 faster).",
+    )
+    parser.add_argument(
+        "--voice",
+        type=str,
+        choices=available_voices(),
+        default=None,
+        help="DECtalk voice for --text or --phonemes (paul/betty/harry/...).",
     )
     return parser
 
@@ -138,12 +146,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.vowel is not None:
         _emit(_synthesize_vowel(args.vowel, args.duration), args.output)
     elif args.phonemes is not None:
-        _emit(synthesize_phonemes(args.phonemes.split(), rate=args.rate), args.output)
+        preset = get_preset(args.voice) if args.voice else None
+        _emit(
+            synthesize_phonemes(args.phonemes.split(), rate=args.rate, preset=preset),
+            args.output,
+        )
     elif args.text is None:
         parser.print_help()
     else:
         try:
-            wave = speak(args.text, rate=args.rate)
+            wave = speak(args.text, rate=args.rate, voice=args.voice)
         except UnknownWordError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 3

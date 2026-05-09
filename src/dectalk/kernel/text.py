@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Final
 
+from dectalk.kernel.numbers import number_to_words
+
 # Punctuation that ends a sentence and warrants a silence afterwards.
 _SENTENCE_PUNCT: Final[frozenset[str]] = frozenset({".", "?", "!"})
 
@@ -29,20 +31,6 @@ _SENTENCE_PUNCT: Final[frozenset[str]] = frozenset({".", "?", "!"})
 _CLAUSE_PUNCT: Final[frozenset[str]] = frozenset(
     {",", ";", ":", "—", "–"}  # noqa: RUF001 - intentional Unicode punctuation
 )
-
-# Digit names — used by the digit-by-digit number reader.
-_DIGIT_WORDS: Final[dict[str, str]] = {
-    "0": "ZERO",
-    "1": "ONE",
-    "2": "TWO",
-    "3": "THREE",
-    "4": "FOUR",
-    "5": "FIVE",
-    "6": "SIX",
-    "7": "SEVEN",
-    "8": "EIGHT",
-    "9": "NINE",
-}
 
 
 class TokenKind(Enum):
@@ -109,8 +97,8 @@ def _normalize_token(raw: str) -> Iterable[Token]:
 
     if word:
         if word.isdigit():
-            for d in word:
-                yield Token(TokenKind.WORD, _DIGIT_WORDS[d])
+            for w in number_to_words(int(word)):
+                yield Token(TokenKind.WORD, w)
         else:
             yield Token(TokenKind.WORD, word.upper())
 
