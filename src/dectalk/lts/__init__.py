@@ -1,4 +1,8 @@
-"""Letter-to-sound rules per language (translated from `src/dapi/src/lts/`).
+"""Letter-to-sound rules per language.
 
-Populated in Phase 2 (US English) and Phases 4-5 (other languages).
+Currently provides US English only via :mod:`dectalk.lts.rules_us`.
 """
+
+from dectalk.lts.rules_us import lts
+
+__all__ = ["lts"]

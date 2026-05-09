@@ -31,9 +31,15 @@ def test_speak_returns_int16_pcm() -> None:
     assert int(np.max(np.abs(samples))) > 0
 
 
-def test_speak_unknown_word_raises() -> None:
+def test_speak_unknown_word_raises_when_lts_disabled() -> None:
     with pytest.raises(UnknownWordError, match="not in the bundled lexicon"):
-        speak("xyzzynotaword")
+        speak("xyzzynotaword", lts_fallback=False)
+
+
+def test_unknown_word_uses_lts_fallback_by_default() -> None:
+    """Out-of-lexicon words should be pronounced via the rule-based LTS."""
+    samples = speak("xyzzy")
+    assert samples.size > 0  # rule-based pronunciation produced audio
 
 
 def test_to_wav_writes_valid_file(tmp_path: Path) -> None:
