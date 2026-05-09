@@ -68,11 +68,12 @@ _DECTALK_TO_ARPABET: Final[dict[str, tuple[str, ...]]] = {
     "G": ("NG",),
     "N": ("N",),  # syllabic N — we approximate as N
     "L": ("L",),  # syllabic L — we approximate as L
-    # ---- Punctuation we silently skip ----
+    # ---- Other phonemes ----
+    "|": ("AH",),  # schwa marker; e.g. 'em -> AH M, asterisk -> ... AH S K
+    # ---- Markers we silently skip (don't emit a phoneme) ----
     " ": (),  # word break in multi-word entries (we already split on ',')
     "*": (),  # letter-separator in initialisms
     "#": (),  # syllable boundary
-    "|": (),  # other internal marker
     "&": (),  # rare, glottal-related
 }
 
