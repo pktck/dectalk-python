@@ -241,14 +241,22 @@ def _render_segment(
         synth: Synthesizer instance (state carries across calls).
         prev_target: Previous segment's target frame.
         target: Current segment's target frame.
-        n_samples: Total samples to produce for this segment.
+        n_samples: Requested sample count. Rounded UP to a whole multiple
+            of ``synth.spkr.UI`` because :func:`ll_synthesize` always
+            consumes a full UI-sized buffer per call. Trimming back to
+            ``n_samples`` would silently drop the last partial frame
+            from the output but the synth's internal state still
+            advances through it — that produced an audible
+            discontinuity at every phoneme boundary (the next segment
+            picked up the synth state at a position the listener never
+            heard, sounding static-y).
         transition_frac: Fraction of the segment spent transitioning from
             ``prev_target`` to ``target`` at the start. The remainder runs
             at ``target`` steady state.
 
     Returns:
-        1-D int16 array of synthesized samples (length ``n_samples``,
-        modulo rounding to whole frames).
+        1-D int16 array of synthesized samples (length is the smallest
+        multiple of ``synth.spkr.UI`` ≥ ``n_samples``).
     """
     samples_per_frame = synth.spkr.UI
     n_frames = max(1, math.ceil(n_samples / samples_per_frame))
@@ -263,5 +271,4 @@ def _render_segment(
             frame = target
         ll_synthesize(synth, frame, out_buf[fi * samples_per_frame : (fi + 1) * samples_per_frame])
 
-    # Trim back to the requested sample count.
-    return out_buf[:n_samples]
+    return out_buf

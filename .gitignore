@@ -6,6 +6,15 @@ __pycache__/
 # C extensions
 *.so
 
+# Built C parity harness — built per-platform by tests/parity/conftest.py.
+# Don't commit a platform-specific binary; CI on a different OS would try
+# to run a foreign ELF and fail.
+tests/parity/c_harness/llsyn_dump
+tests/parity/c_harness/llsyn_dump.exe
+
+# Diagnostic harness output (per-prompt WAVs + report).
+artifacts/audio/
+
 # Distribution / packaging
 .Python
 build/
