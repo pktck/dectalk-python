@@ -1,0 +1,57 @@
+# UK-English overrides on top of the bundled US lexicon.
+#
+# This file lists the words that pronounce differently in Received
+# Pronunciation (RP) than in General American. The full DECtalk Dic_uk.txt
+# is proprietary FONIX and cannot be redistributed; this is a small
+# starter set of the most common spelling and pronunciation differences.
+#
+# Format matches the US lexicon: WORD whitespace ARPABET-PHONEMES.
+
+# r-loss in non-rhotic accents (RP doesn't pronounce r before consonants
+# or at word end; we approximate by removing the R phoneme). The
+# bundled US lexicon includes the R; UK overrides drop it.
+WORLD W AO1 L D
+WORD W ER1 D
+WORK W ER1 K
+HEAR HH IY1 AH0
+HERE HH IY1 AH0
+HER HH AH0
+COMPUTER K AH0 M P Y UW1 T AH0
+WATER W AO1 T AH0
+LETTER L EH1 T AH0
+NUMBER N AH1 M B AH0
+WONDER W AH1 N D AH0
+NEVER N EH1 V AH0
+
+# colour vs color, theatre vs theater, programme vs program
+COLOUR K AH1 L AH0
+COLOR K AH1 L AH0
+COLOURS K AH1 L AH0 Z
+COLORS K AH1 L AH0 Z
+THEATRE TH IY1 AH0 T AH0
+THEATER TH IY1 AH0 T AH0
+PROGRAMME P R OW1 G R AE2 M
+
+# typical RP vowel preferences
+DANCE D AA1 N S
+GRASS G R AA1 S
+PATH P AA1 TH
+LAUGH L AA1 F
+BATH B AA1 TH
+CAN'T K AA1 N T
+HALF HH AA1 F
+
+# pronunciation of "ya" / "you" sequences differ slightly
+TUESDAY CH UW1 Z D EY2
+
+# tomato, leisure, schedule, etc.
+TOMATO T AH0 M AA1 T OW2
+LEISURE L EH1 ZH AH0
+SCHEDULE SH EH1 D Y UW2 L
+
+# The famous DECtalk phrase from Hitchhiker's Guide
+HITCHHIKER HH IH1 CH HH AY2 K AH0
+
+# named entity
+LONDON L AH1 N D AH0 N
+THAMES T EH1 M Z

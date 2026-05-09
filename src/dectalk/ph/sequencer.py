@@ -28,6 +28,7 @@ from dectalk.hlsyn.synthesize import ll_synthesize
 from dectalk.hlsyn.vowels import default_speaker
 from dectalk.include.phonemes import get_phoneme
 from dectalk.ph.phoneme_frames import get_frames
+from dectalk.ph.prosody import f0_contour
 
 # Fraction of each segment used for the transition into the segment from
 # the previous phoneme. The remaining samples are at the steady-state target.
@@ -39,23 +40,44 @@ _TRANSITION_FRACTION: Final[float] = 0.5
 _TARGET_PEAK_INT16: Final[int] = 28000
 
 
-def _apply_preset(frame: LLFrame, preset: VoicePreset | None) -> LLFrame:
-    """Scale formants by ``preset.head_scale`` and stamp ``preset.f0_x10``.
+def _apply_preset(
+    frame: LLFrame, preset: VoicePreset | None, *, f0_multiplier: float = 1.0
+) -> LLFrame:
+    """Scale formants by ``preset.head_scale`` and apply F0 + prosody contour.
 
     Silence frames (F0 == 0) are passed through unchanged so they stay
-    silent regardless of the preset's baseline pitch.
+    silent regardless of the preset's baseline pitch or prosody contour.
+
+    Args:
+        frame: The phoneme's target frame.
+        preset: Voice preset, or None for neutral defaults.
+        f0_multiplier: Per-phoneme F0 multiplier from the prosody pass.
+            Applied on top of the preset's baseline F0.
     """
-    if preset is None:
+    if preset is None and f0_multiplier == 1.0:
         return frame
     out_kwargs: dict[str, int] = {}
     for f in fields(frame):
         v = getattr(frame, f.name)
-        if f.name in {"F1", "F2", "F3", "F4", "F5", "F6", "FNP", "FNZ", "FTP", "FTZ"}:
+        if preset is not None and f.name in {
+            "F1",
+            "F2",
+            "F3",
+            "F4",
+            "F5",
+            "F6",
+            "FNP",
+            "FNZ",
+            "FTP",
+            "FTZ",
+        }:
             v = round(v * preset.head_scale)
         out_kwargs[f.name] = v
     if frame.F0 != 0:
-        out_kwargs["F0"] = preset.f0_x10
-        out_kwargs["OQ"] = preset.breathy
+        baseline = preset.f0_x10 if preset is not None else frame.F0
+        out_kwargs["F0"] = round(baseline * f0_multiplier)
+        if preset is not None:
+            out_kwargs["OQ"] = preset.breathy
     return LLFrame(**out_kwargs)
 
 
@@ -108,6 +130,8 @@ def synthesize_phonemes(
     speaker: Speaker | None = None,
     rate: float = 1.0,
     preset: VoicePreset | None = None,
+    intonation: bool = True,
+    question: bool = False,
 ) -> NDArray[np.int16]:
     """Synthesize a sequence of ARPABET phonemes into int16 PCM samples.
 
@@ -120,6 +144,10 @@ def synthesize_phonemes(
         preset: Optional voice preset that supplies the speaker, head-size
             scaling on formants, and a baseline F0. When None, the
             default neutral voice is used.
+        intonation: When True (default), apply a statement (or question)
+            F0 contour across the segment. Pass False to keep monotone.
+        question: When True, use a rising question contour rather than a
+            falling statement contour. Ignored if ``intonation=False``.
 
     Returns:
         1-D ``int16`` array of PCM samples at ``speaker.SR``.
@@ -139,13 +167,17 @@ def synthesize_phonemes(
     synth = LLSynth(spkr=spkr)
     chunks: list[NDArray[np.int16]] = []
 
+    # Per-phoneme F0 multipliers, or a flat ones-list when monotone.
+    contour = f0_contour(code_list, question=question) if intonation else [1.0] * len(code_list)
+
     # Build a flat list of (target_frame, sample_count) covering every phoneme,
     # treating diphthongs as two equal-length sub-segments. Apply the voice
-    # preset's head-size scaling and F0 to every target along the way.
+    # preset's head-size scaling and F0 to every target along the way, then
+    # multiply by the prosody contour.
     plan: list[tuple[LLFrame, int]] = []
-    for code, total_samples in zip(code_list, durations, strict=True):
+    for code, total_samples, f0_mul in zip(code_list, durations, contour, strict=True):
         targets = _phoneme_target_frames(code)
-        scaled = tuple(_apply_preset(t, preset) for t in targets)
+        scaled = tuple(_apply_preset(t, preset, f0_multiplier=f0_mul) for t in targets)
         if len(scaled) == 1:
             plan.append((scaled[0], total_samples))
         else:

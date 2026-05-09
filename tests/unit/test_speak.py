@@ -32,7 +32,7 @@ def test_speak_returns_int16_pcm() -> None:
 
 
 def test_speak_unknown_word_raises_when_lts_disabled() -> None:
-    with pytest.raises(UnknownWordError, match="not in the bundled lexicon"):
+    with pytest.raises(UnknownWordError, match="not in the us lexicon"):
         speak("xyzzynotaword", lts_fallback=False)
 
 

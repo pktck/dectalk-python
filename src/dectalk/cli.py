@@ -95,6 +95,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="DECtalk voice for --text or --phonemes (paul/betty/harry/...).",
     )
+    parser.add_argument(
+        "--lang",
+        type=str,
+        choices=("us", "uk"),
+        default="us",
+        help="Language / lexicon variant. Default: us.",
+    )
     return parser
 
 
@@ -155,7 +162,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.print_help()
     else:
         try:
-            wave = speak(args.text, rate=args.rate, voice=args.voice)
+            wave = speak(args.text, rate=args.rate, voice=args.voice, lang=args.lang)
         except UnknownWordError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 3

@@ -23,6 +23,7 @@ from dectalk.dic import lookup
 from dectalk.kernel.text import Token, TokenKind, tokenize
 from dectalk.lts import lts
 from dectalk.nt.audio import write_wav
+from dectalk.ph.prosody import looks_like_question
 from dectalk.ph.sequencer import synthesize_phonemes
 
 
@@ -30,7 +31,7 @@ class UnknownWordError(KeyError):
     """Raised when a word is not in the bundled lexicon."""
 
 
-def text_to_phonemes(text: str, *, lts_fallback: bool = True) -> list[str]:
+def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) -> list[str]:
     """Convert text to a flat ARPABET phoneme stream with pause markers.
 
     Pause tokens are encoded as ``"SIL"`` phonemes so the same
@@ -38,6 +39,7 @@ def text_to_phonemes(text: str, *, lts_fallback: bool = True) -> list[str]:
 
     Args:
         text: Input string to pronounce.
+        lang: ``"us"`` (default) or ``"uk"`` — selects the bundled lexicon.
         lts_fallback: When True (default), words missing from the bundled
             lexicon are pronounced via the rule-based letter-to-sound
             engine in :mod:`dectalk.lts`. When False, an
@@ -51,7 +53,7 @@ def text_to_phonemes(text: str, *, lts_fallback: bool = True) -> list[str]:
         UnknownWordError: If a token's word form is missing from the
             lexicon and ``lts_fallback`` is False.
     """
-    return _tokens_to_phonemes(tokenize(text), lts_fallback=lts_fallback)
+    return _tokens_to_phonemes(tokenize(text), lang=lang, lts_fallback=lts_fallback)
 
 
 def _resolve_voice(voice: str | VoicePreset | None) -> VoicePreset | None:
@@ -68,6 +70,7 @@ def speak(
     *,
     rate: float = 1.0,
     voice: str | VoicePreset | None = None,
+    lang: str = "us",
     lts_fallback: bool = True,
 ) -> NDArray[np.int16]:
     """Synthesize the given text into PCM samples (no playback / file output).
@@ -82,6 +85,8 @@ def speak(
         text: Input string. May contain ``[:cmd value]`` directives.
         rate: Initial speaking-rate multiplier; > 1 slower, < 1 faster.
         voice: Initial voice preset (short name or :class:`VoicePreset`).
+        lang: Language tag selecting the bundled lexicon (``"us"`` or
+            ``"uk"``).
         lts_fallback: Whether to pronounce out-of-lexicon words via the
             letter-to-sound rules.
 
@@ -104,13 +109,21 @@ def speak(
         if seg.state.phoneme_mode:
             phones = seg.body.split()
         else:
-            phones = _tokens_to_phonemes(tokenize(seg.body), lts_fallback=lts_fallback)
+            phones = _tokens_to_phonemes(tokenize(seg.body), lang=lang, lts_fallback=lts_fallback)
         if not phones:
             continue
         preset = _resolve_voice(seg.state.voice)
         if preset is None and isinstance(voice, VoicePreset):
             preset = voice
-        chunks.append(synthesize_phonemes(phones, rate=seg.state.rate, preset=preset))
+        is_question = looks_like_question(seg.body)
+        chunks.append(
+            synthesize_phonemes(
+                phones,
+                rate=seg.state.rate,
+                preset=preset,
+                question=is_question,
+            )
+        )
 
     if not chunks:
         return np.zeros(0, dtype=np.int16)
@@ -123,6 +136,7 @@ def to_wav(
     *,
     rate: float = 1.0,
     voice: str | VoicePreset | None = None,
+    lang: str = "us",
     lts_fallback: bool = True,
 ) -> None:
     """Synthesize ``text`` and write the resulting audio to a WAV file.
@@ -132,12 +146,13 @@ def to_wav(
         path: Output WAV path. Parent directory must exist.
         rate: Speaking-rate multiplier.
         voice: See :func:`speak`.
+        lang: See :func:`speak`.
         lts_fallback: See :func:`speak`.
 
     Raises:
         UnknownWordError: See :func:`speak`.
     """
-    samples = speak(text, rate=rate, voice=voice, lts_fallback=lts_fallback)
+    samples = speak(text, rate=rate, voice=voice, lang=lang, lts_fallback=lts_fallback)
     write_wav(samples, path)
 
 
@@ -146,15 +161,15 @@ def available_voices() -> list[str]:
     return sorted(PRESETS.keys())
 
 
-def _tokens_to_phonemes(tokens: Iterable[Token], *, lts_fallback: bool) -> list[str]:
+def _tokens_to_phonemes(tokens: Iterable[Token], *, lang: str, lts_fallback: bool) -> list[str]:
     """Internal helper: flatten a token stream to ARPABET phonemes."""
     phonemes: list[str] = []
     for token in tokens:
         if token.kind is TokenKind.WORD:
-            phones = lookup(token.text)
+            phones = lookup(token.text, lang=lang)
             if phones is None:
                 if not lts_fallback:
-                    raise UnknownWordError(f"word {token.text!r} is not in the bundled lexicon.")
+                    raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
                 phones = lts(token.text)
             phonemes.extend(phones)
         elif token.kind in (TokenKind.PAUSE_SHORT, TokenKind.PAUSE_LONG):

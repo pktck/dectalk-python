@@ -16,8 +16,9 @@ from importlib import resources
 from pathlib import Path
 from typing import Final
 
-# The bundled lexicon's resource name within the dectalk.data package.
+# The bundled lexicon resources within the dectalk.data package.
 _BUILTIN_LEXICON_RESOURCE: Final[str] = "lexicon_us.txt"
+_UK_OVERRIDE_RESOURCE: Final[str] = "lexicon_uk.txt"
 
 
 def load_text_lexicon(path: str | Path) -> dict[str, list[str]]:
@@ -39,19 +40,37 @@ def load_text_lexicon(path: str | Path) -> dict[str, list[str]]:
     return _parse_lexicon_text(text)
 
 
-def load_builtin_lexicon() -> dict[str, list[str]]:
+def load_builtin_lexicon(*, lang: str = "us") -> dict[str, list[str]]:
     """Parse the bundled mini-lexicon shipped with the dectalk package.
+
+    Args:
+        lang: ``"us"`` (default) returns the US lexicon. ``"uk"`` layers
+            British-English overrides on top of the US base.
 
     Returns:
         Mapping from upper-cased word to its phoneme list. The returned
         dict is freshly built each call so callers can mutate it freely.
+
+    Raises:
+        ValueError: If ``lang`` is not a recognised language tag.
     """
-    text = (
+    base_text = (
         resources.files("dectalk.data")
         .joinpath(_BUILTIN_LEXICON_RESOURCE)
         .read_text(encoding="utf-8")
     )
-    return _parse_lexicon_text(text)
+    lex = _parse_lexicon_text(base_text)
+    if lang == "us":
+        return lex
+    if lang == "uk":
+        uk_text = (
+            resources.files("dectalk.data")
+            .joinpath(_UK_OVERRIDE_RESOURCE)
+            .read_text(encoding="utf-8")
+        )
+        lex.update(_parse_lexicon_text(uk_text))
+        return lex
+    raise ValueError(f"unknown lang {lang!r}; supported values: 'us', 'uk'")
 
 
 def _parse_lexicon_text(text: str) -> dict[str, list[str]]:
