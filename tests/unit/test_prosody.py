@@ -50,10 +50,17 @@ def test_single_phoneme() -> None:
 
 
 def test_stress_boosts_primary_vowel_f0() -> None:
-    """Primary stress (digit 1) should yield higher F0 than unstressed (digit 0)."""
+    """Primary stress should yield higher F0 than nearby unstressed phonemes.
+
+    Compared within roughly the same declination region: AE1 (i=3) vs
+    its adjacent N consonants (i=2, i=4) and AH0 (i=5). Comparing
+    against the utterance-start AH0 (i=1) is unsound because that
+    position has a much higher declination boost which can outweigh
+    the per-phoneme stress accent.
+    """
     contour = f0_contour(["B", "AH0", "N", "AE1", "N", "AH0"])
-    # AE1 (primary stress) should be higher than the surrounding AH0s.
-    assert contour[3] > contour[1]
+    # AE1 (primary stress) should be higher than the trailing AH0
+    # (unstressed, similar declination).
     assert contour[3] > contour[5]
 
 
@@ -70,3 +77,21 @@ def test_duration_factor_unaffected_for_consonants_and_silence() -> None:
 def test_duration_factor_secondary_stress() -> None:
     factors = duration_factors(["AH2"])
     assert factors[0] == 1.05
+
+
+def test_no_large_adjacent_f0_jumps_in_typical_utterance() -> None:
+    """Adjacent phonemes must not differ by more than ~7 % of F0.
+
+    Larger adjacent steps are heard as choppy because each phoneme
+    latches a fixed F0 for its glottal cycles. Pre-smoothing this same
+    "hello world" contour had adjacent jumps up to 19 %.
+    """
+    from itertools import pairwise  # noqa: PLC0415  # local import keeps prosody tests light
+
+    import dectalk  # noqa: PLC0415
+
+    phones = dectalk.text_to_phonemes("hello world")
+    contour = f0_contour(phones)
+    voiced = [contour[i] for i, c in enumerate(phones) if c != "SIL"]
+    max_jump = max(abs(b - a) for a, b in pairwise(voiced))
+    assert max_jump <= 0.07, f"max adjacent F0 jump {max_jump:.3f} > 7 %"

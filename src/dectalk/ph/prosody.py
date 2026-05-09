@@ -22,24 +22,28 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Final
 
-# Maximum start-of-utterance pitch boost as a multiplicative factor. ~1.15
-# adds ~2 semitones on top of the baseline.
-_DECLINATION_START: Final[float] = 1.15
+# Maximum start-of-utterance pitch boost as a multiplicative factor.
+# Softer than DECtalk's reference because per-phoneme stepping was
+# audibly choppy at larger excursions.
+_DECLINATION_START: Final[float] = 1.08
 
 # End-of-utterance dip (statement) as a multiplicative factor.
-_DECLINATION_END_STATEMENT: Final[float] = 0.88
+_DECLINATION_END_STATEMENT: Final[float] = 0.92
 
 # End-of-utterance rise (question).
-_DECLINATION_END_QUESTION: Final[float] = 1.20
+_DECLINATION_END_QUESTION: Final[float] = 1.12
 
 # Per-phoneme dip applied to the very last segment to give a clear cadence.
-_FINAL_DIP_FRACTION: Final[float] = 0.85
+_FINAL_DIP_FRACTION: Final[float] = 0.95
 
 # Stress-accent multipliers applied on top of the declination contour.
+# Halved from the more aggressive earlier values because each phoneme
+# latches a fixed F0 for its glottal cycles, so a +10% / -6% step
+# between adjacent phonemes is heard as a stair-step.
 _STRESS_F0: Final[dict[str, float]] = {
-    "1": 1.10,  # primary stress: F0 +10%
-    "2": 1.04,  # secondary stress
-    "0": 0.94,  # unstressed: F0 -6%
+    "1": 1.05,  # primary stress: F0 +5%
+    "2": 1.02,  # secondary stress
+    "0": 0.97,  # unstressed: F0 -3%
 }
 
 _STRESS_DURATION: Final[dict[str, float]] = {
@@ -47,6 +51,10 @@ _STRESS_DURATION: Final[dict[str, float]] = {
     "2": 1.05,
     "0": 0.85,  # unstressed: 15% shorter
 }
+
+# 3-tap smoothing of the per-phoneme contour: each value is averaged
+# with its two neighbours so adjacent phonemes don't have step jumps.
+_SMOOTH_KERNEL: Final[tuple[float, float, float]] = (0.25, 0.5, 0.25)
 
 
 def f0_contour(phonemes: Sequence[str], *, question: bool = False) -> list[float]:
@@ -88,7 +96,33 @@ def f0_contour(phonemes: Sequence[str], *, question: bool = False) -> list[float
             if phonemes[i] != "SIL":
                 contour[i] *= _FINAL_DIP_FRACTION
                 break
-    return contour
+
+    return _smooth_contour(contour, phonemes)
+
+
+def _smooth_contour(contour: list[float], phonemes: Sequence[str]) -> list[float]:
+    """Apply a 3-tap [0.25, 0.5, 0.25] smoothing to soften per-phoneme F0 jumps.
+
+    Each phoneme latches a fixed F0 for its glottal cycles, so adjacent
+    contour values that differ by more than a couple of percent become
+    audible pitch steps. The smoothing pass averages each value with its
+    two neighbours; SIL boundaries are skipped (smoothing across silence
+    would re-introduce the half-voicing artefact we explicitly avoid in
+    the sequencer).
+    """
+    n = len(contour)
+    if n < 2:  # noqa: PLR2004 - one-element contour has nothing to smooth
+        return contour
+    out: list[float] = []
+    left_w, mid_w, right_w = _SMOOTH_KERNEL
+    for i in range(n):
+        if phonemes[i] == "SIL":
+            out.append(contour[i])
+            continue
+        left = contour[i - 1] if i > 0 and phonemes[i - 1] != "SIL" else contour[i]
+        right = contour[i + 1] if i < n - 1 and phonemes[i + 1] != "SIL" else contour[i]
+        out.append(left * left_w + contour[i] * mid_w + right * right_w)
+    return out
 
 
 def duration_factors(phonemes: Sequence[str]) -> list[float]:
