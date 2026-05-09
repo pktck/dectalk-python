@@ -10,15 +10,16 @@ from dectalk.lts import lts
 @pytest.mark.parametrize(
     ("word", "expected"),
     [
-        ("cat", ["K", "AE", "T"]),
-        ("dog", ["D", "AA", "G"]),
-        ("phone", ["F", "OW", "N"]),
-        ("thought", ["TH", "AO", "T"]),
-        ("rough", ["R", "AH", "F"]),
-        ("caught", ["K", "AO", "T"]),
-        ("eight", ["EY", "T"]),
-        ("high", ["HH", "AY"]),
-        ("nice", ["N", "AY", "S"]),
+        # LTS now annotates stress digits — primary on the first vowel.
+        ("cat", ["K", "AE1", "T"]),
+        ("dog", ["D", "AA1", "G"]),
+        ("phone", ["F", "OW1", "N"]),
+        ("thought", ["TH", "AO1", "T"]),
+        ("rough", ["R", "AH1", "F"]),
+        ("caught", ["K", "AO1", "T"]),
+        ("eight", ["EY1", "T"]),
+        ("high", ["HH", "AY1"]),
+        ("nice", ["N", "AY1", "S"]),
     ],
 )
 def test_known_spelling_patterns(word: str, expected: list[str]) -> None:
@@ -66,7 +67,16 @@ def test_qu_pair() -> None:
 def test_silent_e_in_magic_e_word() -> None:
     """Magic-E pattern: 'bake' should be B EY K, not B EY K E."""
     out = lts("bake")
-    assert out == ["B", "EY", "K"]
+    assert out == ["B", "EY1", "K"]
+
+
+def test_first_vowel_gets_primary_stress() -> None:
+    """Polysyllabic words should have stress 1 on the first vowel and 0 elsewhere."""
+    out = lts("banana")
+    # First vowel index gets digit 1, others get 0.
+    digits = [p[-1] for p in out if p[-1].isdigit()]
+    assert digits[0] == "1"
+    assert all(d == "0" for d in digits[1:])
 
 
 def test_x_expands_to_k_s() -> None:

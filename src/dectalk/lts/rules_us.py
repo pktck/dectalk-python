@@ -148,15 +148,26 @@ _CONSONANT_RULES: Final[tuple[_Rule, ...]] = (
 _RULES: Final[tuple[_Rule, ...]] = _VOWEL_RULES + _CONSONANT_RULES
 
 
+_VOWEL_PHONEMES: Final[frozenset[str]] = frozenset(
+    {"AA", "AE", "AH", "AO", "AX", "EH", "ER", "IH", "IY", "UH", "UW",
+     "AY", "AW", "EY", "OW", "OY"}
+)  # fmt: skip
+
+
 def lts(word: str) -> list[str]:
     """Convert an upper-case English word to ARPABET phonemes by rule.
 
     Walks the word left-to-right, at each step trying every rule in
     declaration order and applying the first whose grapheme matches and
     whose context constraints hold. Always makes progress (default
-    single-letter rules exist for every letter). Result quality varies
-    widely with the spelling — the lexicon is preferred whenever
-    available.
+    single-letter rules exist for every letter).
+
+    A simple stress heuristic is layered on top: the first vowel in
+    polysyllabic words receives primary stress (digit ``1``), other
+    vowels secondary (``2`` for monosyllables, ``0`` for the rest). This
+    is wrong roughly half the time for English nouns/verbs, but is
+    enough to make the prosody pass produce audibly accented output for
+    out-of-lexicon words. The lexicon is preferred whenever available.
 
     Args:
         word: Input word in any case; folded to upper-case internally.
@@ -166,7 +177,7 @@ def lts(word: str) -> list[str]:
         of silent letters (rare).
     """
     text = word.upper()
-    out: list[str] = []
+    raw: list[str] = []
     i = 0
     n = len(text)
     while i < n:
@@ -176,8 +187,24 @@ def lts(word: str) -> list[str]:
             # apostrophes / hyphens leaking into the LTS path.
             i += 1
             continue
-        out.extend(rule.phones)
+        raw.extend(rule.phones)
         i += len(rule.grapheme)
+
+    return _add_stress(raw)
+
+
+def _add_stress(phones: list[str]) -> list[str]:
+    """Annotate vowels with simple stress digits (CMUDict convention)."""
+    vowel_indices = [idx for idx, p in enumerate(phones) if p in _VOWEL_PHONEMES]
+    if not vowel_indices:
+        return phones
+    out = list(phones)
+    primary_idx = vowel_indices[0]
+    for idx in vowel_indices:
+        if idx == primary_idx:
+            out[idx] = out[idx] + "1"
+        else:
+            out[idx] = out[idx] + "0"
     return out
 
 
