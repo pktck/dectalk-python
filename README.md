@@ -49,6 +49,26 @@ phones = dectalk.text_to_phonemes("Hello, world!")
 # -> ['HH', 'AH0', 'L', 'OW1', 'SIL', 'W', 'ER1', 'L', 'D', 'SIL']
 ```
 
+## Larger lexicon (CMUDict)
+
+The bundled mini-lexicon is intentionally small (~290 words). For broader
+coverage, plug in CMUDict (public domain, ~125K words):
+
+```bash
+# Download CMUDict once
+curl -L https://raw.githubusercontent.com/cmusphinx/cmudict/master/cmudict.dict -o cmudict.dict
+
+# Use it on the CLI
+uv run python -m dectalk --lexicon cmudict.dict "the quick brown fox jumps over the lazy dog"
+```
+
+```python
+import dectalk
+from dectalk.dic import set_extra_lexicon
+set_extra_lexicon("cmudict.dict")
+samples = dectalk.speak("the quick brown fox")
+```
+
 ## Voices
 
 Nine canonical DECtalk voices are available:

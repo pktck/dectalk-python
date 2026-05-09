@@ -16,6 +16,7 @@ import numpy as np
 
 from dectalk.api import UnknownWordError, available_voices, speak
 from dectalk.data.voices import get_preset
+from dectalk.dic import set_extra_lexicon
 from dectalk.hlsyn.llsyn import LLSynth
 from dectalk.hlsyn.synthesize import ll_synthesize
 from dectalk.hlsyn.vowels import VOWELS, default_speaker
@@ -102,6 +103,14 @@ def _build_parser() -> argparse.ArgumentParser:
         default="us",
         help="Language / lexicon variant. Default: us.",
     )
+    parser.add_argument(
+        "--lexicon",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Optional CMUDict-format lexicon file. When supplied, it takes "
+        "precedence over the bundled mini-lexicon.",
+    )
     return parser
 
 
@@ -145,6 +154,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    if args.lexicon is not None:
+        set_extra_lexicon(args.lexicon)
 
     if args.play_test:
         play(sine_tone(freq_hz=440.0, duration_sec=1.0))
