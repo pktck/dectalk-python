@@ -23,7 +23,7 @@ from dectalk.dic import lookup
 from dectalk.kernel.text import Token, TokenKind, tokenize
 from dectalk.lts import lts
 from dectalk.nt.audio import write_wav
-from dectalk.ph.prosody import looks_like_question
+from dectalk.ph.prosody import split_sentences
 from dectalk.ph.sequencer import synthesize_phonemes
 
 
@@ -106,24 +106,46 @@ def speak(
 
     chunks: list[NDArray[np.int16]] = []
     for seg in segments:
-        if seg.state.phoneme_mode:
-            phones = seg.body.split()
-        else:
-            phones = _tokens_to_phonemes(tokenize(seg.body), lang=lang, lts_fallback=lts_fallback)
-        if not phones:
-            continue
         preset = _resolve_voice(seg.state.voice)
         if preset is None and isinstance(voice, VoicePreset):
             preset = voice
-        is_question = looks_like_question(seg.body)
-        chunks.append(
-            synthesize_phonemes(
-                phones,
-                rate=seg.state.rate,
-                preset=preset,
-                question=is_question,
+
+        if seg.state.phoneme_mode:
+            # In phoneme mode the body is already a phoneme stream — no
+            # text splitting, no question detection.
+            phones = seg.body.split()
+            if phones:
+                chunks.append(
+                    synthesize_phonemes(
+                        phones,
+                        rate=seg.state.rate,
+                        preset=preset,
+                        question=False,
+                    )
+                )
+            continue
+
+        # Split the segment text on sentence-final punctuation so each
+        # sentence gets its own declination contour. Without this, a
+        # multi-sentence segment ramps F0 down once across the whole
+        # span instead of resetting per sentence — that sounds unnaturally
+        # monotone past the first sentence.
+        for sentence_text, is_question in split_sentences(seg.body):
+            phones = _tokens_to_phonemes(
+                tokenize(sentence_text),
+                lang=lang,
+                lts_fallback=lts_fallback,
             )
-        )
+            if not phones:
+                continue
+            chunks.append(
+                synthesize_phonemes(
+                    phones,
+                    rate=seg.state.rate,
+                    preset=preset,
+                    question=is_question,
+                )
+            )
 
     if not chunks:
         return np.zeros(0, dtype=np.int16)

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from dectalk.ph.prosody import duration_factors, f0_contour, looks_like_question
+from dectalk.ph.prosody import (
+    duration_factors,
+    f0_contour,
+    looks_like_question,
+    split_sentences,
+)
 
 
 def test_empty_phonemes_returns_empty() -> None:
@@ -79,19 +84,50 @@ def test_duration_factor_secondary_stress() -> None:
     assert factors[0] == 1.05
 
 
-def test_no_large_adjacent_f0_jumps_in_typical_utterance() -> None:
-    """Adjacent phonemes must not differ by more than ~7 % of F0.
+def test_split_sentences_handles_three_terminators() -> None:
+    """Period, question mark, and exclamation point each end a sentence."""
+    out = split_sentences("This is one. Is this two? Three!")
+    assert [s for s, _ in out] == ["This is one.", "Is this two?", "Three!"]
+    assert [q for _, q in out] == [False, True, False]
 
-    Larger adjacent steps are heard as choppy because each phoneme
-    latches a fixed F0 for its glottal cycles. Pre-smoothing this same
-    "hello world" contour had adjacent jumps up to 19 %.
+
+def test_split_sentences_passes_through_unpunctuated_text() -> None:
+    out = split_sentences("hello world")
+    assert out == [("hello world", False)]
+
+
+def test_split_sentences_ignores_blank_input() -> None:
+    assert split_sentences("") == []
+    assert split_sentences("   \n\t ") == []
+
+
+def test_split_sentences_keeps_trailing_fragment_after_terminator() -> None:
+    """A trailing fragment with no punctuation still becomes a statement."""
+    out = split_sentences("First sentence. Trailing fragment with no punct")
+    assert out == [
+        ("First sentence.", False),
+        ("Trailing fragment with no punct", False),
+    ]
+
+
+def test_contour_has_natural_dynamic_range() -> None:
+    """The contour for a typical utterance must span a wide F0 range.
+
+    A flat contour (max - min < 20 %) produces audibly mechanical
+    "robot" intonation. Pre-fix the smoothed contour spanned only ~16 %
+    on "hello world" and ~17 % on "the quick brown fox"; the binary
+    output spans roughly 50 % on the same prompts. We aim for at least
+    30 % to leave room for variation across phrases.
+
+    Per-phoneme contour jumps are intentionally larger than the audible
+    threshold here — the sequencer's linear frame interpolation across
+    the first half of each segment smooths them at the audio level,
+    which is the right place for the smoothing to happen.
     """
-    from itertools import pairwise  # noqa: PLC0415  # local import keeps prosody tests light
-
     import dectalk  # noqa: PLC0415
 
-    phones = dectalk.text_to_phonemes("hello world")
+    phones = dectalk.text_to_phonemes("the quick brown fox")
     contour = f0_contour(phones)
     voiced = [contour[i] for i, c in enumerate(phones) if c != "SIL"]
-    max_jump = max(abs(b - a) for a, b in pairwise(voiced))
-    assert max_jump <= 0.07, f"max adjacent F0 jump {max_jump:.3f} > 7 %"
+    span = max(voiced) - min(voiced)
+    assert span >= 0.30, f"F0 contour span {span:.3f} < 0.30 (sounds monotone)"

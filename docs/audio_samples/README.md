@@ -21,6 +21,12 @@ Prompts (deliberately small and varied):
 | `computer` | computer |
 | `she-sells-sea-shells` | she sells sea shells |
 | `good-morning` | good morning |
+| `good-morning-how-are-you-today-have-a-great-day` | good morning. how are you today? have a great day! |
+
+The last one is the multi-sentence prompt — it exercises sentence-level
+prosody on all three terminators (`.`, `?`, `!`) so a reviewer can hear
+that each sentence resets its declination contour rather than ramping
+down monotonically across the full span.
 
 ## Listening
 

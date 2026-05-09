@@ -29,12 +29,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import math
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import wave
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -124,6 +126,10 @@ DEFAULT_PROMPTS: tuple[str, ...] = (
     "computer",
     "she sells sea shells",
     "good morning",
+    # Multi-sentence prompt: exercises sentence-level prosody splitting on
+    # all three terminators in one render, so each sentence resets its own
+    # declination contour rather than ramping down across the whole span.
+    "good morning. how are you today? have a great day!",
 )
 
 
@@ -203,30 +209,45 @@ def _resolve_binary_dir(arg: str | None) -> Path | None:
 
 
 def _run_binary(binary_dir: Path, text: str, out_path: Path) -> NDArray[np.int16] | None:
-    """Invoke the DECtalk binary; return samples or None on failure."""
+    """Invoke the DECtalk binary; return samples or None on failure.
+
+    Writes through a short ``/tmp`` path because the FONIX binary has a
+    fixed-size buffer for the ``-fo`` argument and crashes with a
+    glibc buffer-overflow abort when handed a long absolute path
+    (anything past roughly 80 chars). The temp file is then copied to
+    the caller's ``out_path``.
+    """
     say = binary_dir / "say"
     env = os.environ.copy()
     env.setdefault("DTK_PROGRAM_PATH", str(binary_dir))
     env.setdefault("DTK_DIC", str(binary_dir / "dic"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    # `cwd=binary_dir` is required so the binary finds its data files,
-    # but that means a relative `out_path` resolves under binary_dir,
-    # not the caller's directory. Always pass an absolute path.
-    abs_out = out_path.resolve()
+    with tempfile.NamedTemporaryFile(
+        prefix="dt-",
+        suffix=".wav",
+        dir="/tmp",
+        delete=False,
+    ) as fh:
+        tmp_path = Path(fh.name)
     try:
-        subprocess.run(
-            [str(say), "-a", text, "-fo", str(abs_out), "-e", "1"],
-            capture_output=True,
-            check=True,
-            env=env,
-            cwd=str(binary_dir),
-            timeout=30,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return None
-    if not abs_out.exists():
-        return None
-    return _read_wav(abs_out)
+        try:
+            subprocess.run(
+                [str(say), "-a", text, "-fo", str(tmp_path), "-e", "1"],
+                capture_output=True,
+                check=True,
+                env=env,
+                cwd=str(binary_dir),
+                timeout=30,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            return None
+        if not tmp_path.exists() or tmp_path.stat().st_size == 0:
+            return None
+        shutil.copyfile(tmp_path, out_path)
+        return _read_wav(out_path)
+    finally:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
 
 
 # ------------------------------------------------------- intrinsic checks
