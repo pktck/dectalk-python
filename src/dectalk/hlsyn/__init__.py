@@ -3,10 +3,12 @@
 Translated from `src/dapi/src/hlsyn/`. Re-exports the public Klatt API:
 
 - :class:`LLSynth`, :class:`LLFrame`, :class:`Speaker` — synthesizer types.
+- :func:`ll_init` — initialise a synth instance for a given speaker.
 - :func:`ll_synthesize` — top-level frame synthesis function.
 - :func:`next_sample`, :func:`next_voice_sample` — per-sample primitives.
 """
 
+from dectalk.hlsyn.init import ll_init
 from dectalk.hlsyn.llsyn import LLFrame, LLSynth, Speaker
 from dectalk.hlsyn.sample import next_sample
 from dectalk.hlsyn.synthesize import ll_synthesize
@@ -24,6 +26,7 @@ __all__ = [
     "LLFrame",
     "LLSynth",
     "Speaker",
+    "ll_init",
     "ll_synthesize",
     "next_sample",
     "next_voice_sample",

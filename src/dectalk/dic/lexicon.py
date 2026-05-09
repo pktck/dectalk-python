@@ -21,6 +21,10 @@ _LEXICON_FILES: Final[dict[str, tuple[str, ...]]] = {
     # The loader tries each filename in order and uses the first that exists.
     "us": ("lexicon_us_full.txt", "lexicon_us.txt"),
     "uk": ("lexicon_uk_full.txt", "lexicon_uk.txt"),
+    "sp": ("lexicon_sp_full.txt",),
+    "la": ("lexicon_la_full.txt",),
+    "fr": ("lexicon_fr_full.txt",),
+    "de": ("lexicon_de_full.txt",),
 }
 
 # Legacy aliases retained for backward compatibility with any external code

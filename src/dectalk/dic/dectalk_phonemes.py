@@ -21,7 +21,7 @@ from typing import Final
 # Compiled from `usa_phon.tab` plus inspection of representative entries
 # in `Dic_us.txt`. Where DECtalk fuses an r-coloured vowel into a single
 # symbol we expand it to two ARPABET phonemes (e.g. AR -> AA R).
-_DECTALK_TO_ARPABET: Final[dict[str, tuple[str, ...]]] = {
+US_MAP: Final[dict[str, tuple[str, ...]]] = {
     # ---- Vowels ----
     "i": ("IY",),  # see
     "I": ("IH",),  # bit
@@ -104,13 +104,13 @@ def decode(dectalk_phonemic: str) -> list[str]:
         if ch == "`":
             pending_stress = "2"
             continue
-        mapped = _DECTALK_TO_ARPABET.get(ch)
+        mapped = US_MAP.get(ch)
         if mapped is None:
             # Unknown character — skip rather than crash. This matches the
             # spirit of DECtalk's tolerant lexicon parser.
             continue
         for tok in mapped:
-            if _is_vowel(tok):
+            if is_vowel(tok):
                 out.append(tok + pending_stress)
                 pending_stress = "0"
             else:
@@ -124,6 +124,6 @@ _VOWELS: Final[frozenset[str]] = frozenset(
 )  # fmt: skip
 
 
-def _is_vowel(token: str) -> bool:
+def is_vowel(token: str) -> bool:
     """Return True if ``token`` is an ARPABET vowel/diphthong (no stress digit)."""
     return token in _VOWELS

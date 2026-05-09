@@ -99,7 +99,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--lang",
         type=str,
-        choices=("us", "uk"),
+        choices=("us", "uk", "fr", "de", "sp", "la"),
         default="us",
         help="Language / lexicon variant. Default: us.",
     )
