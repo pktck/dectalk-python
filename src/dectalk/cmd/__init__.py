@@ -1,4 +1,5 @@
-"""Inline command parser for `[:cmd value]` syntax (translated from `src/dapi/src/cmd/`).
+"""Inline command parser for ``[:cmd value]`` syntax."""
 
-Populated in Phase 3.
-"""
+from dectalk.cmd.commands import Segment, SpeechState, parse
+
+__all__ = ["Segment", "SpeechState", "parse"]

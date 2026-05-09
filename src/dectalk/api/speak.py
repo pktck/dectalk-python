@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from dectalk.cmd import SpeechState, parse
 from dectalk.data.voices import PRESETS, VoicePreset, get_preset
 from dectalk.dic import lookup
 from dectalk.kernel.text import Token, TokenKind, tokenize
@@ -71,12 +72,16 @@ def speak(
 ) -> NDArray[np.int16]:
     """Synthesize the given text into PCM samples (no playback / file output).
 
+    Inline ``[:cmd value]`` directives in ``text`` are interpreted: ``[:dv
+    NAME]`` switches voice, ``[:rate N]`` adjusts the rate (as a percent
+    of nominal where 100 = normal), ``[:phoneme on/off]`` toggles direct
+    phoneme input. The ``rate`` and ``voice`` keyword arguments seed the
+    initial state; commands in the text override them.
+
     Args:
-        text: Input string.
-        rate: Speaking-rate multiplier; > 1 slower, < 1 faster.
-        voice: Voice preset to use. Either a short name (``"paul"``,
-            ``"betty"``, ...) or a :class:`VoicePreset`. When None, a
-            neutral default voice is used.
+        text: Input string. May contain ``[:cmd value]`` directives.
+        rate: Initial speaking-rate multiplier; > 1 slower, < 1 faster.
+        voice: Initial voice preset (short name or :class:`VoicePreset`).
         lts_fallback: Whether to pronounce out-of-lexicon words via the
             letter-to-sound rules.
 
@@ -88,8 +93,28 @@ def speak(
             ``lts_fallback`` is disabled.
         KeyError: If ``voice`` is a name that doesn't match a known preset.
     """
-    phonemes = text_to_phonemes(text, lts_fallback=lts_fallback)
-    return synthesize_phonemes(phonemes, rate=rate, preset=_resolve_voice(voice))
+    initial_voice = voice if isinstance(voice, str) else None
+    initial_state = SpeechState(voice=initial_voice, rate=rate)
+    segments = parse(text, initial_state=initial_state)
+    if not segments:
+        return np.zeros(0, dtype=np.int16)
+
+    chunks: list[NDArray[np.int16]] = []
+    for seg in segments:
+        if seg.state.phoneme_mode:
+            phones = seg.body.split()
+        else:
+            phones = _tokens_to_phonemes(tokenize(seg.body), lts_fallback=lts_fallback)
+        if not phones:
+            continue
+        preset = _resolve_voice(seg.state.voice)
+        if preset is None and isinstance(voice, VoicePreset):
+            preset = voice
+        chunks.append(synthesize_phonemes(phones, rate=seg.state.rate, preset=preset))
+
+    if not chunks:
+        return np.zeros(0, dtype=np.int16)
+    return np.concatenate(chunks)
 
 
 def to_wav(
