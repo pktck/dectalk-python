@@ -1,4 +1,5 @@
-"""Text normalization and language initialization (translated from `src/dapi/src/kernel/`).
+"""Text normalization and tokenization for the TTS front end."""
 
-Populated in Phase 2.
-"""
+from dectalk.kernel.text import Token, TokenKind, tokenize
+
+__all__ = ["Token", "TokenKind", "tokenize"]

@@ -14,6 +14,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from dectalk.api import UnknownWordError, speak
 from dectalk.hlsyn.llsyn import LLSynth
 from dectalk.hlsyn.synthesize import ll_synthesize
 from dectalk.hlsyn.vowels import VOWELS, default_speaker
@@ -35,7 +36,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "text",
         nargs="?",
         default=None,
-        help="Text to synthesize (later phases). Phase 0 ignores this argument.",
+        help="Text to synthesize. Words must be in the bundled lexicon; "
+        "use --phonemes for arbitrary ARPABET strings.",
     )
     parser.add_argument(
         "-o",
@@ -108,6 +110,14 @@ def _synthesize_vowel(vowel_id: str, duration_sec: float) -> np.ndarray:  # type
     return wave
 
 
+def _emit(wave: np.ndarray, output_path: str | None) -> None:  # type: ignore[type-arg]
+    """Either write ``wave`` to ``output_path`` or play it through speakers."""
+    if output_path is not None:
+        write_wav(wave, output_path)
+    else:
+        play(wave)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point invoked by the `dectalk` console script and `python -m dectalk`.
 
@@ -122,41 +132,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.play_test:
-        tone = sine_tone(freq_hz=440.0, duration_sec=1.0)
-        play(tone)
-        return 0
-
-    if args.write_test is not None:
-        tone = sine_tone(freq_hz=440.0, duration_sec=1.0)
-        write_wav(tone, args.write_test)
-        return 0
-
-    if args.vowel is not None:
-        wave = _synthesize_vowel(args.vowel, args.duration)
-        if args.output is not None:
-            write_wav(wave, args.output)
-        else:
-            play(wave)
-        return 0
-
-    if args.phonemes is not None:
-        codes = args.phonemes.split()
-        wave = synthesize_phonemes(codes, rate=args.rate)
-        if args.output is not None:
-            write_wav(wave, args.output)
-        else:
-            play(wave)
-        return 0
-
-    if args.text is None:
+        play(sine_tone(freq_hz=440.0, duration_sec=1.0))
+    elif args.write_test is not None:
+        write_wav(sine_tone(freq_hz=440.0, duration_sec=1.0), args.write_test)
+    elif args.vowel is not None:
+        _emit(_synthesize_vowel(args.vowel, args.duration), args.output)
+    elif args.phonemes is not None:
+        _emit(synthesize_phonemes(args.phonemes.split(), rate=args.rate), args.output)
+    elif args.text is None:
         parser.print_help()
-        return 0
-
-    print(
-        "Synthesis not implemented yet — Phase 0 only supports --play-test / --write-test.",
-        file=sys.stderr,
-    )
-    return 2
+    else:
+        try:
+            wave = speak(args.text, rate=args.rate)
+        except UnknownWordError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 3
+        _emit(wave, args.output)
+    return 0
 
 
 if __name__ == "__main__":

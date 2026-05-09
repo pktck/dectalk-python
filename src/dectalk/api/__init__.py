@@ -1,4 +1,5 @@
-"""DECtalk API entry points (translated from `src/dapi/src/api/`).
+"""High-level DECtalk API."""
 
-Populated in Phase 2 once the underlying pipeline modules exist.
-"""
+from dectalk.api.speak import UnknownWordError, speak, text_to_phonemes, to_wav
+
+__all__ = ["UnknownWordError", "speak", "text_to_phonemes", "to_wav"]
