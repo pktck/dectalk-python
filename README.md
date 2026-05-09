@@ -24,6 +24,12 @@ uv run python -m dectalk "[:dv betty][:rate 80] hello again"
 
 # Direct phoneme input (ARPABET)
 uv run python -m dectalk --phonemes "HH AH L OW"
+
+# Singing: <duration_ms,tone> per token (tone 1 = A2 = 110 Hz)
+uv run python -m dectalk --sing "HH<200,5> AH<200,7> L<200,8> OW<400,9>"
+
+# UK / French / German / Spanish / Latin American Spanish lexicons
+uv run python -m dectalk --lang uk "tomato schedule"
 ```
 
 ## Library API
@@ -117,21 +123,23 @@ Unrecognised commands are silently dropped.
 | Phase | Feature | Status |
 |---|---|---|
 | 0 | Project scaffolding, audio I/O, CI | done |
-| 1 | Klatt cascade-parallel synthesizer | done |
+| 1 | Klatt cascade-parallel synthesizer | done — bit-exact vs C |
 | 2 | Text → phoneme pipeline (lexicon + LTS) | done |
 | 3 | Multi-voice + inline commands + numbers | done |
-| 4 | UK English lexicon overrides | done |
-| 5 | Romance + Germanic languages | pending |
-| 6a | Sentence-level F0 contour | done |
-| 6b | README + examples | done |
-| 6c | Polish + remaining line-by-line C translations | partial |
+| 4 | UK English | done |
+| 5 | French / German / Spanish / Latin American Spanish | done |
+| 6 | Prosody + singing mode + parity tests | done |
 
 The synthesizer is the line-by-line port of `hlsyn/` (Klatt's
-cascade-parallel formant synthesiser). The front-end (text normalization,
-LTS, lexicon, command parser) is a clean Python implementation rather
-than a literal C translation. The bundled lexicon and voice tables are
-reasonable approximations of the FONIX-licensed originals — see
-`docs/PLAN.md` for the licensing context.
+cascade-parallel formant synthesiser) and is verified within 1 LSB
+of the FONIX C `LLSynthesize` across 17 frame configurations (see
+`tests/parity/`). The front-end (text normalization, LTS, lexicon,
+command parser) is a clean Python implementation rather than a literal
+C translation; it reuses the bundled DECtalk pronunciation dictionaries.
+End-to-end audio is also compared against the DECtalk 4.61 Linux
+binary release.
+
+See `docs/STATUS.md` for the per-phase breakdown.
 
 ## Development
 

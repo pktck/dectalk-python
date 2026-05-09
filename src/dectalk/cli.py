@@ -14,7 +14,7 @@ from collections.abc import Sequence
 
 import numpy as np
 
-from dectalk.api import UnknownWordError, available_voices, speak
+from dectalk.api import UnknownWordError, available_voices, sing, speak
 from dectalk.data.voices import get_preset
 from dectalk.dic import set_extra_lexicon
 from dectalk.hlsyn.llsyn import LLSynth
@@ -111,6 +111,15 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional CMUDict-format lexicon file. When supplied, it takes "
         "precedence over the bundled mini-lexicon.",
     )
+    parser.add_argument(
+        "--sing",
+        type=str,
+        default=None,
+        metavar='"P1<dur,tone> P2<dur,tone> ..."',
+        help="Singing-mode phoneme stream. Each token may carry a "
+        "<duration_ms,tone> suffix (tone 1 = A2 = 110 Hz, +1 per chromatic "
+        'semitone). Example: --sing "HH<200,5> AH<200,7> L<200,8> OW<400,9>".',
+    )
     return parser
 
 
@@ -170,6 +179,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             synthesize_phonemes(args.phonemes.split(), rate=args.rate, preset=preset),
             args.output,
         )
+    elif args.sing is not None:
+        _emit(sing(args.sing, voice=args.voice), args.output)
     elif args.text is None:
         parser.print_help()
     else:

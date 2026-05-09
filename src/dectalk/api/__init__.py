@@ -1,5 +1,6 @@
 """High-level DECtalk API."""
 
+from dectalk.api.sing import sing, sing_to_wav
 from dectalk.api.speak import (
     UnknownWordError,
     available_voices,
@@ -11,6 +12,8 @@ from dectalk.api.speak import (
 __all__ = [
     "UnknownWordError",
     "available_voices",
+    "sing",
+    "sing_to_wav",
     "speak",
     "text_to_phonemes",
     "to_wav",
