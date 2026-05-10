@@ -1,0 +1,57 @@
+{
+  "prompts": {
+    "computer": {
+      "global_lsd_db": 15.942,
+      "global_mcd_db": 58.093,
+      "chunk_lsd_p95_db": 22.307,
+      "chunk_mcd_p95_db": 64.509,
+      "warp_ratio": 1.0893
+    },
+    "good-morning-my-friend-how-are-you-today-have-a-great-day": {
+      "global_lsd_db": 19.863,
+      "global_mcd_db": 52.309,
+      "chunk_lsd_p95_db": 84.464,
+      "chunk_mcd_p95_db": 70.123,
+      "warp_ratio": 1.2367
+    },
+    "good-morning": {
+      "global_lsd_db": 13.703,
+      "global_mcd_db": 53.37,
+      "chunk_lsd_p95_db": 14.992,
+      "chunk_mcd_p95_db": 56.381,
+      "warp_ratio": 1.0882
+    },
+    "hello-world": {
+      "global_lsd_db": 13.707,
+      "global_mcd_db": 50.593,
+      "chunk_lsd_p95_db": 15.219,
+      "chunk_mcd_p95_db": 53.569,
+      "warp_ratio": 1.0308
+    },
+    "she-sells-sea-shells": {
+      "global_lsd_db": 13.242,
+      "global_mcd_db": 47.136,
+      "chunk_lsd_p95_db": 15.953,
+      "chunk_mcd_p95_db": 63.78,
+      "warp_ratio": 1.0388
+    },
+    "the-quick-brown-fox": {
+      "global_lsd_db": 14.498,
+      "global_mcd_db": 57.704,
+      "chunk_lsd_p95_db": 16.14,
+      "chunk_mcd_p95_db": 58.914,
+      "warp_ratio": 1.1094
+    },
+    "this-is-a-test": {
+      "global_lsd_db": 13.933,
+      "global_mcd_db": 54.81,
+      "chunk_lsd_p95_db": 16.589,
+      "chunk_mcd_p95_db": 62.317,
+      "warp_ratio": 1.1778
+    }
+  },
+  "gate": {
+    "global_lsd_db": 23.0,
+    "chunk_p95_lsd_db": 28.0
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "chunk_ms": 500.0,
+  "n_frames_python": 93,
+  "n_frames_binary": 81,
+  "path_length": 107,
+  "warp_ratio": 1.1505,
+  "global_mcd_db": 55.152,
+  "global_lsd_db": 13.724,
+  "chunk_mcd_mean_db": 54.895,
+  "chunk_mcd_p95_db": 62.405,
+  "chunks": [
+    {
+      "index": 0,
+      "start_ms": 0.0,
+      "end_ms": 499.2,
+      "n_frames": 43,
+      "mcd_db": 47.661,
+      "lsd_db": 11.893,
+      "correlation": 0.5244
+    },
+    {
+      "index": 1,
+      "start_ms": 499.2,
+      "end_ms": 998.5,
+      "n_frames": 43,
+      "mcd_db": 63.378,
+      "lsd_db": 14.228,
+      "correlation": 0.773
+    },
+    {
+      "index": 2,
+      "start_ms": 998.5,
+      "end_ms": 1242.3,
+      "n_frames": 21,
+      "mcd_db": 53.646,
+      "lsd_db": 16.442,
+      "correlation": 0.4533
+    }
+  ]
+}

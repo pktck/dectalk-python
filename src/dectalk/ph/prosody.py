@@ -1,24 +1,35 @@
-"""Sentence-level and stress-level prosody.
+"""Sentence-level and stress-level prosody aligned with FONIX C tables.
 
-Two prosody passes layered on top of each other:
+The shape of the contour is structured to track ``Ph_inton2.c`` rather
+than the simple multiplicative ramp the earlier implementation used.
+Three layers, in order:
 
-1. **Declination contour** — F0 starts ~20% above the voice's baseline,
-   falls through the utterance, and dips further on the final syllable.
-   Rising punctuation (``?``) inverts the trailing slope.
+1. **Declination** — a gentle ~10 % start-of-utterance rise that
+   linearly returns to the voice's baseline by sentence end. This is
+   the slow background fall.
 
-2. **Stress accent** — primary-stressed vowels (``AH1``, ``IY1`` etc. —
-   stress digit ``1``) get a brief F0 boost and a slight duration
-   stretch. Secondary-stressed vowels (``2``) get a smaller boost.
-   Unstressed vowels (``0``) are slightly attenuated. The result is
-   that a word like ``"BANANA"`` with phonemes ``B AH0 N AE1 N AH0``
-   has audible accent on the middle syllable.
+2. **Stress accents with phrase-position decay** — each stressed
+   syllable gets a discrete F0 bump, but the size of the bump shrinks
+   as accents accumulate (primary stress on the 4th accent is much
+   smaller than on the 1st). Mirrors C's
+   ``us_f0_mphrase_position[] = {160, 80, 60, 40, 30, 20, 20, 5}``.
 
-Both passes return per-phoneme multipliers; the sequencer applies them
-on top of each frame's F0 / duration. **Per-segment F0 smoothing is
-done at the audio level** by the sequencer's linear frame interpolation
-across the first half of each segment, so the contour returned here
-intentionally has the full per-phoneme excursion — flattening it ahead
-of time yields the famous "robotic monotone" sound.
+3. **Final-syllable gesture** — for declaratives, the last vowel
+   drops sharply *below* baseline (matches C's
+   ``F0_FINAL_FALL = 550``). For yes/no questions, the last syllable
+   rises sharply (matches C's `F0_QGesture1/2`). The earlier
+   "linear-rising contour for the entire question" approach has been
+   replaced with this localised gesture so the question contour
+   keeps its English-like shape rather than feeling like a monotone
+   sweep.
+
+The earlier per-segment audio-level smoothing (the sequencer's linear
+frame interpolation across the first half of each segment) still
+applies, so per-phoneme jumps still translate into smooth audio
+transitions rather than discrete steps.
+
+See ``docs/c_audit/prosody.md`` for the full C-vs-Python audit that
+informed this layout.
 """
 
 from __future__ import annotations
@@ -26,54 +37,162 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Final
 
-# Maximum start-of-utterance pitch boost as a multiplicative factor.
-# Calibrated to roughly match the binary's measured F0 std (~50 Hz over
-# the utterance) rather than a flat-line monotone.
-_DECLINATION_START: Final[float] = 1.20
+# ---------------------------------------------------------------------------
+# Declination
+# ---------------------------------------------------------------------------
 
-# End-of-utterance dip (statement) as a multiplicative factor. Combined
-# with the start gives roughly a 1.5:1 high-to-low ratio across the
-# utterance, in the same ballpark as natural English declination.
-_DECLINATION_END_STATEMENT: Final[float] = 0.78
+# Baseline declination is gentler than before (10 % rise → baseline)
+# so the larger pitch gestures come from stress accents and the
+# final-syllable drop, not from a global ramp. The C source uses an
+# impulse-driven model with no global ramp at all; this is the
+# closest linear approximation that doesn't fight the per-accent
+# motion.
+_DECLINATION_START: Final[float] = 1.10
+_DECLINATION_END: Final[float] = 0.92
 
-# End-of-utterance rise (question).
-_DECLINATION_END_QUESTION: Final[float] = 1.30
+# Final-syllable drop for declarative sentences. Applied multiplicatively
+# on top of the declination, on the *last vowel* of the utterance
+# (not just the last phoneme — coda consonants don't carry F0).
+# 0.78 takes a 0.92-baseline last-vowel down to 0.72 of base F0,
+# which on a 100 Hz voice is a 28 Hz drop — in line with C's
+# F0_FINAL_FALL = 550 (Hz x 10) ≈ 55 Hz, halved because some of the
+# fall is already absorbed by the declination.
+_FINAL_FALL_FRACTION: Final[float] = 0.78
 
-# Per-phoneme dip applied to the very last segment to give a clear cadence.
-_FINAL_DIP_FRACTION: Final[float] = 0.90
+# Final-syllable rise for yes/no questions. Replaces the old
+# whole-utterance rising contour; localising it keeps the rest of
+# the sentence sounding declarative the way English questions
+# actually do.
+_FINAL_RISE_FRACTION: Final[float] = 1.32
 
-# Stress-accent multipliers applied on top of the declination contour.
-# These look large but the sequencer's linear frame interpolation
-# (transition_frac = 0.5 of each segment) smooths the audio-level
-# transitions, so adjacent-phoneme target jumps of ±15% don't sound
-# choppy — they sound like normal stress-accent prominence.
-_STRESS_F0: Final[dict[str, float]] = {
-    "1": 1.18,  # primary stress: F0 +18%
-    "2": 1.06,  # secondary stress
-    "0": 0.92,  # unstressed: F0 -8%
+# ---------------------------------------------------------------------------
+# Stress accents
+# ---------------------------------------------------------------------------
+
+# Per-stress F0 deltas (added to 1.0 for the multiplier). These are
+# the *first-accent* deltas; later accents are scaled down via
+# `_PHRASE_POSITION_DECAY`. Mirrors the relative magnitudes of C's
+# `us_f0_mstress_level[] = {1, 81, 61, 161}` (Hz x 10).
+_STRESS_F0_DELTA: Final[dict[str, float]] = {
+    "1": 0.35,  # primary  → +35 % at first accent
+    "2": 0.18,  # secondary → +18 %
+    "0": -0.08,  # unstressed -> -8 %
 }
 
+# Phrase-position decay for stress F0. Index 0 is the first stress
+# accent, index 1 is the second, etc.; once we run out of entries
+# we use the last value. Tracks C's
+# `us_f0_mphrase_position[] = {160, 80, 60, 40, 30, 20, 20, 5}`
+# (normalised so position 0 → 1.0; each subsequent position is the
+# original ratio).
+_PHRASE_POSITION_DECAY: Final[tuple[float, ...]] = (
+    1.00,  # 1st accent
+    0.50,  # 2nd: 80 / 160
+    0.38,  # 3rd: 60 / 160
+    0.25,  # 4th: 40 / 160
+    0.19,  # 5th: 30 / 160
+    0.13,  # 6th: 20 / 160
+    0.13,  # 7th: 20 / 160
+    0.03,  # 8th+: 5 / 160
+)
+
+# ---------------------------------------------------------------------------
+# Durations
+# ---------------------------------------------------------------------------
+
+# Per-stress duration multipliers. These stay a coarse approximation
+# of C's per-phoneme-class rules; the granular phoneme-class scheme
+# (sonorant vs obstruent, monosyllable shortening) is a Phase-5
+# follow-up and isn't needed to close the audible-prosody gap.
 _STRESS_DURATION: Final[dict[str, float]] = {
-    "1": 1.20,  # primary stress: 20% longer
+    "1": 1.20,  # primary stress: 20 % longer
     "2": 1.05,
-    "0": 0.85,  # unstressed: 15% shorter
+    "0": 0.85,  # unstressed: 15 % shorter
 }
+
+# Phrase-final lengthening for declarative sentences (Rule 2 in
+# `p_us_tim.c`): the last vowel of a declarative gets ~30 % extra
+# duration on top of any stress multiplier, giving the cadence-style
+# "settle" at sentence end. Skipped for questions (which want the
+# rising vowel to stay tight rather than drawl).
+_PHRASE_FINAL_LENGTHENING: Final[float] = 1.30
+
+
+# ---------------------------------------------------------------------------
+# Phoneme classification helpers
+# ---------------------------------------------------------------------------
+
+# Vowel ARPABET roots. Match without trailing stress digits.
+_VOWEL_ROOTS: Final[frozenset[str]] = frozenset(
+    {
+        "AA",
+        "AE",
+        "AH",
+        "AO",
+        "AW",
+        "AY",
+        "EH",
+        "ER",
+        "EY",
+        "IH",
+        "IY",
+        "OW",
+        "OY",
+        "UH",
+        "UW",
+    }
+)
+
+
+def _root(code: str) -> str:
+    """Return ``code`` without any trailing stress digit."""
+    if code and code[-1].isdigit():
+        return code[:-1]
+    return code
+
+
+def _is_vowel(code: str) -> bool:
+    """Whether ``code`` is a vowel (any stress level)."""
+    return _root(code) in _VOWEL_ROOTS
+
+
+def _stress_digit(code: str) -> str:
+    """Return the trailing stress digit of an ARPABET code, or ``""``."""
+    if code and code[-1].isdigit():
+        return code[-1]
+    return ""
+
+
+def _last_vowel_index(phonemes: Sequence[str]) -> int:
+    """Return the index of the last vowel phoneme, or ``-1`` if none."""
+    for i in range(len(phonemes) - 1, -1, -1):
+        if _is_vowel(phonemes[i]):
+            return i
+    return -1
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
 
 
 def f0_contour(phonemes: Sequence[str], *, question: bool = False) -> list[float]:
-    """Compute a per-phoneme F0 multiplier contour for the given segment.
+    """Compute a per-phoneme F0 multiplier contour.
 
-    Combines the sentence-level declination contour with a per-phoneme
-    stress accent derived from the trailing ``0/1/2`` digit on each
-    ARPABET symbol. The sequencer applies linear frame interpolation
-    over the first half of each phoneme segment, so adjacent-phoneme
-    target jumps (e.g. unstressed→stressed) become smooth audio-level
-    transitions rather than discrete steps.
+    The contour is the product of three components:
+
+    1. A linear declination from ``_DECLINATION_START`` to
+       ``_DECLINATION_END`` over the utterance.
+    2. A per-stress F0 bump that decays with phrase-position
+       (1st accent gets the full delta; later accents get smaller
+       deltas per ``_PHRASE_POSITION_DECAY``).
+    3. A final-syllable gesture: a sharp drop for declaratives or a
+       sharp rise for questions, applied to the last vowel only.
 
     Args:
         phonemes: Flat ARPABET phoneme stream (may include ``"SIL"``).
-        question: If True, the trailing slope rises (yes/no question
-            intonation); otherwise it falls (statement declination).
+        question: If True, the final-syllable gesture is a rise; if
+            False, a fall.
 
     Returns:
         List of multiplicative factors, one per phoneme, suitable for
@@ -83,38 +202,62 @@ def f0_contour(phonemes: Sequence[str], *, question: bool = False) -> list[float
     if n == 0:
         return []
 
-    end_factor = _DECLINATION_END_QUESTION if question else _DECLINATION_END_STATEMENT
+    # 1. Declination across the utterance.
     contour: list[float] = []
+    accent_count = 0
     for i, code in enumerate(phonemes):
         if code == "SIL":
             contour.append(1.0)
             continue
-        # Declination component.
         alpha = i / max(1, n - 1)
-        decl = _DECLINATION_START * (1 - alpha) + end_factor * alpha
-        # Stress accent component (multiplies the declination value).
-        stress_digit = code[-1] if code and code[-1].isdigit() else ""
-        stress = _STRESS_F0.get(stress_digit, 1.0)
-        contour.append(decl * stress)
+        decl = _DECLINATION_START * (1.0 - alpha) + _DECLINATION_END * alpha
+        # 2. Stress-accent bump with phrase-position decay. Only
+        # primary- or secondary-stressed vowels register as accents
+        # for the decay counter; unstressed vowels still get their
+        # (smaller) delta but don't shrink subsequent accents.
+        if _is_vowel(code):
+            digit = _stress_digit(code)
+            base_delta = _STRESS_F0_DELTA.get(digit, 0.0)
+            if digit in {"1", "2"}:
+                decay = _PHRASE_POSITION_DECAY[min(accent_count, len(_PHRASE_POSITION_DECAY) - 1)]
+                decl *= 1.0 + base_delta * decay
+                accent_count += 1
+            else:
+                # Unstressed: apply the full (negative) delta. There
+                # is nothing to decay since unstressed syllables don't
+                # produce a rise that the next accent would shrink.
+                decl *= 1.0 + base_delta
+        contour.append(decl)
 
-    if not question:
-        for i in range(n - 1, -1, -1):
+    # 3. Final-syllable gesture: applied to the last vowel and the
+    # phonemes that follow it (typically a coda consonant or two),
+    # so the gesture extends across the whole final syllable rather
+    # than just the vowel target.
+    last_v = _last_vowel_index(phonemes)
+    if last_v >= 0:
+        gesture = _FINAL_RISE_FRACTION if question else _FINAL_FALL_FRACTION
+        for i in range(last_v, n):
             if phonemes[i] != "SIL":
-                contour[i] *= _FINAL_DIP_FRACTION
-                break
+                contour[i] *= gesture
 
     return contour
 
 
-def duration_factors(phonemes: Sequence[str]) -> list[float]:
-    """Compute per-phoneme duration multipliers from stress digits.
+def duration_factors(phonemes: Sequence[str], *, statement_final: bool = False) -> list[float]:
+    """Compute per-phoneme duration multipliers.
 
-    Stressed vowels stretch by 20% (primary) or 5% (secondary);
-    unstressed vowels compress by 15%. Consonants and pauses pass
-    through unchanged.
+    Stress-level multipliers (``_STRESS_DURATION``) apply to any
+    phoneme carrying a stress digit. For declarative sentences,
+    ``statement_final=True`` adds an extra phrase-final-lengthening
+    factor to the last vowel.
 
     Args:
         phonemes: Flat ARPABET phoneme stream.
+        statement_final: When True, the last vowel of the utterance
+            gets ``_PHRASE_FINAL_LENGTHENING`` extra duration on top
+            of any stress multiplier. Use this only when the
+            sentence terminator is ``.`` or ``!``; questions keep
+            the final vowel tight to support the rising gesture.
 
     Returns:
         List of duration multipliers, one per phoneme.
@@ -124,11 +267,17 @@ def duration_factors(phonemes: Sequence[str]) -> list[float]:
         if code == "SIL" or not code:
             out.append(1.0)
             continue
-        last = code[-1]
-        if last.isdigit():
-            out.append(_STRESS_DURATION.get(last, 1.0))
+        digit = _stress_digit(code)
+        if digit:
+            out.append(_STRESS_DURATION.get(digit, 1.0))
         else:
             out.append(1.0)
+
+    if statement_final:
+        last_v = _last_vowel_index(phonemes)
+        if last_v >= 0:
+            out[last_v] *= _PHRASE_FINAL_LENGTHENING
+
     return out
 
 

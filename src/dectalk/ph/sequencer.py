@@ -110,7 +110,12 @@ def _phoneme_target_frames(code: str) -> tuple[LLFrame, ...]:
     return get_frames(code)
 
 
-def _segment_durations(codes: Sequence[str], rate_factor: float) -> list[int]:
+def _segment_durations(
+    codes: Sequence[str],
+    rate_factor: float,
+    *,
+    statement_final: bool = False,
+) -> list[int]:
     """Compute per-phoneme sample durations.
 
     Multiplies each phoneme's nominal duration by the speaking-rate
@@ -120,11 +125,14 @@ def _segment_durations(codes: Sequence[str], rate_factor: float) -> list[int]:
     Args:
         codes: Sequence of ARPABET phoneme codes.
         rate_factor: Speaking-rate multiplier (1.0 = nominal).
+        statement_final: When True the last vowel gets the
+            phrase-final-lengthening bonus from
+            :func:`duration_factors`.
 
     Returns:
         List of integer sample counts, one per phoneme.
     """
-    stress_factors = duration_factors(codes)
+    stress_factors = duration_factors(codes, statement_final=statement_final)
     return [
         max(
             1,
@@ -173,7 +181,7 @@ def synthesize_phonemes(
     if not code_list:
         return np.zeros(0, dtype=np.int16)
 
-    durations = _segment_durations(code_list, rate)
+    durations = _segment_durations(code_list, rate, statement_final=not question)
     synth = LLSynth(spkr=spkr)
     chunks: list[NDArray[np.int16]] = []
 

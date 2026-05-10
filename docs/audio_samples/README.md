@@ -21,12 +21,35 @@ Prompts (deliberately small and varied):
 | `computer` | computer |
 | `she-sells-sea-shells` | she sells sea shells |
 | `good-morning` | good morning |
-| `good-morning-how-are-you-today-have-a-great-day` | good morning. how are you today? have a great day! |
+| `good-morning-my-friend-how-are-you-today-have-a-great-day` | good morning, my friend. how are you today? have a great day! |
 
 The last one is the multi-sentence prompt — it exercises sentence-level
-prosody on all three terminators (`.`, `?`, `!`) so a reviewer can hear
-that each sentence resets its declination contour rather than ramping
-down monotonically across the full span.
+prosody on all three terminators (`.`, `?`, `!`) plus a comma inside
+the first sentence, so a reviewer can hear that each sentence resets
+its declination contour and that clause-internal commas don't break
+the prosody.
+
+## Prosody comparison
+
+`scripts/diagnose_audio.py --binary-dir <dir>` runs a quantitative
+acoustic comparison alongside the listening test. Each prompt gets a
+DTW-aligned spectrogram comparison and the report at `report.md`
+records:
+
+- **LSD** (log-spectral distance) in dB — primary gate. Measures
+  direct log-mel divergence; "spectrograms look similar" maps onto
+  small LSD.
+- **MCD** (mel-cepstral distortion) — informational. Reported but
+  not gated, because pipeline-vs-pipeline comparisons land in a
+  different MCD band than the speaker-vs-speaker comparisons MCD was
+  calibrated for in academic TTS work.
+- **DTW warp ratio** — how much the alignment had to repeat frames.
+  Values near 1.0 mean similar pacing.
+
+Per-prompt JSON detail is written under
+`docs/audio_samples/comparisons/`;
+`comparisons/baseline.json` captures the pre-Phase-4 numbers so
+subsequent improvements have a delta to point at.
 
 ## Listening
 

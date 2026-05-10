@@ -1,0 +1,112 @@
+{
+  "chunk_ms": 500.0,
+  "n_frames_python": 386,
+  "n_frames_binary": 376,
+  "path_length": 466,
+  "warp_ratio": 1.2073,
+  "global_mcd_db": 47.964,
+  "global_lsd_db": 12.561,
+  "chunk_mcd_mean_db": 47.975,
+  "chunk_mcd_p95_db": 60.646,
+  "chunks": [
+    {
+      "index": 0,
+      "start_ms": 0.0,
+      "end_ms": 499.2,
+      "n_frames": 43,
+      "mcd_db": 50.136,
+      "lsd_db": 15.256,
+      "correlation": 0.7011
+    },
+    {
+      "index": 1,
+      "start_ms": 499.2,
+      "end_ms": 998.5,
+      "n_frames": 43,
+      "mcd_db": 53.363,
+      "lsd_db": 14.1,
+      "correlation": 0.8177
+    },
+    {
+      "index": 2,
+      "start_ms": 998.5,
+      "end_ms": 1497.7,
+      "n_frames": 43,
+      "mcd_db": 46.183,
+      "lsd_db": 12.549,
+      "correlation": 0.7584
+    },
+    {
+      "index": 3,
+      "start_ms": 1497.7,
+      "end_ms": 1996.9,
+      "n_frames": 43,
+      "mcd_db": 37.341,
+      "lsd_db": 10.386,
+      "correlation": 0.9885
+    },
+    {
+      "index": 4,
+      "start_ms": 1996.9,
+      "end_ms": 2496.1,
+      "n_frames": 43,
+      "mcd_db": 40.169,
+      "lsd_db": 9.148,
+      "correlation": 0.9911
+    },
+    {
+      "index": 5,
+      "start_ms": 2496.1,
+      "end_ms": 2995.4,
+      "n_frames": 43,
+      "mcd_db": 55.458,
+      "lsd_db": 13.459,
+      "correlation": 0.6851
+    },
+    {
+      "index": 6,
+      "start_ms": 2995.4,
+      "end_ms": 3494.6,
+      "n_frames": 43,
+      "mcd_db": 62.058,
+      "lsd_db": 17.255,
+      "correlation": 0.6183
+    },
+    {
+      "index": 7,
+      "start_ms": 3494.6,
+      "end_ms": 3993.8,
+      "n_frames": 43,
+      "mcd_db": 24.236,
+      "lsd_db": 5.897,
+      "correlation": 0.9891
+    },
+    {
+      "index": 8,
+      "start_ms": 3993.8,
+      "end_ms": 4493.1,
+      "n_frames": 43,
+      "mcd_db": 50.873,
+      "lsd_db": 13.223,
+      "correlation": 0.6112
+    },
+    {
+      "index": 9,
+      "start_ms": 4493.1,
+      "end_ms": 4992.3,
+      "n_frames": 43,
+      "mcd_db": 59.234,
+      "lsd_db": 13.449,
+      "correlation": 0.8172
+    },
+    {
+      "index": 10,
+      "start_ms": 4992.3,
+      "end_ms": 5410.2,
+      "n_frames": 36,
+      "mcd_db": 48.669,
+      "lsd_db": 13.625,
+      "correlation": 0.8535
+    }
+  ]
+}
