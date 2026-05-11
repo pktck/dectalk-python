@@ -1,0 +1,55 @@
+--- a/src/dapi/src/api/ttsapi.c
++++ b/src/dapi/src/api/ttsapi.c
+@@ -11715,12 +11715,30 @@
+ }
+ 
+ //tek 19aug98 implement the convert-to-phonemes fct
++// Function moved out of the surrounding #ifdef WIN32 block to expose
++// the symbol on Linux/macOS. The implementation lives below the
++// #endif /* WIN32 */ marker; see tests/parity/c_harness/
++// expose_convert_to_phonemes.patch in the dectalk-python repo for
++// the canonical patch and rationale.
++
++// MGS Moved endif so PumpModeMessage doesn't break UNIX
++#endif /* WIN32 */
++
++//tek 19aug98 implement the convert-to-phonemes fct
++// Build-fix (dectalk-python port): exposed on Linux/macOS by moving
++// the implementation out of the preceding #ifdef WIN32 block and
++// replacing the Windows-only IsBadReadPtr/IsBadWritePtr param checks
++// with plain NULL checks. Otherwise identical to the original WIN32
++// version. The underlying phoneme-logging path in lts/ls_util.c
++// (#ifndef ARM7) is already compiled on Linux, so once the symbol is
++// exported the multi-lang dispatcher's dlsym call in dtalkml/dtalk_ml.c
++// resolves to a real function pointer.
+ MMRESULT TextToSpeechConvertToPhonemes(LPTTS_HANDLE_T phTTS,
+ 									   unsigned char *szPhonemeBuf,
+ 									   DWORD *dwBufSize,
+ 									   DWORD dwOutPhonemeFlags,
+ #ifdef UNDER_CE
+-									   wchar_t *szText,	
++									   wchar_t *szText,
+ #else
+ 									   unsigned char *szText,
+ #endif /* UNDER_CE */
+@@ -11729,9 +11747,7 @@
+ {
+ 	if (phTTS == NULL)
+ 		return MMSYSERR_INVALHANDLE;
+-	if (   IsBadReadPtr(szText,1)
+-		|| IsBadReadPtr(dwBufSize,1)
+-		|| IsBadWritePtr(szPhonemeBuf,*dwBufSize) )
++	if (szText == NULL || dwBufSize == NULL || szPhonemeBuf == NULL)
+ 	{
+ 		return MMSYSERR_INVALPARAM;
+ 	}
+@@ -11761,9 +11777,6 @@
+ 	return MMSYSERR_NOERROR;
+ }
+ 
+-// MGS Moved endif so PumpModeMessage doesn't break UNIX
+-#endif /* WIN32 */
+-
+ 
+ // tek 28oct98
+ // this function is used to enable/disable tuning data trapping, and to retrieve

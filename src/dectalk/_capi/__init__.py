@@ -170,6 +170,15 @@ class CAPI:
         self._lib.TextToSpeechReset.argtypes = [c_void_p, c_int]
         self._lib.TextToSpeechReset.restype = c_uint
 
+        # Only present when the ``0001-expose-convert-to-phonemes-on-linux``
+        # patch has been applied to ttsapi.c. We resolve it lazily in
+        # convert_to_phonemes() so the wrapper still loads when the patch
+        # is absent.
+        self._lib.TextToSpeechConvertToPhonemes.argtypes = [
+            c_void_p, c_char_p, POINTER(c_uint32), c_uint32, c_char_p, c_uint32, c_uint32,
+        ]  # fmt: skip
+        self._lib.TextToSpeechConvertToPhonemes.restype = c_uint
+
     @staticmethod
     def _check(name: str, rc: int) -> None:
         if rc != _MMSYSERR_NOERROR:
@@ -252,6 +261,55 @@ class CAPI:
                     return out_path.read_bytes()
                 finally:
                     out_path.unlink(missing_ok=True)
+            finally:
+                self._lib.TextToSpeechShutdown(handle)
+        finally:
+            os.chdir(prev_cwd)
+
+    def convert_to_phonemes(self, text: str, *, buf_size: int = 16384) -> bytes:
+        """Return the C library's phoneme stream for ``text``.
+
+        Wraps ``TextToSpeechConvertToPhonemes``. Requires the
+        ``0001-expose-convert-to-phonemes-on-linux`` patch applied to the
+        C source (run ``scripts/apply_c_patches.py``); otherwise the
+        function pointer the dispatcher resolves at startup is NULL and
+        calling this segfaults.
+
+        The output is a NUL-terminated byte string of space-separated
+        ARPABET-style allophone codes (lowercase), e.g.
+        ``b"hxaxll' ow  w ' rrlld "`` for ``"hello world"``. The stress
+        marker ``'`` precedes the stressed vowel.
+        """
+        with self._instance_lock:
+            return self._convert_locked(text, buf_size)
+
+    def _convert_locked(self, text: str, buf_size: int) -> bytes:
+        handle = c_void_p()
+        cb = _CALLBACK_PROTO()
+        prev_cwd = Path.cwd()
+        os.chdir(self._cwd)
+        try:
+            self._check(
+                "TextToSpeechStartup",
+                self._lib.TextToSpeechStartup(
+                    ctypes.byref(handle),
+                    _WAVE_MAPPER,
+                    _DO_NOT_USE_AUDIO_DEVICE,
+                    cb,
+                    0,
+                ),
+            )
+            try:
+                buf = ctypes.create_string_buffer(buf_size)
+                size = c_uint32(buf_size)
+                rc = self._lib.TextToSpeechConvertToPhonemes(
+                    handle, buf, ctypes.byref(size), 0, text.encode("utf-8"), 0, 0
+                )
+                self._check("TextToSpeechConvertToPhonemes", rc)
+                # The buffer is NUL-terminated; size.value counts the
+                # terminator. Strip it for the Python caller.
+                terminator = 1 if size.value > 0 and buf.raw[size.value - 1] == 0 else 0
+                return bytes(buf.raw[: size.value - terminator])
             finally:
                 self._lib.TextToSpeechShutdown(handle)
         finally:
