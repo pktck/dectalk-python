@@ -76,3 +76,42 @@ jobs:
           else
             echo "No shell scripts to check."
           fi
+
+  c-oracle-tests:
+    # Builds the DECtalk C source on the runner and runs the full test suite
+    # against it. This is the only job where the parity tests (test_capi_parity,
+    # test_binary_wav_parity, test_convert_to_phonemes_parity, and the header
+    # parity tests under tests/unit/) actually execute — elsewhere they skip
+    # cleanly when DECTALK_SRC is absent.
+    name: Tests with C library (Ubuntu, Py 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install Python dependencies
+        run: uv sync --all-groups
+
+      - name: Install C build dependencies
+        # Same set as the upstream dectalk/dectalk Dockerfile.
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential libasound2-dev libpulse-dev autoconf automake \
+            pkg-config
+
+      - name: Build the C oracle (clone + patch + make + assemble)
+        run: scripts/setup_c_oracle.sh
+
+      - name: Run full pytest suite with C library
+        env:
+          DECTALK_SRC: /tmp/dectalk-src
+          DECTALK_BIN: /tmp/dectalk-binary-stable
+        run: uv run pytest -v
