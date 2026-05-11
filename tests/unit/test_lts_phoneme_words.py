@@ -17,7 +17,29 @@ from pathlib import Path
 
 import pytest
 
-from dectalk.include.phoneme_codes import S1, S2, USPhoneme
+from dectalk.include.phoneme_codes import (
+    BLOCK_RULES,
+    COMMA,
+    EXCLAIM,
+    HAT_FALL,
+    HAT_RF,
+    HAT_RISE,
+    HYPHEN,
+    MBOUND,
+    NEW_PARAGRAPH,
+    PERIOD,
+    PPSTART,
+    QUEST,
+    RELSTART,
+    S1,
+    S2,
+    SBOUND,
+    SEMPH,
+    SPECIALWORD,
+    VPSTART,
+    WBOUND,
+    USPhoneme,
+)
 from dectalk.lts import phoneme_words as pw
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / ("src/dapi/src/lts/l_us_con.c")
@@ -35,8 +57,26 @@ _NAMES: dict[str, int] = {
     "US_OR": int(USPhoneme.OR_),
     "S1": S1,
     "S2": S2,
+    "SEMPH": SEMPH,
     "SIL": 0,
     "EOS": 0,
+    "BLOCK_RULES": BLOCK_RULES,
+    "HAT_RISE": HAT_RISE,
+    "HAT_FALL": HAT_FALL,
+    "HAT_RF": HAT_RF,
+    "SBOUND": SBOUND,
+    "MBOUND": MBOUND,
+    "HYPHEN": HYPHEN,
+    "WBOUND": WBOUND,
+    "PPSTART": PPSTART,
+    "VPSTART": VPSTART,
+    "RELSTART": RELSTART,
+    "COMMA": COMMA,
+    "PERIOD": PERIOD,
+    "QUEST": QUEST,
+    "EXCLAIM": EXCLAIM,
+    "NEW_PARAGRAPH": NEW_PARAGRAPH,
+    "SPECIALWORD": SPECIALWORD,
 }
 
 
@@ -80,10 +120,26 @@ def _parse_string_array(name: str) -> bytes | None:
 _BYTE_ARRAY_NAMES: tuple[str, ...] = (
     "pdegree", "pminus", "pplus", "pstreet", "psaint", "pdoctor",
     "pdrive", "pOH",
+    # Digits and ordinals.
     "p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8", "p9",
     "p0th", "p1st", "p2nd", "p3rd", "p4th", "p5th", "p6th",
     "p7th", "p8th", "p9th",
+    "up0", "up1", "up2", "up3", "up4", "up5", "up6", "up7", "up8", "up9",
+    # Halves, articles, prepositions.
     "phalf", "phalves", "pthe", "pof",
+    # Teens.
+    "p10", "p11", "p12", "p13", "p14", "p15", "p16", "p17", "p18", "p19",
+    # Tens.
+    "p20", "p30", "p40", "p50", "p60", "p70", "p80", "p90",
+    # Magnitudes.
+    "phundred", "pthousand", "pmillion", "pbillion",
+    "ptrillion", "pquadrillion",
+    # Spoken month names.
+    "pjan", "pfeb", "pmar", "papr", "pmay", "pjun",
+    "pjul", "paug", "psep", "poct", "pnov", "pdec",
+    # Currency and misc words.
+    "pdollar", "pcent", "peuro", "ppound", "ppence",
+    "ppercent", "ppoint", "pand", "pnone", "ptt2tp",
 )  # fmt: skip
 
 
@@ -131,6 +187,42 @@ def test_pnumber_aligns_with_digit_index() -> None:
     digits = (pw.p0, pw.p1, pw.p2, pw.p3, pw.p4, pw.p5, pw.p6, pw.p7, pw.p8, pw.p9)
     for i, want in enumerate(digits):
         assert pw.pnumber[i] == want
+
+
+def test_upunits_aligns_with_digit_index() -> None:
+    """``upunits[i]`` is the unstressed pronunciation for digit ``i``."""
+    digits = (pw.up0, pw.up1, pw.up2, pw.up3, pw.up4,
+              pw.up5, pw.up6, pw.up7, pw.up8, pw.up9)  # fmt: skip
+    for i, want in enumerate(digits):
+        assert pw.upunits[i] == want
+
+
+def test_pteens_aligns_with_teen_index() -> None:
+    """``pteens[i]`` is the spoken word for the number ``10 + i``."""
+    teens = (pw.p10, pw.p11, pw.p12, pw.p13, pw.p14,
+             pw.p15, pw.p16, pw.p17, pw.p18, pw.p19)  # fmt: skip
+    for i, want in enumerate(teens):
+        assert pw.pteens[i] == want
+
+
+def test_ptens_aligns_with_tens_index() -> None:
+    """``ptens[i]`` is the spoken word for ``(i + 2) * 10`` (twenty..ninety)."""
+    tens = (pw.p20, pw.p30, pw.p40, pw.p50, pw.p60, pw.p70, pw.p80, pw.p90)
+    for i, want in enumerate(tens):
+        assert pw.ptens[i] == want
+
+
+def test_pmonths_aligns_with_month_index() -> None:
+    """``pmonths[i]`` is the spoken word for month ``i + 1`` (Jan=0..Dec=11)."""
+    spoken = (pw.pjan, pw.pfeb, pw.pmar, pw.papr, pw.pmay, pw.pjun,
+              pw.pjul, pw.paug, pw.psep, pw.poct, pw.pnov, pw.pdec)  # fmt: skip
+    for i, want in enumerate(spoken):
+        assert pw.pmonths[i] == want
+
+
+def test_punits_is_alias_of_pnumber() -> None:
+    """``punits`` and ``pnumber`` are two C names for the same array."""
+    assert pw.punits is pw.pnumber
 
 
 def test_all_end_with_sil() -> None:
