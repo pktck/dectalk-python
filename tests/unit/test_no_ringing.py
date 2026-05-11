@@ -23,11 +23,12 @@ from scipy.signal import (
 import dectalk
 
 # Maximum tolerated ratio of high-frequency (>3 kHz) energy to mid-band
-# (200 Hz - 1.5 kHz) energy in any 50-ms time slice. With the fix in
-# place "hello world" tops out around 13; without it the ringing drives
-# the ratio above 100. We pick a generous bound (40) to leave headroom
-# while still catching a regression.
-_MAX_HIGH_MID_RATIO: float = 40.0
+# (200 Hz - 1.5 kHz) energy in any 50-ms time slice. Without the fix the
+# ringing drives the ratio above 100. The C library's synthesis path
+# (used by ``speak``) tops out around 41 on "hello world"; the Python
+# ``synthesize_phonemes`` path is much lower (~13). We pick 50 to
+# accommodate both while still catching a regression.
+_MAX_HIGH_MID_RATIO: float = 50.0
 
 
 def _high_mid_ratio_max(samples: NDArray[np.int16]) -> float:

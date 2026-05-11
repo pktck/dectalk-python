@@ -31,15 +31,16 @@ def test_speak_returns_int16_pcm() -> None:
     assert int(np.max(np.abs(samples))) > 0
 
 
-def test_speak_unknown_word_raises_when_lts_disabled() -> None:
+def test_text_to_phonemes_unknown_word_raises_when_lts_disabled() -> None:
+    """``text_to_phonemes`` (approximate path) still honours ``lts_fallback``."""
     with pytest.raises(UnknownWordError, match="not in the us lexicon"):
-        speak("xyzzynotaword", lts_fallback=False)
+        text_to_phonemes("xyzzynotaword", lts_fallback=False)
 
 
-def test_unknown_word_uses_lts_fallback_by_default() -> None:
-    """Out-of-lexicon words should be pronounced via the rule-based LTS."""
+def test_speak_pronounces_unknown_word_via_c_lts() -> None:
+    """``speak`` routes through _capi; the C library always pronounces."""
     samples = speak("xyzzy")
-    assert samples.size > 0  # rule-based pronunciation produced audio
+    assert samples.size > 0
 
 
 def test_to_wav_writes_valid_file(tmp_path: Path) -> None:
