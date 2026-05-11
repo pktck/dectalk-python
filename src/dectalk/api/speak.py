@@ -1,15 +1,22 @@
 """High-level text → audio entry points.
 
-Audio path (``speak`` / ``to_wav``) routes through :mod:`dectalk._capi`
-so output is byte-identical to the DECtalk binary. The phoneme-list
-path (``text_to_phonemes``) and the direct-phoneme path
-(``synthesize_phonemes``) still use the approximate Python front end;
-they will be replaced as their corresponding C modules are translated
-in Phases C-E of the C-to-Python port plan.
+The audio path (``speak`` / ``to_wav``) routes through :mod:`dectalk._capi`
+when the locally-built DECtalk C library is available — output is then
+byte-identical to the DECtalk binary. When ``_capi`` cannot be loaded
+(no C library on the host, e.g. CI runners, end-user installs without
+the source tree, ``lang`` other than ``"us"``), the audio path falls
+back to the approximate Python pipeline (``kernel``/``cmd``/``lts``/
+``dic``/``ph``).
+
+The phoneme-list path (``text_to_phonemes``) and the direct-phoneme
+path (``synthesize_phonemes``) always use the approximate Python front
+end; they will be replaced as their corresponding C modules are
+translated in Phases C-E of the C-to-Python port plan.
 
 Words missing from the bundled lexicon are reported via
 :exc:`UnknownWordError` from the phoneme path. The audio path never
-raises that — the C library has its own letter-to-sound rules.
+raises that — both the C library and the approximate Python LTS have
+their own letter-to-sound rules.
 """
 
 from __future__ import annotations
@@ -43,18 +50,27 @@ _MONO_CHANNELS: int = 1
 
 # Lazily-constructed CAPI singleton; created on first audio call so
 # imports of this module don't require the C library to be present.
+# ``_capi_unavailable`` is set to True after a failed attempt so we
+# don't keep retrying (and re-emitting the same import error).
 _capi_instance: CAPI | None = None
+_capi_unavailable: bool = False
 
 
 class UnknownWordError(KeyError):
     """Raised when a word is not in the bundled lexicon (phoneme path only)."""
 
 
-def _get_capi() -> CAPI:
-    """Return a process-wide ``CAPI`` instance, creating it on first use."""
-    global _capi_instance  # noqa: PLW0603
+def _try_get_capi() -> CAPI | None:
+    """Return the CAPI singleton, or None if the C library can't be loaded."""
+    global _capi_instance, _capi_unavailable  # noqa: PLW0603
+    if _capi_unavailable:
+        return None
     if _capi_instance is None:
-        _capi_instance = CAPI()
+        try:
+            _capi_instance = CAPI()
+        except (CAPIError, OSError):
+            _capi_unavailable = True
+            return None
     return _capi_instance
 
 
@@ -86,6 +102,96 @@ def _wav_bytes_to_int16(wav_bytes: bytes) -> NDArray[np.int16]:
     return np.frombuffer(raw, dtype=np.int16)
 
 
+def _resolve_voice(voice: str | VoicePreset | None) -> VoicePreset | None:
+    """Coerce a voice argument (None | name | preset) to a preset or None."""
+    if voice is None:
+        return None
+    if isinstance(voice, VoicePreset):
+        return voice
+    return get_preset(voice)
+
+
+def _speak_via_capi(
+    text: str,
+    rate: float,
+    voice: str | VoicePreset | None,
+) -> bytes | None:
+    """Render ``text`` through the C library, or return None if unavailable.
+
+    Used by both :func:`speak` (decodes the WAV bytes) and :func:`to_wav`
+    (writes them directly).
+    """
+    capi = _try_get_capi()
+    if capi is None:
+        return None
+    speaker_id = _voice_to_speaker_id(voice)
+    wpm = _rate_multiplier_to_wpm(rate) if rate != 1.0 else None
+    try:
+        return capi.speak(text, speaker=speaker_id or 0, rate=wpm)
+    except CAPIError:
+        return None
+
+
+def _speak_via_python(
+    text: str,
+    rate: float,
+    voice: str | VoicePreset | None,
+    lang: str,
+    lts_fallback: bool,
+) -> NDArray[np.int16]:
+    """Approximate-Python audio pipeline (pre-Phase-B implementation).
+
+    Used as the fallback when the C library isn't available, and for
+    languages other than US English. Output is intelligible but not
+    byte-identical to the DECtalk binary.
+    """
+    initial_voice = voice if isinstance(voice, str) else None
+    initial_state = SpeechState(voice=initial_voice, rate=rate)
+    segments = parse(text, initial_state=initial_state)
+    if not segments:
+        return np.zeros(0, dtype=np.int16)
+
+    chunks: list[NDArray[np.int16]] = []
+    for seg in segments:
+        preset = _resolve_voice(seg.state.voice)
+        if preset is None and isinstance(voice, VoicePreset):
+            preset = voice
+
+        if seg.state.phoneme_mode:
+            phones = seg.body.split()
+            if phones:
+                chunks.append(
+                    synthesize_phonemes(
+                        phones,
+                        rate=seg.state.rate,
+                        preset=preset,
+                        question=False,
+                    )
+                )
+            continue
+
+        for sentence_text, is_question in split_sentences(seg.body):
+            phones = _tokens_to_phonemes(
+                tokenize(sentence_text),
+                lang=lang,
+                lts_fallback=lts_fallback,
+            )
+            if not phones:
+                continue
+            chunks.append(
+                synthesize_phonemes(
+                    phones,
+                    rate=seg.state.rate,
+                    preset=preset,
+                    question=is_question,
+                )
+            )
+
+    if not chunks:
+        return np.zeros(0, dtype=np.int16)
+    return np.concatenate(chunks)
+
+
 def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) -> list[str]:
     """Convert text to a flat ARPABET phoneme stream with pause markers.
 
@@ -105,40 +211,32 @@ def speak(
 ) -> NDArray[np.int16]:
     """Synthesize the given text into PCM samples.
 
-    Output is byte-identical to the DECtalk binary's ``-fo`` WAV output
-    (decoded to ``int16``). Inline ``[:cmd value]`` directives in ``text``
-    are honoured by the C library's command parser.
+    When the locally-built DECtalk C library is available **and** ``lang``
+    is ``"us"``, the output is byte-identical (after WAV decode) to
+    ``say -fo <path>`` from the DECtalk binary. Otherwise the approximate
+    Python pipeline is used — intelligible output, not bit-parity.
 
     Args:
         text: Input string. May contain ``[:cmd value]`` directives.
-        rate: Speaking-rate multiplier; 1.0 = ~200 WPM, 2.0 = slower,
-            0.5 = faster. Clamped to DECtalk's [75, 600] WPM range.
+        rate: Speaking-rate multiplier; 1.0 = ~200 WPM (binary's default),
+            2.0 = slower, 0.5 = faster. Clamped to DECtalk's [75, 600] WPM
+            range when routed through ``_capi``.
         voice: Initial voice preset (short name like ``"paul"`` or a
-            :class:`VoicePreset` object). ``None`` keeps the C library
-            default (Perfect Paul).
-        lang: Language tag; only ``"us"`` is currently supported by the
-            ctypes wrapper.
-        lts_fallback: Ignored. Retained for backwards-compat; the C
-            library always pronounces unknown words via its built-in
-            letter-to-sound rules.
+            :class:`VoicePreset` object).
+        lang: Language tag (``"us"`` is bit-parity via the C library;
+            ``"uk"`` etc. go through the approximate Python pipeline).
+        lts_fallback: Whether to fall back to rule-based letter-to-sound
+            for words missing from the lexicon. Only consulted on the
+            Python path; the C library always pronounces.
 
     Returns:
         ``int16`` PCM samples at 11025 Hz.
-
-    Raises:
-        NotImplementedError: For ``lang != "us"``.
-        CAPIError: If the local C library cannot be loaded.
     """
-    del lts_fallback  # documented as ignored; kept for API stability.
-    if lang != "us":
-        raise NotImplementedError(
-            f"_capi-routed speak() currently supports lang='us' only (got {lang!r})."
-        )
-    speaker_id = _voice_to_speaker_id(voice)
-    wpm = _rate_multiplier_to_wpm(rate) if rate != 1.0 else None
-    capi = _get_capi()
-    wav_bytes = capi.speak(text, speaker=speaker_id or 0, rate=wpm)
-    return _wav_bytes_to_int16(wav_bytes)
+    if lang == "us":
+        wav_bytes = _speak_via_capi(text, rate, voice)
+        if wav_bytes is not None:
+            return _wav_bytes_to_int16(wav_bytes)
+    return _speak_via_python(text, rate, voice, lang, lts_fallback)
 
 
 def to_wav(
@@ -150,24 +248,21 @@ def to_wav(
     lang: str = "us",
     lts_fallback: bool = True,
 ) -> None:
-    """Synthesize ``text`` and write the WAV file produced by the C library.
+    """Synthesize ``text`` and write the audio to a WAV file.
 
-    Unlike :func:`speak`, this writes the raw WAV bytes produced by the C
-    library directly to ``path`` without re-encoding. The output file is
-    byte-identical to ``say -fo <path>`` from the DECtalk binary.
-
-    Raises the same exceptions as :func:`speak`.
+    When the C library is available and ``lang == "us"``, the raw WAV
+    bytes produced by the C library are written directly — the output
+    file is byte-identical to ``say -fo <path>`` from the DECtalk
+    binary. Otherwise falls back to the Python pipeline via
+    :func:`speak` plus :func:`dectalk.nt.audio.write_wav`.
     """
-    del lts_fallback
-    if lang != "us":
-        raise NotImplementedError(
-            f"_capi-routed to_wav() currently supports lang='us' only (got {lang!r})."
-        )
-    speaker_id = _voice_to_speaker_id(voice)
-    wpm = _rate_multiplier_to_wpm(rate) if rate != 1.0 else None
-    capi = _get_capi()
-    wav_bytes = capi.speak(text, speaker=speaker_id or 0, rate=wpm)
-    Path(path).write_bytes(wav_bytes)
+    if lang == "us":
+        wav_bytes = _speak_via_capi(text, rate, voice)
+        if wav_bytes is not None:
+            Path(path).write_bytes(wav_bytes)
+            return
+    samples = _speak_via_python(text, rate, voice, lang, lts_fallback)
+    write_wav(samples, path)
 
 
 def available_voices() -> list[str]:
@@ -200,6 +295,3 @@ __all__ = [
     "text_to_phonemes",
     "to_wav",
 ]
-
-# Suppress unused-import warnings for re-exports.
-_ = (SpeechState, parse, split_sentences, synthesize_phonemes, write_wav)
