@@ -62,3 +62,30 @@ def test_mstofr_negative_input() -> None:
     """
     # The function is documented for non-negative inputs.
     assert th.mstofr(64) == 10
+
+
+def test_mstofr_macro_uses_nsamp_frame() -> None:
+    """``mstofr_macro(ms)`` = ``((ms + 4) * 10) // NSAMP_FRAME``."""
+    from dectalk.ph.numeric_constants import NSAMP_FRAME  # noqa: PLC0415
+
+    for ms in (0, 5, 10, 50, 100, 500, 1000):
+        expected = ((ms + 4) * 10) // NSAMP_FRAME
+        assert th.mstofr_macro(ms) == expected
+
+
+def test_frtoms_uses_nsamp_frame() -> None:
+    """``frtoms(frames)`` = ``(frames * NSAMP_FRAME + 5) // 10``."""
+    from dectalk.ph.numeric_constants import NSAMP_FRAME  # noqa: PLC0415
+
+    for frames in (0, 1, 10, 50, 100, 500, 1000):
+        expected = (frames * NSAMP_FRAME + 5) // 10
+        assert th.frtoms(frames) == expected
+
+
+def test_mstofr_macro_and_frtoms_roundtrip() -> None:
+    """``frtoms(mstofr_macro(ms))`` recovers ``ms`` within rounding error."""
+    for ms in (10, 50, 100, 500, 1000):
+        frames = th.mstofr_macro(ms)
+        back = th.frtoms(frames)
+        # Round-trip should land within ~5 ms (one frame's worth).
+        assert abs(back - ms) <= 5
