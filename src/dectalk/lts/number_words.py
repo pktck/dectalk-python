@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dectalk.include.phoneme_codes import WBOUND
 from dectalk.lts.phone_list import iter_phone_list_until_sil
-from dectalk.lts.phoneme_words import phundred, pteens, ptens, punits
+from dectalk.lts.phoneme_words import phundred, pteens, ptens, pthousand, punits, upunits
 
 _WBOUND: int = WBOUND
 
@@ -125,4 +125,80 @@ def speak_3_digits(d1: int, d2: int, d3: int) -> list[int] | None:
     return out
 
 
-__all__ = ["speak_2_digits", "speak_3_digits"]
+def speak_4_digits(d1: int, d2: int, d3: int, d4: int) -> list[int] | None:
+    """Return the phoneme sequence for a 4-digit number.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        void ls_proc_do_4_digits(LPTTS_HANDLE_T phTTS, LETTER *lp) {
+            if (lp->l_ch == '0')
+                ls_spel_spell(...);                  // spell each digit
+            else if ((lp+2)->l_ch=='0' && (lp+3)->l_ch=='0') {
+                if ((lp+1)->l_ch == '0') {
+                    // X000 — "X thousand"
+                    ls_util_send_phone_list(phTTS, upunits[lp->l_ch-'0']);
+                    ls_util_send_phone(phTTS, WBOUND);
+                    ls_util_send_phone_list(phTTS, pthousand);
+                } else {
+                    // XY00 — "XY hundred"
+                    ls_proc_do_2_digits(phTTS, lp);
+                    ls_util_send_phone(phTTS, WBOUND);
+                    ls_util_send_phone_list(phTTS, phundred);
+                }
+            } else {
+                // XXYY — "XX YY" (year-style)
+                ls_proc_do_2_digits(phTTS, lp+0);
+                ls_util_send_phone(phTTS, WBOUND);
+                ls_proc_do_2_digits(phTTS, lp+2);
+            }
+        }
+
+    Three forms:
+
+    * ``X000`` → ``upunits[X] thousand`` (unstressed leading digit for
+      HLSYN builds — falls back to ``punits[X]`` otherwise; we use the
+      HLSYN form since it's the modern build).
+    * ``XY00`` → ``2-digit(XY) hundred``.
+    * ``XXYY`` → ``2-digit(XX) WBOUND 2-digit(YY)`` (year-style).
+
+    Args:
+        d1: Thousands digit (0..9).
+        d2: Hundreds digit.
+        d3: Tens digit.
+        d4: Units digit.
+
+    Returns:
+        Phoneme code list, or ``None`` if ``d1 == 0`` (caller spells).
+    """
+    if d1 == 0:
+        return None
+    if d3 == 0 and d4 == 0:
+        if d2 == 0:
+            # X000 — "X thousand"
+            out = list(iter_phone_list_until_sil(upunits[d1]))
+            out.append(_WBOUND)
+            out.extend(iter_phone_list_until_sil(pthousand))
+            return out
+        # XY00 — "XY hundred"
+        two = speak_2_digits(d1, d2)
+        if two is None:
+            return None
+        out = list(two)
+        out.append(_WBOUND)
+        out.extend(iter_phone_list_until_sil(phundred))
+        return out
+    # XXYY — year-style: spoken as two 2-digit numbers
+    top = speak_2_digits(d1, d2)
+    bot = speak_2_digits(d3, d4)
+    if top is None:
+        return None
+    out = list(top)
+    out.append(_WBOUND)
+    if bot is not None:
+        out.extend(bot)
+    return out
+
+
+__all__ = ["speak_2_digits", "speak_3_digits", "speak_4_digits"]

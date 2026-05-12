@@ -1,11 +1,19 @@
-"""Verify ``speak_2_digits`` / ``speak_3_digits`` parity with l_us_pr1.c."""
+"""Verify ``speak_2_digits`` / ``speak_3_digits`` / ``speak_4_digits``."""
 
 from __future__ import annotations
 
 from dectalk.include.phoneme_codes import WBOUND
-from dectalk.lts.number_words import speak_2_digits, speak_3_digits
+from dectalk.lts.number_words import speak_2_digits, speak_3_digits, speak_4_digits
 from dectalk.lts.phone_list import iter_phone_list_until_sil
-from dectalk.lts.phoneme_words import p11, p20, phundred, ptens, punits
+from dectalk.lts.phoneme_words import (
+    p11,
+    p20,
+    phundred,
+    ptens,
+    pthousand,
+    punits,
+    upunits,
+)
 
 
 def test_2_digit_leading_zero_returns_none() -> None:
@@ -32,11 +40,8 @@ def test_2_digit_with_units() -> None:
     """``42`` returns ptens[2]=p40 + WBOUND + punits[2]."""
     result = speak_2_digits(4, 2)
     assert result is not None
-    # ptens index for digit '4' is (4-2) = 2 → p40.
-    assert result[0 : len(iter_phone_list_until_sil(ptens[4 - 2]))] == iter_phone_list_until_sil(
-        ptens[4 - 2]
-    )
-    # WBOUND separator
+    expected_prefix = iter_phone_list_until_sil(ptens[4 - 2])
+    assert result[: len(expected_prefix)] == expected_prefix
     assert WBOUND in result
 
 
@@ -49,10 +54,8 @@ def test_3_digit_round_hundred() -> None:
     """``200`` returns punits[2] + WBOUND + phundred (no trailing)."""
     result = speak_3_digits(2, 0, 0)
     assert result is not None
-    # Starts with "two" (punits[2])
     expected_prefix = iter_phone_list_until_sil(punits[2])
     assert result[: len(expected_prefix)] == expected_prefix
-    # Contains "hundred"
     hundred = iter_phone_list_until_sil(phundred)
     assert hundred[0] in result
 
@@ -61,5 +64,38 @@ def test_3_digit_full_form() -> None:
     """``234`` includes ``two``, ``hundred``, and ``thirty four``."""
     result = speak_3_digits(2, 3, 4)
     assert result is not None
-    # Result has at least two WBOUND markers (after "two" and after "hundred").
     assert result.count(WBOUND) >= 2
+
+
+# ---- speak_4_digits ----
+
+
+def test_4_digit_leading_zero_returns_none() -> None:
+    """``0XXX`` returns None."""
+    assert speak_4_digits(0, 1, 2, 3) is None
+
+
+def test_4_digit_thousands_round() -> None:
+    """``5000`` → upunits[5] WBOUND pthousand."""
+    result = speak_4_digits(5, 0, 0, 0)
+    assert result is not None
+    expected_unit = iter_phone_list_until_sil(upunits[5])
+    expected_thousand = iter_phone_list_until_sil(pthousand)
+    assert result[: len(expected_unit)] == expected_unit
+    assert result[-len(expected_thousand) :] == expected_thousand
+    assert WBOUND in result
+
+
+def test_4_digit_x_hundred() -> None:
+    """``3400`` → 'thirty-four hundred'."""
+    result = speak_4_digits(3, 4, 0, 0)
+    assert result is not None
+    expected_hundred = iter_phone_list_until_sil(phundred)
+    assert result[-len(expected_hundred) :] == expected_hundred
+
+
+def test_4_digit_year_style() -> None:
+    """``1984`` (year-style) → '19 84' as two 2-digit numbers."""
+    result = speak_4_digits(1, 9, 8, 4)
+    assert result is not None
+    assert WBOUND in result
