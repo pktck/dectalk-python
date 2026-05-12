@@ -32,6 +32,7 @@ from dectalk.lts.proc_emit import (
     ls_proc_do_3_digits,
     ls_proc_do_4_digits,
 )
+from dectalk.lts.spell_emit import ls_spel_spell
 
 _DIGIT_RUN_2 = 2
 _DIGIT_RUN_3 = 3
@@ -123,4 +124,29 @@ def ls_proc_do_part_number(  # noqa: PLR0912 — mirrors C state machine
             emitter.send_phone(WBOUND)
 
 
-__all__ = ["ls_proc_do_part_number"]
+def ls_proc_do_part_number_full(emitter: LtsEmitter, word: bytes) -> None:
+    """Convenience wrapper using :func:`ls_spel_spell` for letter runs.
+
+    Wires the part-number reader to the real spell-out helper so a
+    word like ``b"R2D2-X1"`` is read as ``"R two D two dash X one"``.
+
+    Args:
+        emitter: The LTS emitter state.
+        word: The part-number word as bytes.
+    """
+
+    def _spell_separator(em: LtsEmitter, c: int) -> None:
+        ls_spel_spell(em, bytes([c]))
+
+    def _spell_letters(em: LtsEmitter, run: bytes) -> None:
+        ls_spel_spell(em, run)
+
+    ls_proc_do_part_number(
+        emitter,
+        word,
+        spell_separator=_spell_separator,
+        speak_letters=_spell_letters,
+    )
+
+
+__all__ = ["ls_proc_do_part_number", "ls_proc_do_part_number_full"]

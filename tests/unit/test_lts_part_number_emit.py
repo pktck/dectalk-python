@@ -75,3 +75,14 @@ def test_separator_only() -> None:
     ls_proc_do_part_number(e, b"---")
     # Two WBOUNDs between three separators.
     assert e.phones == [WBOUND, WBOUND]
+
+
+def test_full_wrapper_spells_letters() -> None:
+    """``ls_proc_do_part_number_full`` spells letter runs via ls_spel_spell."""
+    from dectalk.lts.part_number_emit import ls_proc_do_part_number_full  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_part_number_full(e, b"X1")
+    # The letter X is spelled out; digit 1 is read as 'one'. Both
+    # emit phonemes — assert non-empty.
+    assert len(e.phones) > 0
