@@ -56,3 +56,8 @@ def test_ticks_per_second_implies_10ms() -> None:
     """100 ticks per second means each tick = 10 milliseconds."""
     ms_per_tick = 1000 / mc.TICKS_PER_SECOND
     assert ms_per_tick == 10
+
+
+def test_max_languages() -> None:
+    """``MAX_languages`` (7) — kernel's per-language table-slot count."""
+    assert mc.MAX_languages == 7

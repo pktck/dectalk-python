@@ -16,6 +16,10 @@ from __future__ import annotations
 
 from typing import Final
 
+MAX_languages: Final[int] = 7
+"""Number of language slots in the kernel's per-language table arrays
+(``pKsd_t->fdic_index[MAX_languages]`` etc.)."""
+
 VERSIONLEN: Final[int] = 80
 """Size of the buffer used to hold the engine version string."""
 
@@ -41,4 +45,5 @@ __all__ = [
     "SPEAKLEN",
     "TICKS_PER_SECOND",
     "VERSIONLEN",
+    "MAX_languages",
 ]
