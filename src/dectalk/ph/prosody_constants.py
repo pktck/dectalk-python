@@ -54,15 +54,81 @@ F0_GLOTTALIZE: Final[int] = -60
 # Reduction factor for final syllable.
 Reduce_last: Final[int] = 50
 
+# F0 step at a clause boundary (US value).
+F0_CBOUND_PULSE: Final[int] = 700
+
+# ---- F0 command-type codes (from ph_defs.h) ----
+
+USER: Final[int] = 0
+"""F0 command type: user-supplied F0 value."""
+
+IMPULSE: Final[int] = 1
+"""F0 command type: an impulse (instant rise)."""
+
+STEP: Final[int] = 2
+"""F0 command type: step (sudden change to new level)."""
+
+F0_RESET: Final[int] = 3
+"""F0 command type: reset to baseline."""
+
+GLOTTAL: Final[int] = 4
+"""F0 command type: glottalised drop."""
+
+GLIDE: Final[int] = 5
+"""F0 command type: smooth glide between targets."""
+
+SHORTIMPULSE: Final[int] = 6
+"""F0 command type: short impulse (gestures shorter than normal)."""
+
+# ---- Clause-type codes (from ph_defs.h) ----
+
+DECLARATIVE: Final[int] = 0
+"""Clause type: declarative (period)."""
+
+COMMACLAUSE: Final[int] = 1
+"""Clause type: clause break (comma)."""
+
+EXCLAIMCLAUSE: Final[int] = 2
+"""Clause type: exclamation."""
+
+QUESTION: Final[int] = 3
+"""Clause type: yes/no question."""
+
+# ---- Nasal-zero target defaults ----
+
+NON_NASAL_ZERO: Final[int] = 290
+"""F0 of the nasal zero for non-nasalised segments."""
+
+NASAL_ZERO_BOUNDARY: Final[int] = 370
+"""F0 of the nasal zero at a nasal boundary."""
+
+NASAL_ZERO_CONS: Final[int] = 400
+"""F0 of the nasal zero during a nasal consonant."""
+
 
 __all__ = [
+    "COMMACLAUSE",
+    "DECLARATIVE",
+    "EXCLAIMCLAUSE",
+    "F0_CBOUND_PULSE",
     "F0_COMMA_FALL",
     "F0_FINAL_FALL",
     "F0_GLOTTALIZE",
     "F0_NON_FINAL_FALL",
     "F0_QSYLL_FALL",
+    "F0_RESET",
     "GEST_SHIFT",
+    "GLIDE",
+    "GLOTTAL",
+    "IMPULSE",
     "MAX_NRISES",
+    "NASAL_ZERO_BOUNDARY",
+    "NASAL_ZERO_CONS",
+    "NON_NASAL_ZERO",
+    "QUESTION",
+    "SHORTIMPULSE",
+    "STEP",
+    "USER",
     "F0_CGesture1",
     "F0_CGesture2",
     "F0_QGesture1",

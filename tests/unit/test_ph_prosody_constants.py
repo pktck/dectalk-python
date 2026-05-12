@@ -109,3 +109,37 @@ def test_final_fall_largest_in_declarative() -> None:
     """Final-fall is larger than non-final and comma falls."""
     assert pc.F0_FINAL_FALL > pc.F0_NON_FINAL_FALL
     assert pc.F0_FINAL_FALL > pc.F0_COMMA_FALL
+
+
+def test_f0_command_types() -> None:
+    """USER..SHORTIMPULSE: seven F0 command type codes 0..6."""
+    assert pc.USER == 0
+    assert pc.IMPULSE == 1
+    assert pc.STEP == 2
+    assert pc.F0_RESET == 3
+    assert pc.GLOTTAL == 4
+    assert pc.GLIDE == 5
+    assert pc.SHORTIMPULSE == 6
+    # Dense 0..6.
+    cmds = {pc.USER, pc.IMPULSE, pc.STEP, pc.F0_RESET, pc.GLOTTAL, pc.GLIDE, pc.SHORTIMPULSE}
+    assert cmds == set(range(7))
+
+
+def test_clause_type_codes() -> None:
+    """Four clause types: DECLARATIVE=0, COMMACLAUSE=1, EXCLAIMCLAUSE=2, QUESTION=3."""
+    assert pc.DECLARATIVE == 0
+    assert pc.COMMACLAUSE == 1
+    assert pc.EXCLAIMCLAUSE == 2
+    assert pc.QUESTION == 3
+
+
+def test_f0_cbound_pulse() -> None:
+    """``F0_CBOUND_PULSE`` matches ph_defs.h (700 for US/UK/SP)."""
+    assert pc.F0_CBOUND_PULSE == 700
+
+
+def test_nasal_zero_defaults() -> None:
+    """Three nasal-zero defaults from ph_defs.h."""
+    assert pc.NON_NASAL_ZERO == 290
+    assert pc.NASAL_ZERO_BOUNDARY == 370
+    assert pc.NASAL_ZERO_CONS == 400
