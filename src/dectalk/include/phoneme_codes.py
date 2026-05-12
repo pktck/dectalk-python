@@ -60,6 +60,11 @@ PHO_SYM_TOT: Final[int] = 100 + 22
 # offsets — the font is implied.
 
 PFUSA: Final[int] = 0x1E  # American English phoneme font
+PFUK: Final[int] = 0x1D  # UK English phoneme font
+PFGR: Final[int] = 0x1C  # German phoneme font
+PFSP: Final[int] = 0x1B  # Spanish (Castilian) phoneme font
+PFLA: Final[int] = 0x1A  # Latin American Spanish phoneme font
+PFFR: Final[int] = 0x19  # French phoneme font
 
 
 # -- l_all_ph.h US allophones (71 codes, 0..70) ------------------------------
@@ -161,6 +166,11 @@ __all__ = [
     "MBOUND",
     "NEW_PARAGRAPH",
     "PERIOD",
+    "PFFR",
+    "PFGR",
+    "PFLA",
+    "PFSP",
+    "PFUK",
     "PFUSA",
     "PHO_SYM_TOT",
     "PPSTART",

@@ -130,3 +130,33 @@ def test_pfusa_matches() -> None:
     c_value = _parse_define(_l_all_ph_text(), "PFUSA")
     assert c_value is not None
     assert c_value == pc.PFUSA
+
+
+@pytest.mark.parametrize(
+    ("py_attr", "c_name"),
+    [
+        ("PFUK", "PFUK"),
+        ("PFGR", "PFGR"),
+        ("PFSP", "PFSP"),
+        ("PFLA", "PFLA"),
+        ("PFFR", "PFFR"),
+    ],
+)
+def test_other_language_font_codes_match(py_attr: str, c_name: str) -> None:
+    """``PFUK`` / ``PFGR`` / ``PFSP`` / ``PFLA`` / ``PFFR`` match p_all_ph.h."""
+    src_path = Path("/tmp/dectalk-src/src/dapi/src/ph/p_all_ph.h")
+    if not src_path.exists():
+        pytest.skip("C source not available")
+    text = src_path.read_bytes().replace(b"\r", b"").decode("latin-1")
+    c_value = _parse_define(text, c_name)
+    assert c_value is not None
+    assert c_value == getattr(pc, py_attr)
+
+
+def test_font_codes_descend_from_us() -> None:
+    """``PFUSA > PFUK > PFGR > PFSP > PFLA > PFFR``: each one byte lower."""
+    fonts = [pc.PFUSA, pc.PFUK, pc.PFGR, pc.PFSP, pc.PFLA, pc.PFFR]
+    for i in range(len(fonts) - 1):
+        assert fonts[i] == fonts[i + 1] + 1, (
+            f"font ladder break at index {i}: {fonts[i]:#x} vs {fonts[i + 1]:#x}"
+        )
