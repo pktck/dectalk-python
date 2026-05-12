@@ -18,9 +18,7 @@ def _parse_define(name: str) -> int | None:
     if not _C_HEADER.exists():
         return None
     text = _C_HEADER.read_bytes().replace(b"\r", b"").decode("latin-1")
-    pattern = (
-        rf"^#define\s+{re.escape(name)}\s+\(?(0[xX][0-9A-Fa-f]+|-?\d+)\)?\b"
-    )
+    pattern = rf"^#define\s+{re.escape(name)}\s+\(?(0[xX][0-9A-Fa-f]+|-?\d+)\)?\b"
     for line in text.splitlines():
         match = re.match(pattern, line)
         if match:
