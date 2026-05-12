@@ -67,3 +67,14 @@ def test_lang_codes_dense_0_to_7() -> None:
 def test_lang_none_sentinel() -> None:
     """LANG_none is the 16-bit ``0xFFFF`` sentinel."""
     assert lc.LANG_none == 0xFFFF
+
+
+def test_ready_flags() -> None:
+    """LTS / PH / map ready signal bits."""
+    assert lc.LANG_lts_ready == 0x1
+    assert lc.LANG_ph_ready == 0x2
+    assert lc.LANG_map_ready == 0x4
+    assert lc.LANG_tables_ready == 0x4  # alias of map_ready
+    # "Both ready" is the OR of the three.
+    assert lc.LANG_both_ready == 0x7
+    assert lc.LANG_both_ready == (lc.LANG_lts_ready | lc.LANG_ph_ready | lc.LANG_map_ready)

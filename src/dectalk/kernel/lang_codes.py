@@ -46,8 +46,21 @@ LANG_none: Final[int] = 0xFFFF
 LANG_lts_ready: Final[int] = 0x1
 """Bit flag (not a language ID): LTS pipeline ready signal."""
 
+LANG_ph_ready: Final[int] = 0x2
+"""Bit flag: PH pipeline ready signal."""
+
+LANG_map_ready: Final[int] = 0x4
+"""Bit flag: language-map tables ready signal."""
+
+LANG_tables_ready: Final[int] = 0x4
+"""Bit flag: language tables ready (alias of :data:`LANG_map_ready`)."""
+
+LANG_both_ready: Final[int] = 0x7
+"""Composite flag: all three ready signals set (LTS + PH + map)."""
+
 
 __all__ = [
+    "LANG_both_ready",
     "LANG_british",
     "LANG_english",
     "LANG_french",
@@ -56,6 +69,9 @@ __all__ = [
     "LANG_japanese",
     "LANG_latin_american",
     "LANG_lts_ready",
+    "LANG_map_ready",
     "LANG_none",
+    "LANG_ph_ready",
     "LANG_spanish",
+    "LANG_tables_ready",
 ]
