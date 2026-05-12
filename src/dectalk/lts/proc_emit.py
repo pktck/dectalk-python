@@ -27,6 +27,7 @@ from dectalk.lts.number_words import (
     speak_2_digits,
     speak_3_digits,
     speak_4_digits,
+    speak_digit_group,
 )
 from dectalk.lts.phoneme_words import pminus, pplus
 
@@ -218,6 +219,32 @@ def ls_proc_do_4_digits_full(
     ls_proc_do_4_digits(emitter, d1, d2, d3, d4)
 
 
+def ls_proc_do_digit_group(
+    emitter: LtsEmitter,
+    d1: int,
+    d2: int,
+    d3: int,
+    *,
+    ordinal: bool = False,
+) -> None:
+    """Emit a 3-digit group (``X hundred and YY`` / ordinal variants).
+
+    State-mutating wrapper around :func:`speak_digit_group`. The C
+    source's ``ls_proc_do_digit_group`` is a void function that
+    writes directly into the phone pipeline; this Python version
+    pushes the precomputed phoneme list into the emitter.
+
+    Args:
+        emitter: The LTS emitter state.
+        d1: Hundreds digit (0..9).
+        d2: Tens digit (0..9).
+        d3: Units digit (0..9).
+        ordinal: If True, render as an ordinal (``oflag`` in C).
+    """
+    for p in speak_digit_group(d1, d2, d3, ordinal=ordinal):
+        emitter.send_phone(p)
+
+
 __all__ = [
     "ls_proc_do_2_digits",
     "ls_proc_do_2_digits_full",
@@ -225,6 +252,7 @@ __all__ = [
     "ls_proc_do_3_digits_full",
     "ls_proc_do_4_digits",
     "ls_proc_do_4_digits_full",
+    "ls_proc_do_digit_group",
     "ls_proc_do_sign",
     "ls_proc_do_sign_full",
 ]

@@ -140,3 +140,34 @@ def test_do_4_digits_full_leading_zero_spells() -> None:
     e = LtsEmitter()
     ls_proc_do_4_digits_full(e, 0, 1, 2, 3)
     assert len(e.phones) > 0
+
+
+def test_do_digit_group_500() -> None:
+    """``500`` emits the five-hundred form via the digit-group emitter."""
+    from dectalk.lts.number_words import speak_digit_group  # noqa: PLC0415
+    from dectalk.lts.proc_emit import ls_proc_do_digit_group  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_digit_group(e, 5, 0, 0)
+    assert e.phones == speak_digit_group(5, 0, 0)
+
+
+def test_do_digit_group_ordinal_30th() -> None:
+    """``030`` with ordinal=True emits the ``thirtieth`` form."""
+    from dectalk.lts.number_words import speak_digit_group  # noqa: PLC0415
+    from dectalk.lts.proc_emit import ls_proc_do_digit_group  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_digit_group(e, 0, 3, 0, ordinal=True)
+    assert e.phones == speak_digit_group(0, 3, 0, ordinal=True)
+
+
+def test_do_digit_group_emits_into_existing_state() -> None:
+    """Successive calls accumulate phones."""
+    from dectalk.lts.proc_emit import ls_proc_do_digit_group  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_digit_group(e, 1, 0, 0)
+    first_len = len(e.phones)
+    ls_proc_do_digit_group(e, 2, 0, 0)
+    assert len(e.phones) > first_len
