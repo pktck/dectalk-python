@@ -76,3 +76,69 @@ def test_alphabetical_comparison(entry: bytes, word: bytes, expected: str) -> No
         assert code == ds.LOOK_HIGHER
     else:
         assert code == ds.LOOK_LOWER
+
+
+# ---- ls_dict_where_to_look: identical to par_dict_where_to_look ----
+
+
+def test_ls_dict_where_to_look_exact_match() -> None:
+    """Exact match returns LOOK_HIGHER (same as par_dict_*)."""
+    assert ds.ls_dict_where_to_look(b"hello", b"hello") == ds.LOOK_HIGHER
+
+
+def test_ls_dict_where_to_look_word_greater() -> None:
+    """Word > entry → LOOK_HIGHER."""
+    assert ds.ls_dict_where_to_look(b"apple", b"banana") == ds.LOOK_HIGHER
+
+
+def test_ls_dict_where_to_look_word_less() -> None:
+    """Word < entry → LOOK_LOWER."""
+    assert ds.ls_dict_where_to_look(b"banana", b"apple") == ds.LOOK_LOWER
+
+
+def test_ls_dict_where_to_look_case_insensitive() -> None:
+    """ls_upper case-folding applies."""
+    assert ds.ls_dict_where_to_look(b"HELLO", b"hello") == ds.LOOK_HIGHER
+
+
+# ---- ls_dict_where_to_ulook: NO exact-match short-circuit ----
+
+
+def test_ls_dict_where_to_ulook_exact_match_returns_lower() -> None:
+    """Exact match returns LOOK_LOWER (intentionally differs from main-dict path)."""
+    assert ds.ls_dict_where_to_ulook(b"hello", b"hello") == ds.LOOK_LOWER
+
+
+def test_ls_dict_where_to_ulook_word_greater() -> None:
+    """Word > entry → LOOK_HIGHER."""
+    assert ds.ls_dict_where_to_ulook(b"apple", b"banana") == ds.LOOK_HIGHER
+
+
+def test_ls_dict_where_to_ulook_word_less() -> None:
+    """Word < entry → LOOK_LOWER."""
+    assert ds.ls_dict_where_to_ulook(b"banana", b"apple") == ds.LOOK_LOWER
+
+
+def test_ls_dict_where_to_ulook_case_insensitive() -> None:
+    """ls_upper case-folding applies."""
+    assert ds.ls_dict_where_to_ulook(b"HELLO", b"hello") == ds.LOOK_LOWER
+
+
+@pytest.mark.parametrize(
+    ("entry", "word", "expected"),
+    [
+        (b"banana", b"apple", "LOWER"),
+        (b"apple", b"banana", "HIGHER"),
+        (b"cat", b"cat", "LOWER"),  # exact match → LOWER (key difference)
+        (b"cat", b"car", "LOWER"),
+        (b"car", b"cat", "HIGHER"),
+        (b"zebra", b"aardvark", "LOWER"),
+    ],
+)
+def test_ulook_alphabetical_comparison(entry: bytes, word: bytes, expected: str) -> None:
+    """ulook: strict less-than returns LOWER, all matches and greater return HIGHER."""
+    code = ds.ls_dict_where_to_ulook(entry, word)
+    if expected == "HIGHER":
+        assert code == ds.LOOK_HIGHER
+    else:
+        assert code == ds.LOOK_LOWER
