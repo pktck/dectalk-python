@@ -86,3 +86,33 @@ def test_full_wrapper_spells_letters() -> None:
     # The letter X is spelled out; digit 1 is read as 'one'. Both
     # emit phonemes — assert non-empty.
     assert len(e.phones) > 0
+
+
+def test_full_emits_wbound_after_short_alpha_run() -> None:
+    """``X`` is a 1-char (FAST) run — emits WBOUND after spelling X."""
+    from dectalk.include.phoneme_codes import WBOUND  # noqa: PLC0415
+    from dectalk.lts.part_number_emit import ls_proc_do_part_number_full  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_part_number_full(e, b"X")
+    assert e.phones[-1] == WBOUND
+
+
+def test_full_emits_comma_after_slow_alpha_run() -> None:
+    """``HELLO`` is 5 letters → SLOW; emits COMMA after spelling."""
+    from dectalk.include.phoneme_codes import COMMA  # noqa: PLC0415
+    from dectalk.lts.part_number_emit import ls_proc_do_part_number_full  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_part_number_full(e, b"HELLO")
+    assert e.phones[-1] == COMMA
+
+
+def test_full_at_t_emits_wbound() -> None:
+    """``AT&T`` is the 4-char-with-1-ampersand special case → FAST → WBOUND."""
+    from dectalk.include.phoneme_codes import WBOUND  # noqa: PLC0415
+    from dectalk.lts.part_number_emit import ls_proc_do_part_number_full  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_part_number_full(e, b"AT&T")
+    assert e.phones[-1] == WBOUND

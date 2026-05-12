@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from dectalk.include.phoneme_codes import WBOUND
+from dectalk.include.phoneme_codes import COMMA, WBOUND
 from dectalk.lts.char_features import is_digit
 from dectalk.lts.emitter import LtsEmitter
 from dectalk.lts.proc_emit import (
@@ -124,29 +124,92 @@ def ls_proc_do_part_number(  # noqa: PLR0912 — mirrors C state machine
             emitter.send_phone(WBOUND)
 
 
-def ls_proc_do_part_number_full(emitter: LtsEmitter, word: bytes) -> None:
-    """Convenience wrapper using :func:`ls_spel_spell` for letter runs.
+def ls_proc_do_part_number_full(  # noqa: PLR0912 — mirrors C state machine
+    emitter: LtsEmitter,
+    word: bytes,
+) -> None:
+    r"""Faithful line-by-line port of ``ls_proc_do_part_number`` (FAA off).
 
-    Wires the part-number reader to the real spell-out helper so a
-    word like ``b"R2D2-X1"`` is read as ``"R two D two dash X one"``.
+    Translation of:
+
+    .. code-block:: c
+
+        while (llp != rlp) {
+            blp = llp; ++llp;
+            if (blp->l_ch=='-' || blp->l_ch=='/') {
+                ls_spel_spell(phTTS, blp, llp);
+                if (llp != rlp) ls_util_send_phone(phTTS, WBOUND);
+            } else if (digit) {
+                // ... scan digits, do 2/3/4-digits or spell ...
+                if (llp != rlp) ls_util_send_phone(phTTS, WBOUND);
+            } else {
+                // alphabetic run
+                while (...) ++llp;
+                if (llp-blp<3 || ls_util_lookup(...) == MISS) {
+                    speed = ls_spel_spell_speed(blp, llp);
+                    ls_spel_spell(phTTS, blp, llp);
+                    if (speed == FAST) ls_util_send_phone(phTTS, WBOUND);
+                    else               ls_util_send_phone(phTTS, COMMA);
+                } else if (llp != rlp) {
+                    ls_util_send_phone(phTTS, WBOUND);
+                }
+            }
+        }
+
+    The Python port skips the ``ls_util_lookup`` (FIRST) dictionary
+    probe and treats every alphabetic run as a MISS (matching the
+    Python port's "dictionary is wired up by the caller, default to
+    miss" convention for ``_full`` variants). The speed-aware
+    WBOUND/COMMA terminator after the spelled-out letters is
+    therefore unconditional, exactly as the C source's MISS branch.
 
     Args:
         emitter: The LTS emitter state.
         word: The part-number word as bytes.
     """
-
-    def _spell_separator(em: LtsEmitter, c: int) -> None:
-        ls_spel_spell(em, bytes([c]))
-
-    def _spell_letters(em: LtsEmitter, run: bytes) -> None:
-        ls_spel_spell(em, run)
-
-    ls_proc_do_part_number(
-        emitter,
-        word,
-        spell_separator=_spell_separator,
-        speak_letters=_spell_letters,
+    from dectalk.lts.spell_speed import (  # noqa: PLC0415 — cycle break
+        FAST,
+        ls_spel_spell_speed,
     )
+
+    n = len(word)
+    i = 0
+    while i < n:
+        b = i
+        c = word[b]
+        i += 1
+        if c in (ord("-"), ord("/")):
+            ls_spel_spell(emitter, bytes([c]))
+            if i < n:
+                emitter.send_phone(WBOUND)
+            continue
+        if is_digit(c):
+            while i < n and is_digit(word[i]):
+                i += 1
+            nd = i - b
+            d = [word[k] - ord("0") for k in range(b, i)]
+            if nd == _DIGIT_RUN_2:
+                ls_proc_do_2_digits(emitter, d[0], d[1])
+            elif nd == _DIGIT_RUN_3:
+                ls_proc_do_3_digits(emitter, d[0], d[1], d[2])
+            elif nd == _DIGIT_RUN_4:
+                ls_proc_do_4_digits(emitter, d[0], d[1], d[2], d[3])
+            else:
+                ls_spel_spell(emitter, word[b:i])
+            if i < n:
+                emitter.send_phone(WBOUND)
+            continue
+        # Alphabetic / other run.
+        while i < n and word[i] not in (ord("-"), ord("/")) and not is_digit(word[i]):
+            i += 1
+        # Dict-lookup path is skipped — always MISS in this port.
+        run = word[b:i]
+        speed = ls_spel_spell_speed(run)
+        ls_spel_spell(emitter, run)
+        if speed == FAST:
+            emitter.send_phone(WBOUND)
+        else:
+            emitter.send_phone(COMMA)
 
 
 __all__ = ["ls_proc_do_part_number", "ls_proc_do_part_number_full"]
