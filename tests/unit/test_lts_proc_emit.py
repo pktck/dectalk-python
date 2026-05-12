@@ -122,3 +122,21 @@ def test_do_2_digits_full_normal_case_matches_plain() -> None:
     ls_proc_do_2_digits(e1, 4, 2)
     ls_proc_do_2_digits_full(e2, 4, 2)
     assert e1.phones == e2.phones
+
+
+def test_do_3_digits_full_leading_zero_spells() -> None:
+    """``012`` with the full variant spells each digit."""
+    from dectalk.lts.proc_emit import ls_proc_do_3_digits_full  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_3_digits_full(e, 0, 1, 2)
+    assert len(e.phones) > 0
+
+
+def test_do_4_digits_full_leading_zero_spells() -> None:
+    """``0123`` with the full variant spells each digit."""
+    from dectalk.lts.proc_emit import ls_proc_do_4_digits_full  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_4_digits_full(e, 0, 1, 2, 3)
+    assert len(e.phones) > 0

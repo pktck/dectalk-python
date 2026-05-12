@@ -161,6 +161,24 @@ def ls_proc_do_3_digits(emitter: LtsEmitter, d1: int, d2: int, d3: int) -> None:
             emitter.send_phone(p)
 
 
+def ls_proc_do_3_digits_full(emitter: LtsEmitter, d1: int, d2: int, d3: int) -> None:
+    """``ls_proc_do_3_digits`` with leading-zero spell-out wired up.
+
+    Args:
+        emitter: The LTS emitter state.
+        d1: Hundreds digit.
+        d2: Tens digit.
+        d3: Units digit.
+    """
+    from dectalk.lts.spell_emit import ls_spel_spell  # noqa: PLC0415 — cycle break
+
+    if d1 == 0:
+        digits = bytes([ord("0") + d1, ord("0") + d2, ord("0") + d3])
+        ls_spel_spell(emitter, digits)
+        return
+    ls_proc_do_3_digits(emitter, d1, d2, d3)
+
+
 def ls_proc_do_4_digits(
     emitter: LtsEmitter,
     d1: int,
@@ -183,11 +201,30 @@ def ls_proc_do_4_digits(
             emitter.send_phone(p)
 
 
+def ls_proc_do_4_digits_full(
+    emitter: LtsEmitter,
+    d1: int,
+    d2: int,
+    d3: int,
+    d4: int,
+) -> None:
+    """``ls_proc_do_4_digits`` with leading-zero spell-out wired up."""
+    from dectalk.lts.spell_emit import ls_spel_spell  # noqa: PLC0415 — cycle break
+
+    if d1 == 0:
+        digits = bytes([ord("0") + di for di in (d1, d2, d3, d4)])
+        ls_spel_spell(emitter, digits)
+        return
+    ls_proc_do_4_digits(emitter, d1, d2, d3, d4)
+
+
 __all__ = [
     "ls_proc_do_2_digits",
     "ls_proc_do_2_digits_full",
     "ls_proc_do_3_digits",
+    "ls_proc_do_3_digits_full",
     "ls_proc_do_4_digits",
+    "ls_proc_do_4_digits_full",
     "ls_proc_do_sign",
     "ls_proc_do_sign_full",
 ]
