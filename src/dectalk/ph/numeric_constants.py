@@ -76,6 +76,9 @@ VOICE_PARS: Final[int] = 40
 SYNC_PARS: Final[int] = 0
 """Sync-parameter count — DECtalk has no sync parameters."""
 
+MAX_SPEAKERS: Final[int] = 10
+"""Maximum number of voice slots in the per-PH speaker table (ph_data.h)."""
+
 
 __all__ = [
     "F0",
@@ -89,6 +92,7 @@ __all__ = [
     "FRAC_ONE",
     "FZ",
     "MALE",
+    "MAX_SPEAKERS",
     "SYNC_PARS",
     "VOICE_PARS",
     "F2max",

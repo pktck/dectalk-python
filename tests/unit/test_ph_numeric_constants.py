@@ -81,3 +81,8 @@ def test_param_indices_dense() -> None:
     """``F0..FZ`` parameter indices form the dense set ``{0, 1, 2, 3, 4}``."""
     indices = {nc.F0, nc.F1, nc.F2, nc.F3, nc.FZ}
     assert indices == {0, 1, 2, 3, 4}
+
+
+def test_max_speakers() -> None:
+    """``MAX_SPEAKERS`` (10) matches ph_data.h."""
+    assert nc.MAX_SPEAKERS == 10
