@@ -58,3 +58,30 @@ def test_send_phone_list_first_byte_sil() -> None:
     e.send_phone_list(bytes([0, 99]))  # SIL is first → no emit
     assert e.phones == [11]  # only the manual send_phone
     assert e.lphone == 11
+
+
+def test_send_asky_phone_list_basic() -> None:
+    """ASCKY 'i' glyph maps via usa_ascky_rev to the IY phoneme code."""
+    from dectalk.include.usa_phon_tables import usa_ascky_rev  # noqa: PLC0415
+
+    e = LtsEmitter()
+    e.send_asky_phone_list(b"i")
+    expected = usa_ascky_rev[ord("i")]
+    assert e.phones == [expected]
+    assert e.lphone == expected
+
+
+def test_send_asky_phone_list_skips_null_ascky() -> None:
+    """ASCKY bytes that map to NULL_ASCKY (no phoneme meaning) are skipped."""
+    e = LtsEmitter()
+    # Byte 0x00 maps to NULL_ASCKY → also stops the loop. Use 0x01 instead.
+    e.send_asky_phone_list(bytes([0x01]))  # 0x01 maps to NULL_ASCKY
+    assert e.phones == []
+
+
+def test_send_asky_phone_list_stops_at_sil() -> None:
+    """SIL terminator (byte 0) ends the walk."""
+    e = LtsEmitter()
+    e.send_asky_phone_list(b"i\x00x")
+    # Only 'i' emitted; everything after the 0 byte is ignored.
+    assert len(e.phones) == 1

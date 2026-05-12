@@ -101,5 +101,43 @@ class LtsEmitter:
                 break
             self.send_phone(ph)
 
+    def send_asky_phone_list(self, byte_string: bytes) -> None:
+        """Emit phonemes from an ASCKY-glyph byte string.
+
+        Faithful translation of:
+
+        .. code-block:: c
+
+            void ls_util_send_asky_phone_list(LPTTS_HANDLE_T phTTS,
+                                                const char *pp) {
+                int ph;
+                while ((ph = *pp++) != SIL && !pKsd_t->halting)
+                    ls_util_send_phone(phTTS,
+                                       pKsd_t->reverse_ascky[ph]);
+            }
+
+        Each input byte is treated as an ASCKY glyph and looked up
+        in :data:`dectalk.include.usa_phon_tables.usa_ascky_rev`
+        to get the font-encoded phoneme code. Skips bytes that map
+        to NULL_ASCKY (entries with no phonemic meaning).
+
+        Args:
+            byte_string: SIL-terminated sequence of ASCKY glyphs.
+        """
+        from dectalk.include.usa_phon_tables import (  # noqa: PLC0415 — break cycle
+            NULL_ASCKY,
+            usa_ascky_rev,
+        )
+
+        for ph in byte_string:
+            if ph == 0:
+                break
+            if ph >= len(usa_ascky_rev):
+                continue
+            code = usa_ascky_rev[ph]
+            if code == NULL_ASCKY:
+                continue
+            self.send_phone(code)
+
 
 __all__ = ["LtsEmitter"]
