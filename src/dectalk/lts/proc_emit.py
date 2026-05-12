@@ -21,7 +21,7 @@ that the dictionary doesn't recognise).
 
 from __future__ import annotations
 
-from dectalk.include.phoneme_codes import WBOUND
+from dectalk.include.phoneme_codes import WBOUND, USPhoneme
 from dectalk.lts.emitter import LtsEmitter
 from dectalk.lts.number_words import (
     speak_2_digits,
@@ -29,6 +29,30 @@ from dectalk.lts.number_words import (
     speak_4_digits,
 )
 from dectalk.lts.phoneme_words import pminus, pplus
+
+_US_EY: int = int(USPhoneme.EY)
+
+
+def ls_proc_do_sign_full(emitter: LtsEmitter, sign: int) -> None:
+    """``ls_proc_do_sign`` with the dictionary-lookup fallback wired up.
+
+    The C source's third branch looks up the bare sign character in
+    the user dictionary; if it MISSes, the C source emits ``US_EY``
+    (the letter A's vowel) plus WBOUND. This Python port skips the
+    dictionary lookup and goes straight to the ``US_EY + WBOUND``
+    fallback, which matches the C behaviour for unknown signs.
+
+    Args:
+        emitter: The LTS emitter state.
+        sign: The sign character.
+    """
+    if sign == 0:
+        return
+    if ls_proc_do_sign(emitter, sign):
+        return
+    # Dictionary-lookup branch: skipped, fall straight to MISS path.
+    emitter.send_phone(_US_EY)
+    emitter.send_phone(WBOUND)
 
 
 def ls_proc_do_sign(emitter: LtsEmitter, sign: int) -> bool:
@@ -134,4 +158,5 @@ __all__ = [
     "ls_proc_do_3_digits",
     "ls_proc_do_4_digits",
     "ls_proc_do_sign",
+    "ls_proc_do_sign_full",
 ]

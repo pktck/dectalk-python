@@ -80,3 +80,24 @@ def test_emitter_chaining() -> None:
     # The post-do_2_digits phones list contains everything from
     # do_sign plus the 42-phonemes.
     assert len(e.phones) > initial_len
+
+
+def test_do_sign_full_unknown_falls_back_to_ey_wbound() -> None:
+    """``ls_proc_do_sign_full`` emits ``US_EY + WBOUND`` for unknown signs."""
+    from dectalk.include.phoneme_codes import WBOUND, USPhoneme  # noqa: PLC0415
+    from dectalk.lts.proc_emit import ls_proc_do_sign_full  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_sign_full(e, ord("$"))
+    assert e.phones == [int(USPhoneme.EY), WBOUND]
+
+
+def test_do_sign_full_known_sign_delegates() -> None:
+    """For known signs, ``ls_proc_do_sign_full`` matches ``ls_proc_do_sign``."""
+    from dectalk.lts.proc_emit import ls_proc_do_sign_full  # noqa: PLC0415
+
+    e1 = LtsEmitter()
+    e2 = LtsEmitter()
+    ls_proc_do_sign(e1, ord("-"))
+    ls_proc_do_sign_full(e2, ord("-"))
+    assert e1.phones == e2.phones
