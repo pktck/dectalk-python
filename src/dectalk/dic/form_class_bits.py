@@ -97,6 +97,44 @@ FC_HOMOGRAPH: Final[int] = 0x80000000
 """Homograph (multiple pronunciations)."""
 
 
+# -- Bit-position constants (FC_V_*) ---------------------------------------
+#
+# These are the log2 indices of the FC_* flags (0..31). Used when the C
+# source needs to set or test a specific bit by position rather than by
+# mask, e.g. ``bit_array |= (1L << FC_V_NOUN)``.
+
+FC_V_ADJ: Final[int] = 0
+FC_V_ADV: Final[int] = 1
+FC_V_ART: Final[int] = 2
+FC_V_AUX: Final[int] = 3
+FC_V_BE: Final[int] = 4
+FC_V_BEV: Final[int] = 5
+FC_V_CONJ: Final[int] = 6
+FC_V_ED: Final[int] = 7
+FC_V_HAVE: Final[int] = 8
+FC_V_ING: Final[int] = 9
+FC_V_NOUN: Final[int] = 10
+FC_V_POS: Final[int] = 11
+FC_V_PREP: Final[int] = 12
+FC_V_PRON: Final[int] = 13
+FC_V_SUBCONJ: Final[int] = 14
+FC_V_THAT: Final[int] = 15
+FC_V_TO: Final[int] = 16
+FC_V_VERB: Final[int] = 17
+FC_V_WHO: Final[int] = 18
+FC_V_NEG: Final[int] = 19
+FC_V_INTER: Final[int] = 20
+FC_V_REF: Final[int] = 21
+FC_V_PART: Final[int] = 22
+FC_V_FUNC: Final[int] = 23
+FC_V_CONT: Final[int] = 24
+FC_V_CHARACTER: Final[int] = 25
+FC_V_REFR: Final[int] = 26
+FC_V_FC_MARKER: Final[int] = 29
+FC_V_CONTRACTION: Final[int] = 30
+FC_V_HOMOGRAPH: Final[int] = 31
+
+
 __all__ = [
     "FC_ADJ",
     "FC_ADV",
@@ -125,5 +163,35 @@ __all__ = [
     "FC_THAT",
     "FC_TO",
     "FC_VERB",
+    "FC_V_ADJ",
+    "FC_V_ADV",
+    "FC_V_ART",
+    "FC_V_AUX",
+    "FC_V_BE",
+    "FC_V_BEV",
+    "FC_V_CHARACTER",
+    "FC_V_CONJ",
+    "FC_V_CONT",
+    "FC_V_CONTRACTION",
+    "FC_V_ED",
+    "FC_V_FC_MARKER",
+    "FC_V_FUNC",
+    "FC_V_HAVE",
+    "FC_V_HOMOGRAPH",
+    "FC_V_ING",
+    "FC_V_INTER",
+    "FC_V_NEG",
+    "FC_V_NOUN",
+    "FC_V_PART",
+    "FC_V_POS",
+    "FC_V_PREP",
+    "FC_V_PRON",
+    "FC_V_REF",
+    "FC_V_REFR",
+    "FC_V_SUBCONJ",
+    "FC_V_THAT",
+    "FC_V_TO",
+    "FC_V_VERB",
+    "FC_V_WHO",
     "FC_WHOW",
 ]

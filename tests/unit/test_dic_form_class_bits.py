@@ -66,6 +66,43 @@ def test_fc_flag_matches_c(py_attr: str, c_name: str) -> None:
     assert getattr(fcb, py_attr) == c_value
 
 
+@pytest.mark.parametrize(
+    ("py_attr", "c_name", "expected"),
+    [
+        ("FC_V_ADJ", "FC_V_ADJ", 0),
+        ("FC_V_ADV", "FC_V_ADV", 1),
+        ("FC_V_NOUN", "FC_V_NOUN", 10),
+        ("FC_V_VERB", "FC_V_VERB", 17),
+        ("FC_V_HOMOGRAPH", "FC_V_HOMOGRAPH", 31),
+    ],
+)
+def test_fc_v_bit_positions(py_attr: str, c_name: str, expected: int) -> None:
+    """FC_V_* bit positions match fc_def.tab."""
+    if _C_HEADER.exists():
+        text = _C_HEADER.read_bytes().replace(b"\r", b"").decode("latin-1")
+    else:
+        text = ""
+    pattern = rf"^#define\s+{re.escape(c_name)}\s+(\d+)\b"
+    found = None
+    for line in text.splitlines():
+        match = re.match(pattern, line)
+        if match:
+            found = int(match.group(1))
+            break
+    if found is not None:
+        assert found == expected
+    assert getattr(fcb, py_attr) == expected
+
+
+def test_fc_v_positions_match_fc_flags() -> None:
+    """Each FC_V_<NAME> is the log2 of the corresponding FC_<NAME> flag."""
+    # Spot check a few — verify the bit-position vs mask relationship.
+    assert (1 << fcb.FC_V_ADJ) == fcb.FC_ADJ
+    assert (1 << fcb.FC_V_NOUN) == fcb.FC_NOUN
+    assert (1 << fcb.FC_V_VERB) == fcb.FC_VERB
+    assert (1 << fcb.FC_V_HOMOGRAPH) == fcb.FC_HOMOGRAPH
+
+
 def test_fc_flags_are_single_bit() -> None:
     """All FC_* flags are single-bit values (powers of two)."""
     flags = [
