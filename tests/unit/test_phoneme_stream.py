@@ -4,7 +4,7 @@ Two layers of tests:
 
 1. Static parity: parse ``src/dapi/src/include/usa_phon.tab`` and assert
    that every 2-byte entry in ``usa_arpa[]`` is mapped in the Python
-   ``_SLOT_TO_CODE`` table to the matching numeric code. This is the
+   ``SLOT_TO_CODE`` table to the matching numeric code. This is the
    ground-truth check — if these pass, the parser will reproduce the C
    library's intended decoding.
 
@@ -54,7 +54,7 @@ from dectalk.include.phoneme_codes import (
     USPhoneme,
 )
 from dectalk.include.phoneme_stream import (
-    _SLOT_TO_CODE,
+    SLOT_TO_CODE,
     PhonemeStreamParseError,
     PhonemeToken,
     format_phoneme_tokens,
@@ -133,12 +133,12 @@ def test_usa_arpa_table_size(usa_arpa: dict[int, bytes]) -> None:
 def test_allophone_slot_matches(code: int, usa_arpa: dict[int, bytes]) -> None:
     """Each non-filtered US allophone code's slot is in our Python map."""
     c_slot = usa_arpa[code]
-    assert c_slot in _SLOT_TO_CODE, (
-        f"code {code} ({USPhoneme(code).name}) C slot {c_slot!r} missing from _SLOT_TO_CODE"
+    assert c_slot in SLOT_TO_CODE, (
+        f"code {code} ({USPhoneme(code).name}) C slot {c_slot!r} missing from SLOT_TO_CODE"
     )
-    assert _SLOT_TO_CODE[c_slot] == code, (
+    assert SLOT_TO_CODE[c_slot] == code, (
         f"code {code} ({USPhoneme(code).name}): C slot {c_slot!r} maps "
-        f"to {_SLOT_TO_CODE[c_slot]} in Python (expected {code})"
+        f"to {SLOT_TO_CODE[c_slot]} in Python (expected {code})"
     )
 
 
@@ -172,8 +172,8 @@ def test_allophone_slot_matches(code: int, usa_arpa: dict[int, bytes]) -> None:
 def test_control_code_slot_matches(code: int, usa_arpa: dict[int, bytes]) -> None:
     """Each stress / boundary control code's slot is in our Python map."""
     c_slot = usa_arpa[code]
-    assert c_slot in _SLOT_TO_CODE
-    assert _SLOT_TO_CODE[c_slot] == code
+    assert c_slot in SLOT_TO_CODE
+    assert SLOT_TO_CODE[c_slot] == code
 
 
 def test_filtered_codes_not_in_python_map(usa_arpa: dict[int, bytes]) -> None:
@@ -194,9 +194,9 @@ def test_filtered_codes_not_in_python_map(usa_arpa: dict[int, bytes]) -> None:
         # have ASCII slots in the C table, but ls_util.c filters them out
         # before they hit the output buffer. We deliberately omit them
         # from the parser map so any stray byte trips the parser.
-        assert c_slot not in _SLOT_TO_CODE, (
+        assert c_slot not in SLOT_TO_CODE, (
             f"filtered code {filtered} has slot {c_slot!r} but it's still "
-            f"present in _SLOT_TO_CODE — that would mask a real bug"
+            f"present in SLOT_TO_CODE — that would mask a real bug"
         )
 
 

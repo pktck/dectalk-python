@@ -61,7 +61,7 @@ from dectalk.include.phoneme_codes import (
 # 2-byte ASCII slot -> phoneme code. Derived from `usa_arpa[]` in
 # src/dapi/src/include/usa_phon.tab; see the test for a byte-level
 # parity check.
-_SLOT_TO_CODE: Final[dict[bytes, int]] = {
+SLOT_TO_CODE: Final[dict[bytes, int]] = {
     # US allophones 0..56 (codes 57-70 are filtered before output).
     b"_ ": USPhoneme.SIL,
     b"iy": USPhoneme.IY,
@@ -199,11 +199,11 @@ def parse_phoneme_stream(raw: bytes) -> list[PhonemeToken]:
     tokens: list[PhonemeToken] = []
     for i in range(0, len(raw), _SLOT_WIDTH):
         slot = raw[i : i + _SLOT_WIDTH]
-        if slot not in _SLOT_TO_CODE:
+        if slot not in SLOT_TO_CODE:
             raise PhonemeStreamParseError(
                 f"unrecognised 2-byte slot {slot!r} at offset {i} in stream {raw!r}"
             )
-        code = _SLOT_TO_CODE[slot]
+        code = SLOT_TO_CODE[slot]
         name = _CONTROL_NAMES[code] if code in _CONTROL_NAMES else USPhoneme(code).name
         tokens.append(PhonemeToken(code=int(code), name=name))
     return tokens
