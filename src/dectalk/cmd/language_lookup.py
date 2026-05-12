@@ -16,14 +16,7 @@ from typing import Final
 
 from dectalk.lts.char_features import ls_lower
 
-language_prefixes: Final[bytes] = (
-    b"us"
-    b"uk"
-    b"sp"
-    b"gr"
-    b"la"
-    b"fr"
-)
+language_prefixes: Final[bytes] = b"usukspgrlafr"
 """Two-letter ISO codes for the six DECtalk languages.
 
 Index 0 is US English, 1 UK English, 2 Castilian Spanish, 3 German,

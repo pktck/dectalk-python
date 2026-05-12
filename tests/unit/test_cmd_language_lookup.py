@@ -50,7 +50,7 @@ def test_unknown_languages_return_negative_one(code: bytes) -> None:
 
 def test_language_prefixes_layout() -> None:
     """The table contains exactly the 6 canonical codes in order."""
-    assert ll.language_prefixes == b"usuksp" b"grlafr"
+    assert ll.language_prefixes == b"usukspgrlafr"
     assert ll.language_size == 12
 
 
