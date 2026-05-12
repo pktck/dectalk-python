@@ -102,3 +102,27 @@ def test_rate_pause_bounds() -> None:
     assert cs.MAX_SPEAKING_RATE == 600
     assert cs.MIN_PERIOD_PAUSE == -420
     assert cs.MAX_PERIOD_PAUSE == 30000
+
+
+def test_alt_rate_bounds() -> None:
+    """``MIN_RATE`` (100) / ``MAX_RATE`` (550) — the cm_defs.h alternate names."""
+    assert cs.MIN_RATE == 100
+    assert cs.MAX_RATE == 550
+
+
+def test_max_voices() -> None:
+    """11 voice slots: Paul, Betty, Harry, Frank, Dennis, Kit, Ursula,
+    Rita, Wendy, Variable Val + 1 extra. The Crafty Chris build defines 12.
+    """
+    assert cs.MAX_VOICES == 11
+
+
+def test_skip_mode_codes() -> None:
+    """The five ``SKIP_*`` modes are 1..5 in the C-source order."""
+    assert cs.SKIP_email == 1
+    assert cs.SKIP_punct == 2
+    assert cs.SKIP_rule == 3
+    assert cs.SKIP_all == 4
+    assert cs.SKIP_cpg == 5
+    # Five distinct values.
+    assert len({cs.SKIP_email, cs.SKIP_punct, cs.SKIP_rule, cs.SKIP_all, cs.SKIP_cpg}) == 5

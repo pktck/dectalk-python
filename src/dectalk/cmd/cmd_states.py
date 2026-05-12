@@ -114,10 +114,39 @@ MIN_PERIOD_PAUSE: Final[int] = -420
 MAX_PERIOD_PAUSE: Final[int] = 30000
 """Upper bound of the ``[:period <ms>]`` parameter."""
 
+MIN_RATE: Final[int] = 100
+"""Lower bound for the ``[:rate]`` parameter (cm_defs.h variant)."""
+
+MAX_RATE: Final[int] = 550
+"""Upper bound for the ``[:rate]`` parameter (cm_defs.h variant)."""
+
+MAX_VOICES: Final[int] = 11
+"""Number of voice slots in the voice table (Paul…Wendy + Variable Val)."""
+
+# -- Skip mode flags --------------------------------------------------------
+
+SKIP_email: Final[int] = 1
+"""Skip-mode: email-addressing — split words on ``@`` / ``.`` boundaries."""
+
+SKIP_punct: Final[int] = 2
+"""Skip-mode: punctuation — read aloud most punctuation marks."""
+
+SKIP_rule: Final[int] = 3
+"""Skip-mode: rule-based — let the LTS engine decide."""
+
+SKIP_all: Final[int] = 4
+"""Skip-mode: silent — skip everything, useful for testing."""
+
+SKIP_cpg: Final[int] = 5
+"""Skip-mode: ``[:cpg]`` (custom phoneme group) mode."""
+
 __all__ = [
     "MAX_PERIOD_PAUSE",
+    "MAX_RATE",
     "MAX_SPEAKING_RATE",
+    "MAX_VOICES",
     "MIN_PERIOD_PAUSE",
+    "MIN_RATE",
     "MIN_SPEAKING_RATE",
     "STATE_BRACKET",
     "STATE_COMMAND",
@@ -143,4 +172,9 @@ __all__ = [
     "CMD_unable_to_open_file",
     "CMD_unsupported_audio_format",
     "CMD_unsupported_wave_file_format",
+    "SKIP_all",
+    "SKIP_cpg",
+    "SKIP_email",
+    "SKIP_punct",
+    "SKIP_rule",
 ]
