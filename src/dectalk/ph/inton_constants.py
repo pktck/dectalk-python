@@ -66,6 +66,39 @@ DELTAFINAL: Final[int] = 100
 FINAL_FALL: Final[int] = 1
 """Stress-reduce shift for the syllable at the top of a final fall."""
 
+# -- F0 generation modes (viphdefs.h) --------------------------------------
+
+NORMAL: Final[int] = 1
+"""F0 mode: rule-generated F0 (default)."""
+
+HAT_LOCATIONS_SPECIFIED: Final[int] = 2
+"""F0 mode: user specified location of hat rise / fall."""
+
+HAT_F0_SIZES_SPECIFIED: Final[int] = 3
+"""F0 mode: user attached steps and impulses to hat-rise / hat-fall / stress
+phones."""
+
+SINGING: Final[int] = 4
+"""F0 mode: user-requested sung notes (each syllable a fixed pitch)."""
+
+PHONE_TARGETS_SPECIFIED: Final[int] = 5
+"""F0 mode: user-specified F0 targets per phone."""
+
+# -- Speaker-def filter "zap" magic values ---------------------------------
+
+ZAPF: Final[int] = 6000
+"""Magic ``f`` value to zap the ``b`` coefficient of the resonator diff-eq
+(non-MSDOS / HLSYN build value)."""
+
+ZAPB: Final[int] = 6000
+"""Magic ``bw`` value to zap the ``c`` coefficient of the resonator diff-eq."""
+
+# -- Shared-array offset ---------------------------------------------------
+
+SAFETY: Final[int] = 8
+"""Offset between shared arrays such as ``phonemes[SAFETY]`` and
+``allophons[0]`` — guards against off-by-one reads at the array boundary."""
+
 __all__ = [
     "AFTER_FINAL_FALL",
     "AFTER_NONFINAL_FALL",
@@ -77,8 +110,16 @@ __all__ = [
     "DONTKNOW",
     "EMPH_FALL",
     "FINAL_FALL",
+    "HAT_F0_SIZES_SPECIFIED",
+    "HAT_LOCATIONS_SPECIFIED",
+    "NORMAL",
     "ON_TOP_OF_HAT",
     "PERIODCLAUSE",
+    "PHONE_TARGETS_SPECIFIED",
     "QUESTCLAUSE",
+    "SAFETY",
+    "SINGING",
     "VERBPHRASE",
+    "ZAPB",
+    "ZAPF",
 ]

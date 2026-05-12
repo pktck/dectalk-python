@@ -91,3 +91,23 @@ def test_clause_types_dense_set() -> None:
     """The four clause types form the dense set ``{0, 1, 2, 3}``."""
     clauses = {ic.DONTKNOW, ic.QUESTCLAUSE, ic.VERBPHRASE, ic.PERIODCLAUSE}
     assert clauses == {0, 1, 2, 3}
+
+
+def test_f0_modes() -> None:
+    """``NORMAL`` .. ``PHONE_TARGETS_SPECIFIED`` are 1..5 per viphdefs.h."""
+    assert ic.NORMAL == 1
+    assert ic.HAT_LOCATIONS_SPECIFIED == 2
+    assert ic.HAT_F0_SIZES_SPECIFIED == 3
+    assert ic.SINGING == 4
+    assert ic.PHONE_TARGETS_SPECIFIED == 5
+
+
+def test_zap_values() -> None:
+    """``ZAPF`` and ``ZAPB`` are both 6000 (non-MSDOS / HLSYN build)."""
+    assert ic.ZAPF == 6000
+    assert ic.ZAPB == 6000
+
+
+def test_safety_offset() -> None:
+    """``SAFETY`` (8) — offset between phonemes[] and allophons[]."""
+    assert ic.SAFETY == 8
