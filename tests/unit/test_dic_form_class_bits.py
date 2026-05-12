@@ -103,6 +103,23 @@ def test_fc_v_positions_match_fc_flags() -> None:
     assert (1 << fcb.FC_V_HOMOGRAPH) == fcb.FC_HOMOGRAPH
 
 
+def test_fc_m_aliases() -> None:
+    """``FC_M_*`` aliases share values with the corresponding ``FC_*`` flags."""
+    assert fcb.FC_M_SUBCONJ == fcb.FC_SMS
+    assert fcb.FC_M_WHO == fcb.FC_WHOW
+    assert fcb.FC_M_CONT == fcb.FC_CONTR
+
+
+def test_fc_m_extras_are_distinct() -> None:
+    """``FC_M_REF`` / ``FC_M_REFR`` / ``FC_M_CONTRACTION`` are new bits."""
+    assert fcb.FC_M_REF == 0x00200000
+    assert fcb.FC_M_REFR == 0x04000000
+    assert fcb.FC_M_CONTRACTION == 0x40000000
+    # Single-bit flags.
+    for v in (fcb.FC_M_REF, fcb.FC_M_REFR, fcb.FC_M_CONTRACTION):
+        assert v & (v - 1) == 0
+
+
 def test_fc_flags_are_single_bit() -> None:
     """All FC_* flags are single-bit values (powers of two)."""
     flags = [

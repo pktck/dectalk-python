@@ -97,6 +97,31 @@ FC_HOMOGRAPH: Final[int] = 0x80000000
 """Homograph (multiple pronunciations)."""
 
 
+# -- FC_M_* aliases / extras (from fc_def.tab) ------------------------------
+#
+# Most ``FC_M_*`` constants are renames of the ``FC_*`` flags above. A
+# handful introduce new bits (FC_M_REF / FC_M_REFR / FC_M_CONTRACTION) that
+# don't appear in the FC_* set.
+
+FC_M_SUBCONJ: Final[int] = 0x00004000
+"""Subordinating conjunction (alias of :data:`FC_SMS`)."""
+
+FC_M_WHO: Final[int] = 0x00040000
+"""``who``-type word (alias of :data:`FC_WHOW`)."""
+
+FC_M_REF: Final[int] = 0x00200000
+"""Reflexive pronoun (no FC_* equivalent)."""
+
+FC_M_CONT: Final[int] = 0x01000000
+"""Contraction (alias of :data:`FC_CONTR`)."""
+
+FC_M_REFR: Final[int] = 0x04000000
+"""Referential marker (no FC_* equivalent)."""
+
+FC_M_CONTRACTION: Final[int] = 0x40000000
+"""Contraction-2 marker (no FC_* equivalent)."""
+
+
 # -- Bit-position constants (FC_V_*) ---------------------------------------
 #
 # These are the log2 indices of the FC_* flags (0..31). Used when the C
@@ -152,6 +177,12 @@ __all__ = [
     "FC_HOMOGRAPH",
     "FC_ING",
     "FC_INTER",
+    "FC_M_CONT",
+    "FC_M_CONTRACTION",
+    "FC_M_REF",
+    "FC_M_REFR",
+    "FC_M_SUBCONJ",
+    "FC_M_WHO",
     "FC_NAME",
     "FC_NEG",
     "FC_NOUN",
