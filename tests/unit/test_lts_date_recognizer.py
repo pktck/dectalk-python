@@ -146,3 +146,88 @@ def test_frac_2_digit_numerator() -> None:
     assert dr.ls_proc_is_frac("10/100") is True
     assert dr.ls_proc_is_frac("99/100") is True
     assert dr.ls_proc_is_frac("99/100%") is True
+
+
+# ---- ls_proc_is_time ----
+
+
+@pytest.mark.parametrize(
+    "time",
+    [
+        "1:23",  # D:DD
+        "12:34",  # DD:DD
+        "0:00",
+        "23:59",
+        "1:23:45",  # D:DD:DD
+        "12:34:56",
+        "0:00:00",
+        "12:34.5",  # fractional seconds (.5)
+        "1:23.99",
+        "12:34:56.789",  # full with fractional
+    ],
+)
+def test_valid_times_accepted(time: str) -> None:
+    """Each plausible time format returns True."""
+    assert dr.ls_proc_is_time(time) is True
+
+
+@pytest.mark.parametrize(
+    "non_time",
+    [
+        "",
+        "12",  # missing :MM
+        "12:",  # missing minutes
+        "12:3",  # 1-digit minute
+        "12:34:",  # trailing colon
+        "12:34:5",  # 1-digit seconds
+        "12:abc",
+        "1:2",  # 1-digit minute
+        "1:23:45.",  # trailing fchar
+        "1:23:45.a",  # bad fractional digit
+        "1:23.",  # trailing fchar
+        " 1:23",  # leading space
+        "1:23 ",  # trailing space
+        "1:234",  # 3-digit minute (extra char)
+        "abc",
+    ],
+)
+def test_non_times_rejected(non_time: str) -> None:
+    """Non-time strings return False."""
+    assert dr.ls_proc_is_time(non_time) is False
+
+
+def test_time_comma_fchar() -> None:
+    """Pass ``,`` as the fchar to support European locales."""
+    assert dr.ls_proc_is_time("12:34,5", fchar=ord(",")) is True
+    # With default fchar (.) the same string is rejected.
+    assert dr.ls_proc_is_time("12:34,5") is False
+
+
+def test_time_bytes_input_accepted() -> None:
+    """Time check accepts bytes."""
+    assert dr.ls_proc_is_time(b"12:34") is True
+    assert dr.ls_proc_is_time(b"abc") is False
+
+
+# ---- ls_proc_is_am_pm ----
+
+
+@pytest.mark.parametrize("word", ["am", "AM", "pm", "PM", "aM", "Am", "pM", "Pm"])
+def test_valid_am_pm_accepted(word: str) -> None:
+    """All-case variants of am/pm return True."""
+    assert dr.ls_proc_is_am_pm(word) is True
+
+
+@pytest.mark.parametrize(
+    "non_word",
+    ["", "a", "p", "m", "AMM", "BMM", "amp", "pam", "x", "ab", "MM"],
+)
+def test_invalid_am_pm_rejected(non_word: str) -> None:
+    """Anything else returns False."""
+    assert dr.ls_proc_is_am_pm(non_word) is False
+
+
+def test_am_pm_bytes_input_accepted() -> None:
+    """am/pm check accepts bytes."""
+    assert dr.ls_proc_is_am_pm(b"AM") is True
+    assert dr.ls_proc_is_am_pm(b"xx") is False

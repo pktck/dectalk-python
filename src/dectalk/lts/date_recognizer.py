@@ -8,6 +8,10 @@ Translated from ``src/dapi/src/lts/l_us_pr1.c``:
 - :func:`ls_proc_is_frac` — fraction-pattern recogniser
   (``D/D``, ``DD/D``, ``D/DD``, ``DD/DD``, ``DD/DDD`` where DDD is
   100; optional trailing ``%``).
+- :func:`ls_proc_is_time` — time-pattern recogniser
+  (``D:DD``, ``DD:DD``, ``D:DD:DD``, ``DD:DD:DD``, plus optional
+  fractional seconds like ``12:34.56`` using the locale's ``fchar``).
+- :func:`ls_proc_is_am_pm` — recognise ``am``/``AM``/``pm``/``PM``.
 """
 
 from __future__ import annotations
@@ -245,4 +249,132 @@ def ls_proc_is_frac(word: str | bytes) -> bool:  # noqa: PLR0911, PLR0912 — mi
     return True
 
 
-__all__ = ["ls_proc_is_date", "ls_proc_is_frac"]
+def ls_proc_is_time(word: str | bytes, fchar: int = ord(".")) -> bool:  # noqa: PLR0911, PLR0912 — mirrors the C state machine
+    """Return True iff ``word`` spells a time.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        int ls_proc_is_time(PLTS_T pLts_t, LETTER *llp, LETTER *rlp) {
+            // 1- or 2-digit hour, ':', 2-digit minute (always).
+            // Optionally ':' then 2-digit second.
+            // Optionally fchar + 1+ fractional digits.
+        }
+
+    Accepted forms:
+    * ``D:DD`` / ``DD:DD``
+    * ``D:DD:DD`` / ``DD:DD:DD``
+    * Any of the above with ``fchar`` + 1 or more fractional digits.
+
+    The fractional separator ``fchar`` defaults to ``'.'`` (the US
+    locale value of ``pLts_t->fchar``).
+
+    Args:
+        word: Byte slice. ``str`` is Latin-1 encoded.
+        fchar: Fractional-second separator (typically ``.`` in US,
+            ``,`` in European locales).
+
+    Returns:
+        ``True`` iff ``word`` matches one of the time forms.
+    """
+    buf = word.encode("latin-1", errors="replace") if isinstance(word, str) else word
+    n = len(buf)
+    if n == 0:
+        return False
+
+    # First digit (required).
+    if not is_digit(buf[0]):
+        return False
+    i = 1
+    if i == n:
+        return False
+
+    # Optional 2nd digit, then required ':'.
+    if buf[i] != ord(":"):
+        if not is_digit(buf[i]):
+            return False
+        i += 1
+        if i == n:
+            return False
+        if buf[i] != ord(":"):
+            return False
+
+    # Past ':' — 2 digits required for minutes.
+    i += 1
+    if i == n or not is_digit(buf[i]):
+        return False
+    i += 1
+    if i == n or not is_digit(buf[i]):
+        return False
+    i += 1
+    if i == n:
+        return True  # DD:DD or D:DD form
+
+    # Optional ':DD' for seconds.
+    if buf[i] == ord(":"):
+        i += 1
+        if i == n or not is_digit(buf[i]):
+            return False
+        i += 1
+        if i == n or not is_digit(buf[i]):
+            return False
+        i += 1
+
+    # Optional fchar + 1 or more fractional digits.
+    if i != n and buf[i] == fchar:
+        i += 1
+        if i == n or not is_digit(buf[i]):
+            return False
+        i += 1
+        while i < n and is_digit(buf[i]):
+            i += 1
+
+    return i == n
+
+
+_AM_PM_LENGTH = 2
+
+
+def ls_proc_is_am_pm(word: str | bytes) -> bool:
+    """Return True iff ``word`` is ``am`` or ``pm`` (any case).
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        int ls_proc_is_am_pm(LETTER *llp, LETTER *rlp) {
+            if (llp->l_ch!='a' && llp->l_ch!='A'
+            &&  llp->l_ch!='p' && llp->l_ch!='P')
+                return FALSE;
+            ++llp;
+            if (llp->l_ch!='m' && llp->l_ch!='M')
+                return FALSE;
+            ++llp;
+            if (llp != rlp) return FALSE;
+            return TRUE;
+        }
+
+    Args:
+        word: Byte slice. ``str`` is Latin-1 encoded.
+
+    Returns:
+        ``True`` iff ``word`` is exactly 2 characters: ``a``/``A``/
+        ``p``/``P`` followed by ``m``/``M``.
+    """
+    buf = word.encode("latin-1", errors="replace") if isinstance(word, str) else word
+    if len(buf) != _AM_PM_LENGTH:
+        return False
+    first = buf[0]
+    if first not in (ord("a"), ord("A"), ord("p"), ord("P")):
+        return False
+    second = buf[1]
+    return second in (ord("m"), ord("M"))
+
+
+__all__ = [
+    "ls_proc_is_am_pm",
+    "ls_proc_is_date",
+    "ls_proc_is_frac",
+    "ls_proc_is_time",
+]
