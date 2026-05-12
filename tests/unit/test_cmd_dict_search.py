@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from dectalk.cmd import dict_search as ds
+from dectalk.lts.dict_codes import ABBREV, HIT
 
 
 def test_constants() -> None:
@@ -142,3 +143,72 @@ def test_ulook_alphabetical_comparison(entry: bytes, word: bytes, expected: str)
         assert code == ds.LOOK_HIGHER
     else:
         assert code == ds.LOOK_LOWER
+
+
+# -- par_dict_dlook_entry tests --------------------------------------------
+
+
+def test_dlook_exact_match_returns_hit() -> None:
+    """Equal strings yield HIT."""
+    assert ds.par_dict_dlook_entry(b"hello", b"hello") == HIT
+
+
+def test_dlook_case_insensitive_match() -> None:
+    """Lowercase entry, uppercase word still HIT."""
+    assert ds.par_dict_dlook_entry(b"hello", b"HELLO") == HIT
+
+
+def test_dlook_abbreviation_with_dot() -> None:
+    """Entry ending in '.' returns ABBREV on full match."""
+    assert ds.par_dict_dlook_entry(b"dr.", b"dr.") == ABBREV
+
+
+def test_dlook_word_shorter_than_entry() -> None:
+    """Word ends before entry → LOOK_LOWER."""
+    assert ds.par_dict_dlook_entry(b"hello", b"hel") == ds.LOOK_LOWER
+
+
+def test_dlook_word_longer_than_entry() -> None:
+    """Word continues past entry end → LOOK_HIGHER."""
+    assert ds.par_dict_dlook_entry(b"hello", b"hellow") == ds.LOOK_HIGHER
+
+
+def test_dlook_mismatch_propagates_to_where_to_look() -> None:
+    """Mid-string mismatch defers to par_dict_where_to_look."""
+    code = ds.par_dict_dlook_entry(b"banana", b"apple")
+    assert code == ds.par_dict_where_to_look(b"banana", b"apple")
+
+
+# -- par_dict_udlook_entry tests -------------------------------------------
+
+
+def test_udlook_exact_match_returns_hit() -> None:
+    """User-dict exact match returns HIT."""
+    assert ds.par_dict_udlook_entry(b"hello", b"hello") == HIT
+
+
+def test_udlook_uppercase_entry_only_matches_uppercase_word() -> None:
+    """An uppercase entry letter only matches an uppercase word letter."""
+    # Entry 'A' (upper) vs word 'a' (lower): no IS_LOWER short-circuit,
+    # so the comparator runs and returns LOOK_HIGHER (a > A in upper-fold
+    # is equality, so the comparator returns LOOK_HIGHER by the exact-match
+    # rule).
+    # Actually for case-sensitive entries the C code falls through to
+    # ls_dict_where_to_ulook which folds both to upper and compares.
+    code = ds.par_dict_udlook_entry(b"Apple", b"apple")
+    # The comparator's algorithm: word[0]='a' (97), ent[0]='A' (65).
+    # IS_LOWER('A') is False (A is upper), so no short-circuit; falls
+    # through to ls_dict_where_to_ulook which upper-folds both → 'A' == 'A'
+    # so loop continues. Eventually exact length match. But where_to_ulook
+    # doesn't short-circuit on equality, so returns LOOK_LOWER.
+    assert code == ds.LOOK_LOWER
+
+
+def test_udlook_word_shorter_lower() -> None:
+    """User-dict: word shorter than entry → LOWER."""
+    assert ds.par_dict_udlook_entry(b"banana", b"ban") == ds.LOOK_LOWER
+
+
+def test_udlook_word_longer_higher() -> None:
+    """User-dict: word longer than entry → HIGHER."""
+    assert ds.par_dict_udlook_entry(b"ban", b"banana") == ds.LOOK_HIGHER
