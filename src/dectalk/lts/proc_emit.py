@@ -104,6 +104,9 @@ def ls_proc_do_2_digits(emitter: LtsEmitter, d1: int, d2: int) -> None:
     """Emit the phoneme sequence for a 2-digit number.
 
     Wraps :func:`speak_2_digits` to push the result into the emitter.
+    Leading-zero forms (``0X``) return None from ``speak_2_digits``;
+    callers needing the C-faithful spell-each-digit behaviour should
+    use :func:`ls_proc_do_2_digits_full` instead.
 
     Args:
         emitter: The LTS emitter state.
@@ -114,6 +117,33 @@ def ls_proc_do_2_digits(emitter: LtsEmitter, d1: int, d2: int) -> None:
     if phones is not None:
         for p in phones:
             emitter.send_phone(p)
+
+
+def ls_proc_do_2_digits_full(emitter: LtsEmitter, d1: int, d2: int) -> None:
+    """``ls_proc_do_2_digits`` with the leading-zero spell-out wired up.
+
+    Faithful translation of the full C ``ls_proc_do_2_digits``:
+
+    .. code-block:: c
+
+        if (lp->l_ch == '0')
+            ls_spel_spell(phTTS, lp, lp+2);   // spell each digit
+        else ... // normal 2-digit reading
+
+    Uses :func:`ls_spel_spell` for the leading-zero case.
+
+    Args:
+        emitter: The LTS emitter state.
+        d1: Tens digit.
+        d2: Units digit.
+    """
+    from dectalk.lts.spell_emit import ls_spel_spell  # noqa: PLC0415 — cycle break
+
+    if d1 == 0:
+        digits = bytes([ord("0") + d1, ord("0") + d2])
+        ls_spel_spell(emitter, digits)
+        return
+    ls_proc_do_2_digits(emitter, d1, d2)
 
 
 def ls_proc_do_3_digits(emitter: LtsEmitter, d1: int, d2: int, d3: int) -> None:
@@ -155,6 +185,7 @@ def ls_proc_do_4_digits(
 
 __all__ = [
     "ls_proc_do_2_digits",
+    "ls_proc_do_2_digits_full",
     "ls_proc_do_3_digits",
     "ls_proc_do_4_digits",
     "ls_proc_do_sign",

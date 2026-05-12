@@ -101,3 +101,24 @@ def test_do_sign_full_known_sign_delegates() -> None:
     ls_proc_do_sign(e1, ord("-"))
     ls_proc_do_sign_full(e2, ord("-"))
     assert e1.phones == e2.phones
+
+
+def test_do_2_digits_full_leading_zero_spells() -> None:
+    """``02`` with the full variant spells each digit via ls_spel_spell."""
+    from dectalk.lts.proc_emit import ls_proc_do_2_digits_full  # noqa: PLC0415
+
+    e = LtsEmitter()
+    ls_proc_do_2_digits_full(e, 0, 2)
+    # Spelled output is non-empty (unlike the plain variant).
+    assert len(e.phones) > 0
+
+
+def test_do_2_digits_full_normal_case_matches_plain() -> None:
+    """For non-leading-zero, ``_full`` matches the plain variant."""
+    from dectalk.lts.proc_emit import ls_proc_do_2_digits_full  # noqa: PLC0415
+
+    e1 = LtsEmitter()
+    e2 = LtsEmitter()
+    ls_proc_do_2_digits(e1, 4, 2)
+    ls_proc_do_2_digits_full(e2, 4, 2)
+    assert e1.phones == e2.phones
