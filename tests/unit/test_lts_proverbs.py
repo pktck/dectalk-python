@@ -27,9 +27,7 @@ def _parse_array_1d(text: str, name: str, count: int, hex_radix: bool) -> tuple[
     return tuple(int(v) for v in re.findall(r"-?\d+", body))
 
 
-def _parse_array_2d(
-    text: str, name: str, rows: int, cols: int
-) -> tuple[tuple[int, ...], ...]:
+def _parse_array_2d(text: str, name: str, rows: int, cols: int) -> tuple[tuple[int, ...], ...]:
     """Parse a 2-D ``const ... <name>[<rows>][<cols>] = { ... };`` literal."""
     match = re.search(
         rf"{re.escape(name)}\s*\[\s*{rows}\s*\]\s*\[\s*{cols}\s*\]\s*=\s*\{{(.*?)\}};",
@@ -41,9 +39,7 @@ def _parse_array_2d(
     body = re.sub(r"//.*", "", body)
     flat = [int(v) for v in re.findall(r"-?\d+", body)]
     assert len(flat) == rows * cols
-    return tuple(
-        tuple(flat[i : i + cols]) for i in range(0, len(flat), cols)
-    )
+    return tuple(tuple(flat[i : i + cols]) for i in range(0, len(flat), cols))
 
 
 @pytest.fixture
