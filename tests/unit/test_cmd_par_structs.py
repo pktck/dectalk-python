@@ -42,6 +42,7 @@ def test_return_value_chain() -> None:
     outer = ReturnValue(input_pos=5)
     inner = ReturnValue(input_pos=10, prev=outer)
     assert inner.prev is outer
+    assert inner.prev is not None
     assert inner.prev.input_pos == 5
 
 
