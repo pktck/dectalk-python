@@ -200,3 +200,23 @@ def test_audio_file_header_offsets() -> None:
     assert cc.RIFF_HEADER_OFFSET == 36
     assert cc.AU_HEADER_OFFSET == 32
     assert cc.RIFF_HEADER_OFFSET > cc.AU_HEADER_OFFSET
+
+
+@pytest.mark.parametrize(
+    ("py_attr", "c_name", "expected"),
+    [
+        ("AUDIO_DEVICE_PLAYING", "AUDIO_DEVICE_PLAYING", 0),
+        ("AUDIO_QUEUE_COUNT", "AUDIO_QUEUE_COUNT", 1),
+        ("AUDIO_DEVICE_ID", "AUDIO_DEVICE_ID", 2),
+    ],
+)
+def test_audio_status_index_matches_c(py_attr: str, c_name: str, expected: int) -> None:
+    """StatusAudio() identifiers match audioapi.h."""
+    audioapi = _SRC_ROOT / "src/dapi/src/include/audioapi.h"
+    if not audioapi.is_file():
+        pytest.skip("audioapi.h not present")
+    text = audioapi.read_text(encoding="latin-1")
+    match = re.search(rf"#define\s+{re.escape(c_name)}\s+(\d+)\b", text)
+    assert match is not None
+    assert int(match.group(1)) == expected
+    assert getattr(cc, py_attr) == expected

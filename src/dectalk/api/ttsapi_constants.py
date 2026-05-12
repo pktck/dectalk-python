@@ -82,6 +82,18 @@ ERROR_ALLOCATING_INDEX_MARK_MEMORY: Final[int] = 6
 ERROR_OPENING_WAVE_FILE: Final[int] = 7
 
 
+# -- StatusAudio() identifier indices ---------------------------------------
+
+AUDIO_DEVICE_PLAYING: Final[int] = 0
+"""StatusAudio() identifier: query whether the device is currently playing."""
+
+AUDIO_QUEUE_COUNT: Final[int] = 1
+"""StatusAudio() identifier: query the number of audio buffers in the queue."""
+
+AUDIO_DEVICE_ID: Final[int] = 2
+"""StatusAudio() identifier: query the Windows MMSYSTEM audio device ID."""
+
+
 # -- Speaker IDs (the numeric IDs the C library uses) -----------------------
 
 PAUL: Final[int] = 0
@@ -220,6 +232,9 @@ VERSION_STRUCT_VER: Final[int] = 0x0001
 
 
 __all__ = [
+    "AUDIO_DEVICE_ID",
+    "AUDIO_DEVICE_PLAYING",
+    "AUDIO_QUEUE_COUNT",
     "AU_HEADER_OFFSET",
     "BETTY",
     "DENNIS",
