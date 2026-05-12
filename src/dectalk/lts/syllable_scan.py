@@ -23,6 +23,7 @@ def _empty_phone_list() -> list[Phone]:
     """Factory for the default ``sylp`` list."""
     return []
 
+
 NSYL: Final[int] = 10
 """Maximum number of syllables per English word (matches the C ``#define``)."""
 
