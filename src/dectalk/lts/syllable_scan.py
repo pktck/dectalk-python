@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Final
 
-from dectalk.lts.phone_list import SNONE
+from dectalk.lts.phone_list import SNONE, SPRI
 from dectalk.lts.structs import PFSYLAB, Phone
 
 
@@ -26,13 +26,6 @@ def _empty_phone_list() -> list[Phone]:
 
 NSYL: Final[int] = 10
 """Maximum number of syllables per English word (matches the C ``#define``)."""
-
-SPRI: Final[int] = SNONE + 3
-"""Primary stress code: ``PHO_SYM_TOT + 3`` per ls_defs.h.
-
-The Python port uses :data:`SNONE` (= ``PHO_SYM_TOT``) as the base; the C
-source defines ``SPRI`` as ``PHO_SYM_TOT + 3``.
-"""
 
 
 @dataclass(slots=True)

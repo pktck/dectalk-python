@@ -111,3 +111,18 @@ def test_add_phone_inserts_in_middle_of_chain() -> None:
     assert plist[0] is p_new
     assert p_new.p_fp is plist[1]
     assert plist[1].p_bp is p_new
+
+
+def test_stress_codes_form_ladder() -> None:
+    """``SNONE, SUN, SSEC, SPRI, S1LEFT, S2LEFT`` are SNONE+0..5 in C order."""
+    assert pl.SUN == pl.SNONE + 1
+    assert pl.SSEC == pl.SNONE + 2
+    assert pl.SPRI == pl.SNONE + 3
+    assert pl.S1LEFT == pl.SNONE + 4
+    assert pl.S2LEFT == pl.SNONE + 5
+
+
+def test_stress_codes_distinct() -> None:
+    """The six stress codes are pairwise distinct."""
+    codes = {pl.SNONE, pl.SUN, pl.SSEC, pl.SPRI, pl.S1LEFT, pl.S2LEFT}
+    assert len(codes) == 6

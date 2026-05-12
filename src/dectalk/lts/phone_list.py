@@ -32,6 +32,21 @@ EOS: int = 0
 SNONE: int = 71  # PHO_SYM_TOT + 0; matches the C ``#define SNONE (PHO_SYM_TOT)``
 """Stress code for "no stress" — placeholder until pho-defs.h imports it."""
 
+SUN: int = SNONE + 1
+"""Stress code for ``[1]`` — primary phonemic stress (unstressed-vowel form)."""
+
+SSEC: int = SNONE + 2
+"""Stress code for ``[2]`` — secondary stress."""
+
+SPRI: int = SNONE + 3
+"""Stress code for ``[3]`` — primary stress."""
+
+S1LEFT: int = SNONE + 4
+"""Stress code for ``[4]`` — primary stress, left-fused syllable."""
+
+S2LEFT: int = SNONE + 5
+"""Stress code for ``[5]`` — secondary stress, left-fused syllable."""
+
 SIL_US: int = (PFUSA << PSFONT) | 0
 """Font-encoded silence phoneme for US English (PFUSA << 8 | 0).
 
@@ -164,8 +179,13 @@ def ls_rule_add_phone(plist: list[Phone], sph: int, uph: int) -> Phone:
 
 __all__ = [
     "EOS",
+    "S1LEFT",
+    "S2LEFT",
     "SIL_US",
     "SNONE",
+    "SPRI",
+    "SSEC",
+    "SUN",
     "iter_phone_list_until_sil",
     "ls_rule_add_phone",
     "ls_util_copyword",
