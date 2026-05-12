@@ -7,6 +7,7 @@ Translated from ``src/dapi/src/cmd/par_pars.c``:
 - :func:`par_convert_number_new` — atoi + reports digits consumed.
 - :func:`par_convert_number_new2` — fastest variant, scans until
   the first non-digit. The C comment claims 10-20% faster than atoi().
+- :func:`par_convert_hex_number` — parse ``"0x..."`` hex digits.
 """
 
 from __future__ import annotations
@@ -133,4 +134,69 @@ def par_convert_number_new2(string: str | bytes) -> int:
     return total
 
 
-__all__ = ["par_convert_number", "par_convert_number_new", "par_convert_number_new2"]
+def par_convert_hex_number(string: str | bytes, num: int) -> int:
+    """Return the integer value of ``"0x..."`` hex digits, or -1 on error.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        short par_convert_hex_number(unsigned char *string, int num) {
+            register short total = 0, temp = 0, i = 2;
+            if ((*string) != '0')      return -1;
+            if (*(string+1) != 'x')    return -1;
+            num += 2;
+            while (i < num) {
+                if (string[i] > '9')   temp = string[i] - 'A' + 10;
+                else                   temp = string[i] - '0';
+                if ((temp < 0) || (temp > 15)) return -1;
+                total = (total << 4) + temp;
+                i++;
+            }
+            return total;
+        }
+
+    The C version is upper-case-only (``'A'-'F'`` only — no
+    ``'a'-'f'``). It also doesn't bounds-check the hex digit at the
+    low end: ``string[i] >= '0' && string[i] <= '9'`` is implied by
+    the ``string[i] > '9'`` else-branch, but inputs like ``'/'``
+    (0x2F → -1) are filtered out by the ``temp < 0`` check. We
+    preserve all of these quirks faithfully.
+
+    Args:
+        string: Buffer starting with ``"0x"`` and followed by hex
+            digits. Bytes or str.
+        num: Number of hex digits to consume after the ``"0x"``
+            prefix. The total bytes scanned is ``num + 2``.
+
+    Returns:
+        Integer value of the hex digits, or ``-1`` if the prefix
+        isn't ``"0x"`` or any byte isn't a valid hex digit.
+    """
+    buf = _as_bytes(string)
+    if not buf or buf[0] != ord("0"):
+        return -1
+    if len(buf) < 2 or buf[1] != ord("x"):  # noqa: PLR2004 — "0x" prefix
+        return -1
+    total = 0
+    nine = ord("9")
+    a_upper = ord("A")
+    zero = ord("0")
+    end = num + 2
+    for i in range(2, end):
+        if i >= len(buf):
+            return -1
+        byte = buf[i]
+        temp = byte - a_upper + 10 if byte > nine else byte - zero
+        if temp < 0 or temp > 15:  # noqa: PLR2004 — hex digit range
+            return -1
+        total = (total << 4) + temp
+    return total
+
+
+__all__ = [
+    "par_convert_hex_number",
+    "par_convert_number",
+    "par_convert_number_new",
+    "par_convert_number_new2",
+]

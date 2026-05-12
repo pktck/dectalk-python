@@ -106,3 +106,48 @@ def test_convert_number_new_reports_length(
 def test_convert_number_new_str_input() -> None:
     """Accepts str input as well as bytes."""
     assert pn.par_convert_number_new("123abc") == (123, 3)
+
+
+# ---- par_convert_hex_number ----
+
+
+@pytest.mark.parametrize(
+    ("buf", "num", "expected"),
+    [
+        (b"0x0", 1, 0),  # single 0
+        (b"0xF", 1, 0xF),  # single F
+        (b"0xFF", 2, 0xFF),  # two F's
+        (b"0x10", 2, 0x10),
+        (b"0xABCD", 4, 0xABCD),
+        (b"0x100", 3, 0x100),
+        (b"0x1234", 4, 0x1234),
+        (b"0xDEAD", 4, 0xDEAD),
+        (b"0x0000", 4, 0),
+        (b"0xff", 0, 0),  # num=0 → no digits, return 0
+    ],
+)
+def test_convert_hex_valid(buf: bytes, num: int, expected: int) -> None:
+    """Valid hex strings convert correctly."""
+    assert pn.par_convert_hex_number(buf, num) == expected
+
+
+@pytest.mark.parametrize(
+    ("buf", "num"),
+    [
+        (b"1x42", 2),  # bad prefix (not '0')
+        (b"0X42", 2),  # capital X — C requires lowercase 'x'
+        (b"0xZZ", 2),  # bad hex digit
+        (b"0xff", 2),  # lowercase 'ff' — C uses 'A'-'F' only
+        (b"", 0),  # empty
+        (b"0", 0),  # only '0' — no 'x'
+        (b"0x", 1),  # buffer too short for num=1
+    ],
+)
+def test_convert_hex_invalid(buf: bytes, num: int) -> None:
+    """Bad prefix or invalid hex digits return -1."""
+    assert pn.par_convert_hex_number(buf, num) == -1
+
+
+def test_convert_hex_str_input() -> None:
+    """Accepts str input."""
+    assert pn.par_convert_hex_number("0xCAFE", 4) == 0xCAFE
