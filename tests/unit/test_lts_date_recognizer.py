@@ -70,3 +70,79 @@ def test_month_case_sensitivity() -> None:
     assert dr.ls_proc_is_date("23-jan-84") is True
     # 'JAN' should NOT match against 'jan' (case-sensitive in C).
     assert dr.ls_proc_is_date("23-JAN-84") is False
+
+
+# ---- ls_proc_is_frac ----
+
+
+@pytest.mark.parametrize(
+    "frac",
+    [
+        "1/2",
+        "1/3",
+        "1/4",
+        "1/8",
+        "3/4",
+        "5/8",
+        "9/10",
+        "9/16",
+        "1/32",
+        "1/100",
+        "9/100",
+        "11/100",
+        "99/100",
+        "1/2%",  # trailing %
+        "1/3%",
+        "50/100%",
+    ],
+)
+def test_valid_fractions_accepted(frac: str) -> None:
+    """Each plausible fraction returns True."""
+    assert dr.ls_proc_is_frac(frac) is True
+
+
+@pytest.mark.parametrize(
+    "non_frac",
+    [
+        "",
+        "0/2",  # leading zero numerator
+        "1/0",  # leading zero in 1-digit denominator
+        "/2",  # missing numerator
+        "1/",  # missing denominator
+        "1.2",  # period instead of /
+        "1//2",  # double slash
+        "a/2",  # non-digit
+        "1/2a",  # extra char
+        "1/1000",  # 4-digit denominator
+        "1/250",  # 3-digit denominator not 100
+        "1/01",  # leading zero in denominator
+        "1/2 ",  # trailing space
+        " 1/2",  # leading space
+        "1/2%a",  # extra after %
+        "1/2%%",  # double %
+    ],
+)
+def test_non_fractions_rejected(non_frac: str) -> None:
+    """Non-fraction strings return False."""
+    assert dr.ls_proc_is_frac(non_frac) is False
+
+
+def test_frac_bytes_input_accepted() -> None:
+    """The function accepts bytes input."""
+    assert dr.ls_proc_is_frac(b"1/2") is True
+    assert dr.ls_proc_is_frac(b"abc") is False
+
+
+def test_frac_3_digit_denominator_must_be_100() -> None:
+    """3-digit denominator only valid if exactly ``100``."""
+    assert dr.ls_proc_is_frac("1/100") is True
+    assert dr.ls_proc_is_frac("1/101") is False
+    assert dr.ls_proc_is_frac("1/110") is False
+    assert dr.ls_proc_is_frac("1/999") is False
+
+
+def test_frac_2_digit_numerator() -> None:
+    """2-digit numerator accepted (1..99)."""
+    assert dr.ls_proc_is_frac("10/100") is True
+    assert dr.ls_proc_is_frac("99/100") is True
+    assert dr.ls_proc_is_frac("99/100%") is True

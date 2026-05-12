@@ -1,11 +1,13 @@
-"""Date-pattern recognition from l_us_pr1.c.
+"""Pattern recognisers from l_us_pr1.c.
 
 Translated from ``src/dapi/src/lts/l_us_pr1.c``:
 
-- :func:`ls_proc_is_date` — return True iff the byte slice spells
-  a date in one of the formats ``D-Mon``, ``DD-Mon``, ``D-Mon-YY``,
-  ``DD-Mon-YY``, ``D-Mon-YYYY``, ``DD-Mon-YYYY`` (e.g. ``23-Aug-84``,
-  ``5-Jan-2025``).
+- :func:`ls_proc_is_date` — date-pattern recogniser
+  (``D-Mon``, ``DD-Mon``, ``D-Mon-YY``, ``DD-Mon-YY``,
+  ``D-Mon-YYYY``, ``DD-Mon-YYYY``; e.g. ``23-Aug-84``, ``5-Jan-2025``).
+- :func:`ls_proc_is_frac` — fraction-pattern recogniser
+  (``D/D``, ``DD/D``, ``D/DD``, ``DD/DD``, ``DD/DDD`` where DDD is
+  100; optional trailing ``%``).
 """
 
 from __future__ import annotations
@@ -135,4 +137,112 @@ def ls_proc_is_date(word: str | bytes) -> bool:  # noqa: PLR0911, PLR0912 — mi
     return i == n  # must be exactly 4 digits
 
 
-__all__ = ["ls_proc_is_date"]
+_MAX_DENOM_DIGITS = 3
+
+
+def ls_proc_is_frac(word: str | bytes) -> bool:  # noqa: PLR0911, PLR0912 — mirrors the C state machine
+    """Return True iff ``word`` spells a fraction.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        int ls_proc_is_frac(LETTER *llp, LETTER *rlp) {
+            int n;
+            // First digit: non-zero.
+            if (!IS_DIGIT(llp->l_ch) || llp->l_ch == '0' || ++llp == rlp)
+                return FALSE;
+            // Optional second digit, then required '/'.
+            if (llp->l_ch != '/') {
+                if (!IS_DIGIT(llp->l_ch) || ++llp == rlp) return FALSE;
+                if (llp->l_ch != '/') return FALSE;
+            }
+            // Denominator: 1-3 digits.
+            n = 0;
+            while (++llp != rlp && IS_DIGIT(llp->l_ch)) {
+                if (n == 0 && llp->l_ch == '0') return FALSE;  // no leading zero
+                ++n;
+            }
+            if (n == 0 || n > 3) return FALSE;
+            if (n == 3) {
+                // 3-digit denominator must be "100".
+                if ((llp-1)->l_ch != '0' || (llp-2)->l_ch != '0' || (llp-3)->l_ch != '1')
+                    return FALSE;
+            }
+            // Optional trailing '%'.
+            if (llp != rlp) {
+                if (llp->l_ch != '%' || llp+1 != rlp) return FALSE;
+            }
+            return TRUE;
+        }
+
+    Accepted forms:
+    * ``D/D``  (e.g. ``1/2``)
+    * ``D/DD``, ``D/100`` (only 100 is valid as a 3-digit denominator)
+    * ``DD/D``, ``DD/DD``, ``DD/100``
+    * Any of the above with a trailing ``%``
+
+    The numerator must be 1 or 2 ASCII digits, non-zero. The
+    denominator is 1-3 digits with no leading zero; if 3 digits it
+    must be exactly ``"100"``.
+
+    Args:
+        word: Byte slice to test. ``str`` is Latin-1 encoded.
+
+    Returns:
+        ``True`` iff the entire slice matches one of the fraction forms.
+    """
+    buf = word.encode("latin-1", errors="replace") if isinstance(word, str) else word
+    n = len(buf)
+    if n == 0:
+        return False
+
+    # First digit: must be digit, must be non-zero.
+    if not is_digit(buf[0]):
+        return False
+    if buf[0] == ord("0"):
+        return False
+    i = 1
+    if i == n:
+        return False
+
+    # Optional 2nd digit, then '/'.
+    if buf[i] != ord("/"):
+        if not is_digit(buf[i]):
+            return False
+        i += 1
+        if i == n:
+            return False
+        if buf[i] != ord("/"):
+            return False
+
+    # Denominator: 1..3 digits, no leading zero.
+    i += 1  # past '/'
+    denom_start = i
+    n_digits = 0
+    while i < n and is_digit(buf[i]):
+        if n_digits == 0 and buf[i] == ord("0"):
+            return False
+        n_digits += 1
+        i += 1
+    if n_digits == 0 or n_digits > _MAX_DENOM_DIGITS:
+        return False
+
+    # If 3 digits, must be exactly "100".
+    if n_digits == _MAX_DENOM_DIGITS:
+        denom = buf[denom_start : denom_start + _MAX_DENOM_DIGITS]
+        if denom != b"100":
+            return False
+
+    # Optional trailing '%'.
+    if i != n:
+        if buf[i] != ord("%"):
+            return False
+        i += 1
+        if i != n:
+            return False
+
+    return True
+
+
+__all__ = ["ls_proc_is_date", "ls_proc_is_frac"]
