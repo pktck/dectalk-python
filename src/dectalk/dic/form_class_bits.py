@@ -103,23 +103,95 @@ FC_HOMOGRAPH: Final[int] = 0x80000000
 # handful introduce new bits (FC_M_REF / FC_M_REFR / FC_M_CONTRACTION) that
 # don't appear in the FC_* set.
 
+FC_M_ADJ: Final[int] = 0x00000001
+"""Adjective (alias of :data:`FC_ADJ`)."""
+
+FC_M_ADV: Final[int] = 0x00000002
+"""Adverb (alias of :data:`FC_ADV`)."""
+
+FC_M_ART: Final[int] = 0x00000004
+"""Article (alias of :data:`FC_ART`)."""
+
+FC_M_AUX: Final[int] = 0x00000008
+"""Auxiliary verb (alias of :data:`FC_AUX`)."""
+
+FC_M_BE: Final[int] = 0x00000010
+"""``be`` form (alias of :data:`FC_BE`)."""
+
+FC_M_BEV: Final[int] = 0x00000020
+"""``be`` + verb (alias of :data:`FC_BEV`)."""
+
+FC_M_CONJ: Final[int] = 0x00000040
+"""Conjunction (alias of :data:`FC_CONJ`)."""
+
+FC_M_ED: Final[int] = 0x00000080
+"""``-ed`` past form (alias of :data:`FC_ED`)."""
+
+FC_M_HAVE: Final[int] = 0x00000100
+"""``have`` form (alias of :data:`FC_HAVE`)."""
+
+FC_M_ING: Final[int] = 0x00000200
+"""``-ing`` present-participle form (alias of :data:`FC_ING`)."""
+
+FC_M_NOUN: Final[int] = 0x00000400
+"""Noun (alias of :data:`FC_NOUN`)."""
+
+FC_M_POS: Final[int] = 0x00000800
+"""Possessive (alias of :data:`FC_POS`)."""
+
+FC_M_PREP: Final[int] = 0x00001000
+"""Preposition (alias of :data:`FC_PREP`)."""
+
+FC_M_PRON: Final[int] = 0x00002000
+"""Pronoun (alias of :data:`FC_PRON`)."""
+
 FC_M_SUBCONJ: Final[int] = 0x00004000
 """Subordinating conjunction (alias of :data:`FC_SMS`)."""
+
+FC_M_THAT: Final[int] = 0x00008000
+"""``that`` word (alias of :data:`FC_THAT`)."""
+
+FC_M_TO: Final[int] = 0x00010000
+"""``to`` word (alias of :data:`FC_TO`)."""
+
+FC_M_VERB: Final[int] = 0x00020000
+"""Verb (alias of :data:`FC_VERB`)."""
 
 FC_M_WHO: Final[int] = 0x00040000
 """``who``-type word (alias of :data:`FC_WHOW`)."""
 
+FC_M_NEG: Final[int] = 0x00080000
+"""Negation marker (alias of :data:`FC_NEG`)."""
+
+FC_M_INTER: Final[int] = 0x00100000
+"""Interjection (alias of :data:`FC_INTER`)."""
+
 FC_M_REF: Final[int] = 0x00200000
 """Reflexive pronoun (no FC_* equivalent)."""
+
+FC_M_PART: Final[int] = 0x00400000
+"""Particle (alias of :data:`FC_PART`)."""
+
+FC_M_FUNC: Final[int] = 0x00800000
+"""Function word (alias of :data:`FC_FUNC`)."""
 
 FC_M_CONT: Final[int] = 0x01000000
 """Contraction (alias of :data:`FC_CONTR`)."""
 
+FC_M_CHARACTER: Final[int] = 0x02000000
+"""Single-character word (alias of :data:`FC_CHARACTER`)."""
+
 FC_M_REFR: Final[int] = 0x04000000
 """Referential marker (no FC_* equivalent)."""
 
+FC_M_FC_MARKER: Final[int] = 0x20000000
+"""Form-class marker (alias of :data:`FC_FC_MARKER`)."""
+
 FC_M_CONTRACTION: Final[int] = 0x40000000
 """Contraction-2 marker (no FC_* equivalent)."""
+
+FC_M_HOMOGRAPH: Final[int] = 0x80000000
+"""Homograph marker (alias of :data:`FC_HOMOGRAPH`)."""
 
 
 # -- Bit-position constants (FC_V_*) ---------------------------------------
@@ -177,11 +249,35 @@ __all__ = [
     "FC_HOMOGRAPH",
     "FC_ING",
     "FC_INTER",
+    "FC_M_ADJ",
+    "FC_M_ADV",
+    "FC_M_ART",
+    "FC_M_AUX",
+    "FC_M_BE",
+    "FC_M_BEV",
+    "FC_M_CHARACTER",
+    "FC_M_CONJ",
     "FC_M_CONT",
     "FC_M_CONTRACTION",
+    "FC_M_ED",
+    "FC_M_FC_MARKER",
+    "FC_M_FUNC",
+    "FC_M_HAVE",
+    "FC_M_HOMOGRAPH",
+    "FC_M_ING",
+    "FC_M_INTER",
+    "FC_M_NEG",
+    "FC_M_NOUN",
+    "FC_M_PART",
+    "FC_M_POS",
+    "FC_M_PREP",
+    "FC_M_PRON",
     "FC_M_REF",
     "FC_M_REFR",
     "FC_M_SUBCONJ",
+    "FC_M_THAT",
+    "FC_M_TO",
+    "FC_M_VERB",
     "FC_M_WHO",
     "FC_NAME",
     "FC_NEG",

@@ -108,6 +108,35 @@ def test_fc_m_aliases() -> None:
     assert fcb.FC_M_SUBCONJ == fcb.FC_SMS
     assert fcb.FC_M_WHO == fcb.FC_WHOW
     assert fcb.FC_M_CONT == fcb.FC_CONTR
+    # Newly-added FC_M_<NAME> aliases of the matching FC_<NAME>.
+    pairs = [
+        (fcb.FC_M_ADJ, fcb.FC_ADJ),
+        (fcb.FC_M_ADV, fcb.FC_ADV),
+        (fcb.FC_M_ART, fcb.FC_ART),
+        (fcb.FC_M_AUX, fcb.FC_AUX),
+        (fcb.FC_M_BE, fcb.FC_BE),
+        (fcb.FC_M_BEV, fcb.FC_BEV),
+        (fcb.FC_M_CONJ, fcb.FC_CONJ),
+        (fcb.FC_M_ED, fcb.FC_ED),
+        (fcb.FC_M_HAVE, fcb.FC_HAVE),
+        (fcb.FC_M_ING, fcb.FC_ING),
+        (fcb.FC_M_NOUN, fcb.FC_NOUN),
+        (fcb.FC_M_POS, fcb.FC_POS),
+        (fcb.FC_M_PREP, fcb.FC_PREP),
+        (fcb.FC_M_PRON, fcb.FC_PRON),
+        (fcb.FC_M_THAT, fcb.FC_THAT),
+        (fcb.FC_M_TO, fcb.FC_TO),
+        (fcb.FC_M_VERB, fcb.FC_VERB),
+        (fcb.FC_M_NEG, fcb.FC_NEG),
+        (fcb.FC_M_INTER, fcb.FC_INTER),
+        (fcb.FC_M_PART, fcb.FC_PART),
+        (fcb.FC_M_FUNC, fcb.FC_FUNC),
+        (fcb.FC_M_CHARACTER, fcb.FC_CHARACTER),
+        (fcb.FC_M_FC_MARKER, fcb.FC_FC_MARKER),
+        (fcb.FC_M_HOMOGRAPH, fcb.FC_HOMOGRAPH),
+    ]
+    for fc_m, fc in pairs:
+        assert fc_m == fc
 
 
 def test_fc_m_extras_are_distinct() -> None:
