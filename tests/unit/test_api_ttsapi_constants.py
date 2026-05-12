@@ -220,3 +220,41 @@ def test_audio_status_index_matches_c(py_attr: str, c_name: str, expected: int) 
     assert match is not None
     assert int(match.group(1)) == expected
     assert getattr(cc, py_attr) == expected
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "ERROR_BAD_WAVE_FILE_FORMAT",
+        "ERROR_UNSUPPORTED_WAVE_FILE_FORMAT",
+        "ERROR_UNSUPPORTED_WAVE_AUDIO_FORMAT",
+        "ERROR_READING_WAVE_FILE",
+        "TTS_AUDIO_PLAY_START",
+        "TTS_AUDIO_PLAY_STOP",
+        "TTS_INDEX_MARK",
+        "TTS_INDEX_BOOKMARK",
+        "TTS_INDEX_WORDPOS",
+        "TTS_INDEX_START",
+        "TTS_INDEX_STOP",
+        "TTSSTARTUP_USING_DEFAULT_CALLBACK",
+        "WAVE_FORMAT_NULL",
+    ],
+)
+def test_extra_ttsapi_constants_match_c(name: str) -> None:
+    """Additional ttsapi.h notification codes and flags match the C source."""
+    expected = _parse_define(_ttsapi_text(), name, {"MMSYSERR_BASE": 0})
+    assert getattr(cc, name) == expected
+
+
+def test_audio_play_then_index_block() -> None:
+    """``TTS_AUDIO_PLAY_*`` (12,13) sit just below ``TTS_INDEX_*`` (14..18)."""
+    assert cc.TTS_AUDIO_PLAY_START == 12
+    assert cc.TTS_AUDIO_PLAY_STOP == 13
+    indices = [
+        cc.TTS_INDEX_MARK,
+        cc.TTS_INDEX_BOOKMARK,
+        cc.TTS_INDEX_WORDPOS,
+        cc.TTS_INDEX_START,
+        cc.TTS_INDEX_STOP,
+    ]
+    assert indices == list(range(14, 19))

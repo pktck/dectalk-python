@@ -80,6 +80,36 @@ ERROR_READING_DICTIONARY: Final[int] = 4
 ERROR_WRITING_FILE: Final[int] = 5
 ERROR_ALLOCATING_INDEX_MARK_MEMORY: Final[int] = 6
 ERROR_OPENING_WAVE_FILE: Final[int] = 7
+ERROR_BAD_WAVE_FILE_FORMAT: Final[int] = 8
+ERROR_UNSUPPORTED_WAVE_FILE_FORMAT: Final[int] = 9
+ERROR_UNSUPPORTED_WAVE_AUDIO_FORMAT: Final[int] = 10
+ERROR_READING_WAVE_FILE: Final[int] = 11
+TTS_AUDIO_PLAY_START: Final[int] = 12
+"""Callback notification: audio output has started."""
+TTS_AUDIO_PLAY_STOP: Final[int] = 13
+"""Callback notification: audio output has stopped."""
+TTS_INDEX_MARK: Final[int] = 14
+"""Callback notification: a numeric index marker was reached."""
+TTS_INDEX_BOOKMARK: Final[int] = 15
+"""Callback notification: SAPI4 bookmark."""
+TTS_INDEX_WORDPOS: Final[int] = 16
+"""Callback notification: word-position marker."""
+TTS_INDEX_START: Final[int] = 17
+"""Callback notification: speak-block start."""
+TTS_INDEX_STOP: Final[int] = 18
+"""Callback notification: speak-block stop."""
+
+
+# -- Additional startup-option flag -----------------------------------------
+
+TTSSTARTUP_USING_DEFAULT_CALLBACK: Final[int] = 0x08000000
+"""Startup option: use the engine's default audio callback."""
+
+
+# -- WAVE_FORMAT_NULL (no audio output) ------------------------------------
+
+WAVE_FORMAT_NULL: Final[int] = 0xC4000000
+"""Sentinel WAVE format meaning "no audio output" (used by silent renders)."""
 
 
 # -- StatusAudio() identifier indices ---------------------------------------
@@ -240,11 +270,15 @@ __all__ = [
     "DENNIS",
     "DO_NOT_USE_AUDIO_DEVICE",
     "ERROR_ALLOCATING_INDEX_MARK_MEMORY",
+    "ERROR_BAD_WAVE_FILE_FORMAT",
     "ERROR_GETTING_DEVICE_CAPABILITIES",
     "ERROR_IN_AUDIO_WRITE",
     "ERROR_OPENING_WAVE_FILE",
     "ERROR_OPENING_WAVE_OUTPUT_DEVICE",
     "ERROR_READING_DICTIONARY",
+    "ERROR_READING_WAVE_FILE",
+    "ERROR_UNSUPPORTED_WAVE_AUDIO_FORMAT",
+    "ERROR_UNSUPPORTED_WAVE_FILE_FORMAT",
     "ERROR_WRITING_FILE",
     "FRANK",
     "FULL_RANGE_MARKS",
@@ -292,9 +326,17 @@ __all__ = [
     "TTSERR_NOMAINDIC",
     "TTSERR_NOMEM",
     "TTSERR_NOUSERDIC",
+    "TTSSTARTUP_USING_DEFAULT_CALLBACK",
     "TTS_AMERICAN_ENGLISH",
     "TTS_ASCII",
+    "TTS_AUDIO_PLAY_START",
+    "TTS_AUDIO_PLAY_STOP",
     "TTS_FORCE",
+    "TTS_INDEX_BOOKMARK",
+    "TTS_INDEX_MARK",
+    "TTS_INDEX_START",
+    "TTS_INDEX_STOP",
+    "TTS_INDEX_WORDPOS",
     "TTS_LANG_ERROR",
     "TTS_MSG_BOOKMARK",
     "TTS_MSG_BUFFER",
@@ -329,6 +371,7 @@ __all__ = [
     "VTM_GV_UNDER",
     "WAVE_FORMAT_08M08",
     "WAVE_FORMAT_08M16",
+    "WAVE_FORMAT_NULL",
     "WAVE_OUT_DEVICE_ID",
     "WENDY",
 ]
