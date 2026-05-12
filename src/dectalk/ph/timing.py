@@ -32,6 +32,7 @@ from dectalk.ph.rom_tables import (
     us_featb,
     us_inhdr,
     us_mindur,
+    us_place,
     us_ptram,
 )
 
@@ -249,6 +250,33 @@ def burdr(phone: int) -> int:
     return us_burdr[code]
 
 
+def place(phone: int) -> int:
+    """Return the place-of-articulation feature bits for a phone code.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        __inline short place(int phone) {
+            return all_place[phone>>8][phone&0xFF];
+        }
+
+    The ``us_place`` table is a bit-field encoding place of
+    articulation (labial / dental / alveolar / velar / etc.) plus
+    a few coarse F2-back / F2-back-front flags. Consumers test the
+    returned value against the ``F2BACKI`` / ``F2BACKF`` bits in
+    p_us_st1.c.
+
+    Args:
+        phone: 16-bit font-encoded phone code.
+
+    Returns:
+        Place-of-articulation feature bits from ``us_place[code]``.
+    """
+    code = phone & 0xFF
+    return us_place[code]
+
+
 __all__ = [
     "begtyp",
     "burdr",
@@ -256,5 +284,6 @@ __all__ = [
     "inh_timing",
     "min_timing",
     "phone_feature",
+    "place",
     "ptram",
 ]

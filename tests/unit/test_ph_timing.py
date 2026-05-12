@@ -14,6 +14,7 @@ from dectalk.ph.rom_tables import (
     us_featb,
     us_inhdr,
     us_mindur,
+    us_place,
     us_ptram,
 )
 
@@ -117,3 +118,14 @@ def test_begtyp_lookup_uses_low_byte() -> None:
     assert t.endtyp(_us_phone(5)) == t.endtyp((0x1C << PSFONT) | 5)
     assert t.ptram(_us_phone(5)) == t.ptram((0x1B << PSFONT) | 5)
     assert t.burdr(_us_phone(5)) == t.burdr((0x1A << PSFONT) | 5)
+
+
+@pytest.mark.parametrize("code", [0, 1, 5, 10, 20, 50, 60])
+def test_place_us(code: int) -> None:
+    """For US-font phones, ``place`` returns ``us_place[code]``."""
+    assert t.place(_us_phone(code)) == us_place[code]
+
+
+def test_place_lookup_uses_low_byte() -> None:
+    """``place(phone)`` only reads the low byte — font bits are masked."""
+    assert t.place(_us_phone(5)) == t.place((0x1D << PSFONT) | 5)
