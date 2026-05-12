@@ -29,7 +29,38 @@ from __future__ import annotations
 
 from typing import Final
 
-from dectalk.include.phoneme_codes import USPhoneme
+from dectalk.include.phoneme_codes import (
+    BLOCK_RULES,
+    COMMA,
+    HYPHEN,
+    MBOUND,
+    PPSTART,
+    S1,
+    S2,
+    SBOUND,
+    SEMPH,
+    VPSTART,
+    WBOUND,
+    USPhoneme,
+)
+
+# Language-independent punctuation/boundary glyphs. The C source appends
+# these 12 entries to every ``PTAB ptab[]`` initialiser regardless of
+# the active language #ifdef.
+_COMMON_GLYPHS: Final[dict[str, int]] = {
+    ",": COMMA,
+    " ": WBOUND,
+    "\t": WBOUND,
+    "'": S1,
+    "`": S2,
+    '"': SEMPH,
+    "#": HYPHEN,
+    "(": PPSTART,
+    ")": VPSTART,
+    "*": MBOUND,
+    "~": BLOCK_RULES,
+    "-": SBOUND,
+}
 
 ptab_us: Final[dict[str, int]] = {
     "e": int(USPhoneme.EY),
@@ -85,6 +116,8 @@ ptab_us: Final[dict[str, int]] = {
     "P": int(USPhoneme.AR),
     "M": int(USPhoneme.OR_),
     "j": int(USPhoneme.UR),
+    # Language-independent suffix block.
+    **_COMMON_GLYPHS,
 }
 
 
