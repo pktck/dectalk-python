@@ -55,12 +55,18 @@ FLIQ: Final[int] = 0x0020
 FSIB: Final[int] = 0x0040
 FLTSVELAR: Final[int] = 0x0080
 FNAS: Final[int] = 0x0100
+FGEM: Final[int] = 0x0200
+"""Geminate consonant (e.g. ``running`` has a geminate /n/)."""
 FCOR: Final[int] = 0x0400
 FC: Final[int] = 0x0800
 FL: Final[int] = 0x1000
 FX: Final[int] = 0x2000
 FR: Final[int] = 0x4000
 FSYL: Final[int] = 0x8000
+
+NFSYM: Final[int] = 16
+"""Number of F-feature symbols (the LTS rule engine indexes a 16-element
+table for F-feature lookups)."""
 
 
 # -- Phoneme feature bits ---------------------------------------------------
@@ -73,6 +79,12 @@ PSIB: Final[int] = 0x0010
 POBS: Final[int] = 0x0020
 PTD: Final[int] = 0x0040
 PBACK: Final[int] = 0x0080
+PLONG: Final[int] = 0x0100
+"""Long vowel — used by the duration rules."""
+
+NPSYM: Final[int] = 9
+"""Number of P-feature symbols (the LTS rule engine indexes a 9-element
+table for P-feature lookups)."""
 
 
 # -- feats[] grapheme feature table from l_us_con.c -------------------------
@@ -117,6 +129,7 @@ __all__ = [
     "FC",
     "FCONS",
     "FCOR",
+    "FGEM",
     "FHIGH",
     "FL",
     "FLIQ",
@@ -129,9 +142,12 @@ __all__ = [
     "FVOC",
     "FVOICE",
     "FX",
+    "NFSYM",
+    "NPSYM",
     "PBACK",
     "PBOTH",
     "PCONS",
+    "PLONG",
     "POBS",
     "PSIB",
     "PTD",

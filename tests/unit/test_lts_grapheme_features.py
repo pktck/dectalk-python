@@ -136,3 +136,15 @@ def test_pfeat_obstruents_have_pobs() -> None:
     # F, V, TH, DH, S, Z, SH, ZH at indices 37-44
     for i in range(37, 45):
         assert gf.pfeat[i] & gf.POBS
+
+
+def test_fgem_and_plong() -> None:
+    """``FGEM`` (geminate flag) and ``PLONG`` (long vowel) match ls_defs.h."""
+    assert gf.FGEM == 0x0200
+    assert gf.PLONG == 0x0100
+
+
+def test_symbol_table_sizes() -> None:
+    """``NFSYM`` (16) and ``NPSYM`` (9) — sizes of the F/P symbol tables."""
+    assert gf.NFSYM == 16
+    assert gf.NPSYM == 9
