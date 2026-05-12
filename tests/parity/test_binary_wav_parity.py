@@ -48,6 +48,7 @@ pytestmark = pytest.mark.skipif(
 
 
 _CORPUS: tuple[str, ...] = (
+    # Original baseline corpus.
     "hello world",
     "the quick brown fox",
     "she sells sea shells",
@@ -56,6 +57,39 @@ _CORPUS: tuple[str, ...] = (
     "[:rate 250] testing one two three",
     "DECtalk version 6.2.0",
     "this is a test, with a comma, and a period.",
+    # Numbers and decimal.
+    "the answer is 42",
+    "3 point 14",
+    "one hundred and one dalmatians",
+    "1234567890",
+    # Punctuation variants.
+    "hello! how are you?",
+    "wait... what just happened?",
+    "yes; no; maybe.",
+    # Inline-command rate.
+    "[:rate 100] slow",
+    "[:rate 400] fast speech",
+    # Inline-command voice presets — exercise the 9 canonical voices.
+    "[:nb] betty speaking",
+    "[:nh] harry speaking",
+    "[:nf] frank speaking",
+    "[:nd] dennis speaking",
+    "[:nk] kit the kid",
+    "[:nu] ursula speaking",
+    "[:nr] rita rough",
+    "[:nw] wendy whispery",
+    # Spell-out cases (short all-caps).
+    "FBI",
+    "NASA",
+    "USA",
+    "MIT",
+    # Common English phonotactics.
+    "judge thought rhythms",
+    "knight light right",
+    # Mixed punctuation with abbreviations.
+    "Dr. Smith said hello.",
+    # Long-ish utterance.
+    "the rain in spain falls mainly on the plain",
 )
 
 
