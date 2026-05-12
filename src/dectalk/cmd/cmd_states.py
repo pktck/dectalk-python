@@ -168,6 +168,9 @@ PUNCT_pass: Final[int] = 3
 
 # -- Skip mode flags --------------------------------------------------------
 
+SKIP_none: Final[int] = 0
+"""Skip-mode: no special skip handling — process the input verbatim."""
+
 SKIP_email: Final[int] = 1
 """Skip-mode: email-addressing — split words on ``@`` / ``.`` boundaries."""
 
@@ -183,7 +186,38 @@ SKIP_all: Final[int] = 4
 SKIP_cpg: Final[int] = 5
 """Skip-mode: ``[:cpg]`` (custom phoneme group) mode."""
 
+# -- Misc cm_defs.h constants -----------------------------------------------
+
+MAXRULES: Final[int] = 500
+"""Rule-engine state-table size (matches ``MAXRULES`` in cm_defs.h)."""
+
+NUM_INTER: Final[int] = 20
+"""Maximum intermediate bytes in an ANSI escape sequence."""
+
+NUM_PARAM: Final[int] = 20
+"""Maximum parameter bytes in an ANSI escape sequence."""
+
+STRING_MAX: Final[int] = 0x200
+"""Capacity of the parser's string-parameter buffer (must be a power of two)."""
+
+STRING_MASK: Final[int] = 0x1FF
+"""Wrap mask for :data:`STRING_MAX` (= ``STRING_MAX - 1``)."""
+
+# -- DTMF tone timings (cm_defs.h) ------------------------------------------
+
+DTMF_OFF: Final[int] = 600
+"""DTMF off-time in samples (≈60 ms at 10 kHz / 54 ms at 11.025 kHz)."""
+
+DTMF_ON: Final[int] = 1600
+"""DTMF on-time in samples (≈160 ms at 10 kHz; DTPC2 build right-shifts by 4)."""
+
+NWDTMF: Final[int] = 10
+"""Number of DTMF tones supported (0-9)."""
+
 __all__ = [
+    "DTMF_OFF",
+    "DTMF_ON",
+    "MAXRULES",
     "MAX_PERIOD_PAUSE",
     "MAX_RATE",
     "MAX_SPEAKING_RATE",
@@ -191,6 +225,9 @@ __all__ = [
     "MIN_PERIOD_PAUSE",
     "MIN_RATE",
     "MIN_SPEAKING_RATE",
+    "NUM_INTER",
+    "NUM_PARAM",
+    "NWDTMF",
     "PHONEME_ASCKY",
     "PHONEME_OFF",
     "PHONEME_SPEAK",
@@ -201,6 +238,8 @@ __all__ = [
     "STATE_PARAM",
     "STATE_PHONEME",
     "STATE_TOSS",
+    "STRING_MASK",
+    "STRING_MAX",
     "CMD_bad_command",
     "CMD_bad_param",
     "CMD_bad_phoneme",
@@ -230,6 +269,7 @@ __all__ = [
     "SKIP_all",
     "SKIP_cpg",
     "SKIP_email",
+    "SKIP_none",
     "SKIP_punct",
     "SKIP_rule",
 ]
