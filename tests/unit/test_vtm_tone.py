@@ -38,7 +38,7 @@ def test_tone_zero_phase_zero_sample() -> None:
 def test_tone_quarter_phase_one_sample() -> None:
     """At 1/4 of the table (256/1024), the sine is ≈ 1."""
     sample, _ = t.tone(1.0, 256.0)
-    assert sample == pytest.approx(1.0, abs=1e-3)
+    assert abs(sample - 1.0) < 1e-3
 
 
 @pytest.mark.parametrize("phase", [0.0, 256.0, 512.0, 768.0, 1023.0])
@@ -55,7 +55,7 @@ def test_tone_consecutive_calls_match_table(phase: float) -> None:
 def test_tone_exact_returns_sin() -> None:
     """``tone_exact`` returns ``math.sin(phase)``."""
     sample, _ = t.tone_exact(0.1, math.pi / 4)
-    assert sample == pytest.approx(math.sin(math.pi / 4))
+    assert abs(sample - math.sin(math.pi / 4)) < 1e-9
 
 
 def test_tone_exact_advances_phase() -> None:
@@ -68,4 +68,4 @@ def test_tone_exact_wraps_at_two_pi() -> None:
     """tone_exact wraps at 2*pi (its TWO_PI_EQUIVALENT is radians)."""
     _, new_phase = t.tone_exact(2 * math.pi - 0.001, math.pi)
     # phase (pi) + increment (2pi - 0.001) = 3pi - 0.001 > 2pi → wraps
-    assert new_phase == pytest.approx(math.pi - 0.001, abs=1e-6)
+    assert abs(new_phase - (math.pi - 0.001)) < 1e-6
