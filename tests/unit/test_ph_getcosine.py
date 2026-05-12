@@ -32,6 +32,29 @@ def test_zero_returns_one() -> None:
     assert gc.getcosine(0) == gc.ONE
 
 
+def test_dt_one_alias() -> None:
+    """``DT_ONE`` is the C-source alias for ``ONE`` (same value)."""
+    assert gc.DT_ONE == gc.ONE
+
+
+def test_f0_bounds_ordered() -> None:
+    """LOWEST_F0 < HIGHEST_F0 — the intonation engine clips into this range."""
+    assert gc.LOWEST_F0 < gc.HIGHEST_F0
+    assert gc.HIGHEST_F0 == 5121
+    assert gc.LOWEST_F0 == 500
+
+
+def test_lowpass_filter_constants() -> None:
+    """F_SEG_LOWPASS (3000 Hz cutoff) and DELAY_SEG_LOWPASS (3 frames)."""
+    assert gc.F_SEG_LOWPASS == 3000
+    assert gc.DELAY_SEG_LOWPASS == 3
+
+
+def test_f0shft_value() -> None:
+    """F0SHFT is 3 — shift used to avoid F0 rounding errors."""
+    assert gc.F0SHFT == 3
+
+
 def test_pi_returns_minus_one() -> None:
     """cos(π) approximated as -ONE."""
     # time=PI > PI? No. temptime=PI > PIOVER2 → temptime = PI - PI = 0.

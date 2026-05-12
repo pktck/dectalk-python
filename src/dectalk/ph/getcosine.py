@@ -30,6 +30,25 @@ PI: Final[int] = 2048
 PIOVER2: Final[int] = 1024
 ONE: Final[int] = PIOVER2 * PIOVER2  # = 1048576
 
+DT_ONE: Final[int] = PIOVER2 * PIOVER2
+"""C-source alias for :data:`ONE` (named ``DT_ONE`` in ph_drwt02.c)."""
+
+HIGHEST_F0: Final[int] = 5121
+"""Maximum F0 in Hz x 10 — the intonation engine clips above this."""
+
+LOWEST_F0: Final[int] = 500
+"""Minimum F0 in Hz x 10 — the intonation engine clips below this."""
+
+F_SEG_LOWPASS: Final[int] = 3000
+"""Nominal cutoff frequency of the 1-pole segmental low-pass filter."""
+
+DELAY_SEG_LOWPASS: Final[int] = 3
+"""Delay in frames to the half-way point of the segmental low-pass step
+response."""
+
+F0SHFT: Final[int] = 3
+"""Bit shift used to avoid rounding errors in F0 calculations."""
+
 
 def getcosine(time: int) -> int:
     """Approximate ``cos(angle) * ONE`` where ``angle = time * 2π / TWOPI``.
@@ -79,4 +98,16 @@ def getcosine(time: int) -> int:
     return -cosine
 
 
-__all__ = ["ONE", "PI", "PIOVER2", "TWOPI", "getcosine"]
+__all__ = [
+    "DELAY_SEG_LOWPASS",
+    "DT_ONE",
+    "F0SHFT",
+    "F_SEG_LOWPASS",
+    "HIGHEST_F0",
+    "LOWEST_F0",
+    "ONE",
+    "PI",
+    "PIOVER2",
+    "TWOPI",
+    "getcosine",
+]
