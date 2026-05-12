@@ -39,6 +39,40 @@ from dectalk.cmd.parser_tables import (
     TYPE_white,
 )
 
+# ---- Rule-engine return codes (par_def.h FAIL/SUCCESS family) ----
+
+FAIL: Final[int] = 0
+"""Rule didn't match — try the next alternative."""
+
+SUCCESS: Final[int] = 1
+"""Rule matched — apply its action."""
+
+OPT_FAIL: Final[int] = 2
+"""Optional sub-match didn't fire (treated as success at the rule level)."""
+
+END_OF_STRING: Final[int] = 3
+"""Ran off the end of the input string mid-match."""
+
+FATAL_FAIL: Final[int] = 4
+"""Rule contains a syntax error or invariant violation."""
+
+STOP: Final[int] = 5
+"""Stop the whole parse — used by the watchdog when total work exceeds
+``PAR_ROLLING_STOP_VALUE`` characters."""
+
+
+# ---- Rule end-of-section markers ----
+
+End_Is_Slash: Final[int] = ord("/")
+"""Rule section ends at ``'/'`` — used by the state/char-type/action parser."""
+
+End_Is_Null: Final[int] = 0
+"""Rule section ends at NUL — used at the top level."""
+
+End_Is_Paren: Final[int] = ord(")")
+"""Rule section ends at ``')'`` — used inside save-state captures."""
+
+
 # ---- Action / state codes ----
 
 NULL_STATE: Final[int] = 0
@@ -178,6 +212,7 @@ __all__ = [
     "DIGIT_CHAR_DELIM",
     "DIGIT_CHAR_TYPE",
     "DIGIT_CHAR_TYPE2",
+    "END_OF_STRING",
     "ESCAPE_DELIM",
     "EXACT_CASE_DELIM",
     "EXACT_CASE_TYPE",
@@ -185,6 +220,8 @@ __all__ = [
     "EXACT_CHAR_DELIM",
     "EXACT_CHAR_TYPE",
     "EXACT_CHAR_TYPE2",
+    "FAIL",
+    "FATAL_FAIL",
     "HEXADECIMAL_DELIM",
     "HEXADECIMAL_TYPE",
     "HEXADECIMAL_TYPE2",
@@ -210,6 +247,7 @@ __all__ = [
     "NUMBER_CHAR_TYPE2",
     "OPTIONAL_DELIMITER",
     "OPTIONAL_STATE",
+    "OPT_FAIL",
     "PUNCT_CHAR_DELIM",
     "PUNCT_CHAR_TYPE",
     "PUNCT_CHAR_TYPE2",
@@ -229,6 +267,8 @@ __all__ = [
     "STATE_PART_DELIM",
     "STATUS_STATE",
     "STATUS_STATE_DELIM",
+    "STOP",
+    "SUCCESS",
     "UPPER_CHAR_DELIM",
     "UPPER_CHAR_TYPE",
     "UPPER_CHAR_TYPE2",
@@ -243,4 +283,7 @@ __all__ = [
     "WHITE_CHAR_TYPE2",
     "WORD_STATE",
     "WORD_STATE_DELIM",
+    "End_Is_Null",
+    "End_Is_Paren",
+    "End_Is_Slash",
 ]
