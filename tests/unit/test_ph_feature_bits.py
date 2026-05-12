@@ -112,3 +112,19 @@ def test_syllable_count_uses_fsyl_shift() -> None:
 def test_fother_composite() -> None:
     """``FOTHER`` is the OR of FSBOUND / FCODA / FBLOCK / FWINITC."""
     assert fb.FOTHER == (fb.FSBOUND | fb.FCODA | fb.FBLOCK | fb.FWINITC)
+
+
+def test_at_bottom_top_of_hat() -> None:
+    """AT_BOTTOM_OF_HAT (1) and AT_TOP_OF_HAT (2) — hat-position codes."""
+    assert fb.AT_BOTTOM_OF_HAT == 1
+    assert fb.AT_TOP_OF_HAT == 2
+
+
+def test_fhyphenated() -> None:
+    """``FHYPHENATED`` (0o10000) — hyphenated-word marker."""
+    assert fb.FHYPHENATED == 0o10000
+
+
+def test_pho_fea_max() -> None:
+    """``PHO_FEA_MAX`` (14) — feature count cap."""
+    assert fb.PHO_FEA_MAX == 14

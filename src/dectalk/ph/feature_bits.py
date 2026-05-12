@@ -157,6 +157,22 @@ FBLOCK: Final[int] = 0o20000
 FDOUBLECONS: Final[int] = 0x40000
 """Doubled-consonant marker (German build)."""
 
+FHYPHENATED: Final[int] = 0o10000
+"""Hyphenated word marker (from viphdefs.h)."""
+
+# -- Hat-roof position codes (used by intonation engine) --------------------
+
+AT_BOTTOM_OF_HAT: Final[int] = 1
+"""Current syllable is at the start of the hat (declination floor)."""
+
+AT_TOP_OF_HAT: Final[int] = 2
+"""Current syllable is at the peak of the hat (declination ceiling)."""
+
+# -- Feature-count cap ------------------------------------------------------
+
+PHO_FEA_MAX: Final[int] = 14
+"""Maximum number of features in the per-phoneme struc[] structure."""
+
 # -- Sound class flags -----------------------------------------------------
 
 FSBOUND: Final[int] = 0o1000000
@@ -181,6 +197,8 @@ FOTHER_SHIFT: Final[int] = 12
 """Shift used to pack the FOTHER bits into a smaller field."""
 
 __all__ = [
+    "AT_BOTTOM_OF_HAT",
+    "AT_TOP_OF_HAT",
     "FBISYL",
     "FBLOCK",
     "FBOUNDARY",
@@ -194,6 +212,7 @@ __all__ = [
     "FFIRSTSYL",
     "FHAT_BEGINS",
     "FHAT_ENDS",
+    "FHYPHENATED",
     "FISBOUND",
     "FMBNEXT",
     "FMEDIALSYL",
@@ -221,4 +240,5 @@ __all__ = [
     "FWBNEXT",
     "FWINITC",
     "F_TIME_RISE",
+    "PHO_FEA_MAX",
 ]
