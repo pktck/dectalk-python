@@ -1,15 +1,19 @@
-"""Per-phoneme timing dispatch helpers from ph_timng.c.
+"""Per-phoneme timing dispatch helpers from ph_timng.c / ph_setar.c.
 
-Translated from ``src/dapi/src/ph/ph_timng.c`` and the
-``phone_feature`` macro from ``ph_setar.c``:
+Translated from ``src/dapi/src/ph/ph_timng.c`` and the inline
+helpers in ``ph_setar.c``:
 
 - :func:`min_timing` — minimum duration in samples for a phone code.
 - :func:`inh_timing` — inherent (typical) duration in samples.
 - :func:`phone_feature` — feature-flag lookup for a phone code.
+- :func:`begtyp` — begin-segment type lookup.
+- :func:`endtyp` — end-segment type lookup.
+- :func:`ptram` — parallel-amplitude index for fricatives.
+- :func:`burdr` — burst-duration lookup for plosives.
 
-All three dispatch on the phone code's **font field** (the upper 5
-bits) to choose between language-specific tables. This Python port
-only ships the US tables; the C source's "OH MY GOD! THEY'VE KILLED
+All dispatch on the phone code's **font field** (the upper 5 bits)
+to choose between language-specific tables. This Python port only
+ships the US tables; the C source's "OH MY GOD! THEY'VE KILLED
 KENNY" default branch returns the US table for unknown fonts, so we
 preserve that behaviour to keep US parity intact while leaving
 room for the other-language tables to land later.
@@ -21,7 +25,15 @@ from typing import Final
 
 from dectalk.include.cmd_codes import PFONT, PSFONT, PVALUE
 from dectalk.include.phoneme_codes import PFUSA
-from dectalk.ph.rom_tables import us_featb, us_inhdr, us_mindur
+from dectalk.ph.rom_tables import (
+    us_begtyp,
+    us_burdr,
+    us_endtyp,
+    us_featb,
+    us_inhdr,
+    us_mindur,
+    us_ptram,
+)
 
 # Font-shifted PF codes (the upper 5 bits of a phone code).
 _FONT_USA: Final[int] = PFUSA << PSFONT
@@ -140,4 +152,109 @@ def phone_feature(phone: int) -> int:
     return us_featb[code]
 
 
-__all__ = ["inh_timing", "min_timing", "phone_feature"]
+def begtyp(phone: int) -> int:
+    """Return the begin-segment type for a phone code.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        __inline short begtyp(int phone) {
+            return all_begtyp[phone>>8][phone&0xFF];
+        }
+
+    The ``all_begtyp`` table is a per-font array of pointers into
+    ``us_begtyp`` / ``uk_begtyp`` / etc. For US-font phones the
+    lookup is ``us_begtyp[phone & 0xFF]``.
+
+    Args:
+        phone: 16-bit font-encoded phone code.
+
+    Returns:
+        Begin-segment type code from the language's ``*_begtyp``
+        table. The Python port returns ``us_begtyp[code]`` for any
+        font (matching the C default branch).
+    """
+    code = phone & 0xFF
+    return us_begtyp[code]
+
+
+def endtyp(phone: int) -> int:
+    """Return the end-segment type for a phone code.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        __inline short endtyp(int phone) {
+            return all_endtyp[phone>>8][phone&0xFF];
+        }
+
+    Args:
+        phone: 16-bit font-encoded phone code.
+
+    Returns:
+        End-segment type code; see :func:`begtyp` for the dispatch
+        semantics.
+    """
+    code = phone & 0xFF
+    return us_endtyp[code]
+
+
+def ptram(phone: int) -> int:
+    """Return the parallel-amplitude index for a phone code (fricatives).
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        __inline short ptram(int phone) {
+            return all_ptram[phone>>8][phone&0xFF];
+        }
+
+    Used as an index into the parallel-amplitude tables when
+    generating fricative friction noise.
+
+    Args:
+        phone: 16-bit font-encoded phone code.
+
+    Returns:
+        Index into the per-language amplitude tables.
+    """
+    code = phone & 0xFF
+    return us_ptram[code]
+
+
+def burdr(phone: int) -> int:
+    """Return the burst duration for a plosive phone code.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        __inline short burdr(int phone) {
+            return all_burdr[phone>>8][phone&0xFF];
+        }
+
+    Plosives (P, T, K, B, D, G) have a burst portion before the
+    voiced onset; this is its duration in samples.
+
+    Args:
+        phone: 16-bit font-encoded phone code.
+
+    Returns:
+        Burst duration in samples.
+    """
+    code = phone & 0xFF
+    return us_burdr[code]
+
+
+__all__ = [
+    "begtyp",
+    "burdr",
+    "endtyp",
+    "inh_timing",
+    "min_timing",
+    "phone_feature",
+    "ptram",
+]

@@ -7,7 +7,15 @@ import pytest
 from dectalk.include.cmd_codes import PSFONT
 from dectalk.include.phoneme_codes import PFUSA
 from dectalk.ph import timing as t
-from dectalk.ph.rom_tables import us_featb, us_inhdr, us_mindur
+from dectalk.ph.rom_tables import (
+    us_begtyp,
+    us_burdr,
+    us_endtyp,
+    us_featb,
+    us_inhdr,
+    us_mindur,
+    us_ptram,
+)
 
 
 def _us_phone(code: int) -> int:
@@ -73,3 +81,39 @@ def test_phone_feature_unknown_font_falls_back_to_us() -> None:
     """Unknown fonts fall back to us_featb (Python keeps it defined)."""
     fake_phone = (0x0F << PSFONT) | 5
     assert t.phone_feature(fake_phone) == us_featb[5]
+
+
+# ---- begtyp / endtyp / ptram / burdr ----
+
+
+@pytest.mark.parametrize("code", [0, 1, 5, 10, 20, 50, 60])
+def test_begtyp_us(code: int) -> None:
+    """For US-font phones, ``begtyp`` returns ``us_begtyp[code]``."""
+    assert t.begtyp(_us_phone(code)) == us_begtyp[code]
+
+
+@pytest.mark.parametrize("code", [0, 1, 5, 10, 20, 50, 60])
+def test_endtyp_us(code: int) -> None:
+    """For US-font phones, ``endtyp`` returns ``us_endtyp[code]``."""
+    assert t.endtyp(_us_phone(code)) == us_endtyp[code]
+
+
+@pytest.mark.parametrize("code", [0, 1, 5, 10, 20, 50, 60])
+def test_ptram_us(code: int) -> None:
+    """For US-font phones, ``ptram`` returns ``us_ptram[code]``."""
+    assert t.ptram(_us_phone(code)) == us_ptram[code]
+
+
+@pytest.mark.parametrize("code", [0, 1, 5, 10, 20, 50, 60])
+def test_burdr_us(code: int) -> None:
+    """For US-font phones, ``burdr`` returns ``us_burdr[code]``."""
+    assert t.burdr(_us_phone(code)) == us_burdr[code]
+
+
+def test_begtyp_lookup_uses_low_byte() -> None:
+    """``begtyp(phone)`` only reads the low byte — font bits are masked."""
+    # Same low byte (=5) under different fonts should give the same result.
+    assert t.begtyp(_us_phone(5)) == t.begtyp((0x1D << PSFONT) | 5)
+    assert t.endtyp(_us_phone(5)) == t.endtyp((0x1C << PSFONT) | 5)
+    assert t.ptram(_us_phone(5)) == t.ptram((0x1B << PSFONT) | 5)
+    assert t.burdr(_us_phone(5)) == t.burdr((0x1A << PSFONT) | 5)
