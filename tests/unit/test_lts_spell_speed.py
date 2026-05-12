@@ -59,3 +59,15 @@ def test_multiple_ampersands() -> None:
 def test_long_with_ampersand_slow() -> None:
     """A long string with an ampersand isn't the AT&T pattern."""
     assert ss.ls_spel_spell_speed("ATM&T&") == ss.SLOW
+
+
+def test_spell_mode_constants_match_c_source() -> None:
+    """``FAST=0`` / ``SLOW=1`` / ``DASHNFAST=2`` match ls_defs.h."""
+    assert ss.FAST == 0
+    assert ss.SLOW == 1
+    assert ss.DASHNFAST == 2
+
+
+def test_spell_mode_constants_distinct() -> None:
+    """The three spell-mode codes are pairwise distinct."""
+    assert len({ss.FAST, ss.SLOW, ss.DASHNFAST}) == 3

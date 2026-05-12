@@ -17,7 +17,13 @@ from typing import Final
 from dectalk.lts.char_features import is_alpha, ls_lower
 
 FAST: Final[int] = 0
+"""Spell mode = fast (no per-letter pause)."""
+
 SLOW: Final[int] = 1
+"""Spell mode = slow (per-letter comma pause)."""
+
+DASHNFAST: Final[int] = 2
+"""Spell mode = fast and pronounce each separator as ``"dash"``."""
 
 
 def ls_spel_spell_speed(word: str | bytes) -> int:
@@ -77,4 +83,4 @@ def ls_spel_spell_speed(word: str | bytes) -> int:
     return SLOW
 
 
-__all__ = ["FAST", "SLOW", "ls_spel_spell_speed"]
+__all__ = ["DASHNFAST", "FAST", "SLOW", "ls_spel_spell_speed"]
