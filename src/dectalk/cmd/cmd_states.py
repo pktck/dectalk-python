@@ -123,6 +123,49 @@ MAX_RATE: Final[int] = 550
 MAX_VOICES: Final[int] = 11
 """Number of voice slots in the voice table (Paul…Wendy + Variable Val)."""
 
+# -- Phoneme-parser mode bits (kernel.h) ------------------------------------
+
+PHONEME_OFF: Final[int] = 0x1
+"""Phoneme-mode bit: parser is currently NOT in phonemic mode."""
+
+PHONEME_ASCKY: Final[int] = 0x2
+"""Phoneme-mode bit: input phonemes are ASCKY (vs ARPABET)."""
+
+PHONEME_SPEAK: Final[int] = 0x4
+"""Phoneme-mode bit: phonemic words should still be spoken."""
+
+# -- Error-handling modes (cm_defs.h) ---------------------------------------
+
+ERROR_ignore: Final[int] = 0
+"""Error mode: ignore the bad input silently."""
+
+ERROR_text: Final[int] = 1
+"""Error mode: print the bad input as text."""
+
+ERROR_escape: Final[int] = 2
+"""Error mode: emit an escape sequence pointing at the bad input."""
+
+ERROR_speak: Final[int] = 3
+"""Error mode: speak the bad input verbatim (DECtalk's default)."""
+
+ERROR_tone: Final[int] = 4
+"""Error mode: play an error tone."""
+
+# -- Punctuation modes (cm_defs.h) ------------------------------------------
+
+PUNCT_none: Final[int] = 0
+"""Punctuation mode: don't speak any punctuation."""
+
+PUNCT_some: Final[int] = 1
+"""Punctuation mode: speak some punctuation (clause-internal pauses,
+question/exclamation marks)."""
+
+PUNCT_all: Final[int] = 2
+"""Punctuation mode: speak every punctuation mark."""
+
+PUNCT_pass: Final[int] = 3
+"""Punctuation mode: pass punctuation through unprocessed (let LTS decide)."""
+
 # -- Skip mode flags --------------------------------------------------------
 
 SKIP_email: Final[int] = 1
@@ -148,6 +191,9 @@ __all__ = [
     "MIN_PERIOD_PAUSE",
     "MIN_RATE",
     "MIN_SPEAKING_RATE",
+    "PHONEME_ASCKY",
+    "PHONEME_OFF",
+    "PHONEME_SPEAK",
     "STATE_BRACKET",
     "STATE_COMMAND",
     "STATE_KEEP",
@@ -172,6 +218,15 @@ __all__ = [
     "CMD_unable_to_open_file",
     "CMD_unsupported_audio_format",
     "CMD_unsupported_wave_file_format",
+    "ERROR_escape",
+    "ERROR_ignore",
+    "ERROR_speak",
+    "ERROR_text",
+    "ERROR_tone",
+    "PUNCT_all",
+    "PUNCT_none",
+    "PUNCT_pass",
+    "PUNCT_some",
     "SKIP_all",
     "SKIP_cpg",
     "SKIP_email",

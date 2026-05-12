@@ -126,3 +126,27 @@ def test_skip_mode_codes() -> None:
     assert cs.SKIP_cpg == 5
     # Five distinct values.
     assert len({cs.SKIP_email, cs.SKIP_punct, cs.SKIP_rule, cs.SKIP_all, cs.SKIP_cpg}) == 5
+
+
+def test_phoneme_mode_bits() -> None:
+    """PHONEME_OFF / _ASCKY / _SPEAK are 0x1 / 0x2 / 0x4 from kernel.h."""
+    assert cs.PHONEME_OFF == 0x1
+    assert cs.PHONEME_ASCKY == 0x2
+    assert cs.PHONEME_SPEAK == 0x4
+
+
+def test_error_mode_codes() -> None:
+    """ERROR_ignore..ERROR_tone are 0..4 from cm_defs.h."""
+    assert cs.ERROR_ignore == 0
+    assert cs.ERROR_text == 1
+    assert cs.ERROR_escape == 2
+    assert cs.ERROR_speak == 3
+    assert cs.ERROR_tone == 4
+
+
+def test_punct_mode_codes() -> None:
+    """PUNCT_none..PUNCT_pass are 0..3 from cm_defs.h."""
+    assert cs.PUNCT_none == 0
+    assert cs.PUNCT_some == 1
+    assert cs.PUNCT_all == 2
+    assert cs.PUNCT_pass == 3
