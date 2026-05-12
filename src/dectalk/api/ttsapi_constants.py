@@ -172,12 +172,55 @@ TTS_NOT_AVAILABLE: Final[int] = 0x7FFE
 TTS_LANG_ERROR: Final[int] = 0x4000
 
 
+# -- Output-state codes (from tts.h) ----------------------------------------
+
+STATE_OUTPUT_AUDIO: Final[int] = 0
+"""TTS engine routing audio to the OS audio device."""
+
+STATE_OUTPUT_MEMORY: Final[int] = 1
+"""TTS engine writing audio into a caller-provided memory buffer."""
+
+STATE_OUTPUT_WAVE_FILE: Final[int] = 2
+"""TTS engine writing audio to a WAVE file."""
+
+STATE_OUTPUT_LOG_FILE: Final[int] = 3
+"""TTS engine writing phoneme / syllable log to a file."""
+
+STATE_OUTPUT_NULL: Final[int] = 4
+"""TTS engine discarding all output (silent processing)."""
+
+STATE_OUTPUT_SAPI5: Final[int] = 5
+"""TTS engine routing audio through the SAPI5 interface."""
+
+
+# -- License-error codes ----------------------------------------------------
+
+LIC_NO_PAK: Final[int] = 1
+"""No product authorization key (PAK) found."""
+
+LIC_NO_MORE_UNITS: Final[int] = 2
+"""License count exhausted."""
+
+LIC_UNKNOWN_ERR: Final[int] = 3
+"""Unknown licensing error."""
+
+
+# -- Audio file header offsets ----------------------------------------------
+
+RIFF_HEADER_OFFSET: Final[int] = 36
+"""Byte offset of audio data in a RIFF (WAV) file header."""
+
+AU_HEADER_OFFSET: Final[int] = 32
+"""Byte offset of audio data in an AU file header."""
+
+
 # -- Misc -------------------------------------------------------------------
 
 VERSION_STRUCT_VER: Final[int] = 0x0001
 
 
 __all__ = [
+    "AU_HEADER_OFFSET",
     "BETTY",
     "DENNIS",
     "DO_NOT_USE_AUDIO_DEVICE",
@@ -193,6 +236,9 @@ __all__ = [
     "HARRY",
     "INPUT_CHARACTER_COUNT",
     "KIT",
+    "LIC_NO_MORE_UNITS",
+    "LIC_NO_PAK",
+    "LIC_UNKNOWN_ERR",
     "LOG_PHONEMES",
     "LOG_SYLLABLES",
     "LOG_TEXT",
@@ -216,7 +262,14 @@ __all__ = [
     "PAUL",
     "PROPER_NAME_PRONUNCIATION",
     "REPORT_OPEN_ERROR",
+    "RIFF_HEADER_OFFSET",
     "RITA",
+    "STATE_OUTPUT_AUDIO",
+    "STATE_OUTPUT_LOG_FILE",
+    "STATE_OUTPUT_MEMORY",
+    "STATE_OUTPUT_NULL",
+    "STATE_OUTPUT_SAPI5",
+    "STATE_OUTPUT_WAVE_FILE",
     "STATUS_SPEAKING",
     "TTSERR_BADMAINDIC",
     "TTSERR_BADUSERDIC",

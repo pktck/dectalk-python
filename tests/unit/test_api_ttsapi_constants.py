@@ -173,3 +173,30 @@ def test_wave_format_08m08_is_mulaw() -> None:
     """
     expected_mulaw = 0x0007
     assert expected_mulaw == cc.WAVE_FORMAT_08M08
+
+
+def test_state_output_codes_dense_ladder() -> None:
+    """STATE_OUTPUT_AUDIO..STATE_OUTPUT_SAPI5 form ``{0..5}`` from tts.h."""
+    codes = {
+        cc.STATE_OUTPUT_AUDIO,
+        cc.STATE_OUTPUT_MEMORY,
+        cc.STATE_OUTPUT_WAVE_FILE,
+        cc.STATE_OUTPUT_LOG_FILE,
+        cc.STATE_OUTPUT_NULL,
+        cc.STATE_OUTPUT_SAPI5,
+    }
+    assert codes == {0, 1, 2, 3, 4, 5}
+
+
+def test_license_error_codes() -> None:
+    """LIC_NO_PAK / LIC_NO_MORE_UNITS / LIC_UNKNOWN_ERR = 1, 2, 3."""
+    assert cc.LIC_NO_PAK == 1
+    assert cc.LIC_NO_MORE_UNITS == 2
+    assert cc.LIC_UNKNOWN_ERR == 3
+
+
+def test_audio_file_header_offsets() -> None:
+    """RIFF_HEADER_OFFSET (36) > AU_HEADER_OFFSET (32) — RIFF header longer."""
+    assert cc.RIFF_HEADER_OFFSET == 36
+    assert cc.AU_HEADER_OFFSET == 32
+    assert cc.RIFF_HEADER_OFFSET > cc.AU_HEADER_OFFSET
