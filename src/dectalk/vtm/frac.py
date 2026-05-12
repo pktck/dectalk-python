@@ -2,14 +2,16 @@
 
 Translated from ``src/dapi/src/vtm/viphdefs.h``:
 
-- :func:`frac4mul` — 4-bit fixed-point multiplication, scaled by
-  ``1/4096``. The original C macro is
-  ``#define frac4mul(x,y) (((x)*(S32)(y))>>12)``.
+- :func:`frac1mul` — Q15 fixed-point multiplication (shift right 15).
+  The original C macro is ``#define frac1mul(x,y) (((x)*(S32)(y))>>15)``.
+  Used for noise-spectrum lowpass filtering and aspiration modulation.
+- :func:`frac4mul` — Q12 fixed-point multiplication (shift right 12).
+  The original C macro is ``#define frac4mul(x,y) (((x)*(S32)(y))>>12)``.
+  Used throughout the formant resonator setup.
 
-The VTM uses Q12 fixed-point arithmetic (1 sign bit + 3 integer bits
-+ 12 fractional bits would put values in [-8, +8); in practice the
-synth keeps formant gains in [-4096, +4095] which represents
-[-1, +1) with a step of ``1/4096 = 0.000244``).
+The VTM uses Q12 fixed-point for most formant gains and Q15 for
+filter coefficients that need finer resolution. The widening
+``S32`` cast prevents overflow when the inputs are near full scale.
 
 These helpers preserve C-style modular arithmetic — Python's
 unbounded ints wrap to 16-bit / 32-bit signed via :func:`numpy.int16`
@@ -69,4 +71,29 @@ def frac4mul(x: int, y: int) -> int:
     return (a * b) >> 12
 
 
-__all__ = ["frac4mul"]
+def frac1mul(x: int, y: int) -> int:
+    """Return ``(x * y) >> 15`` with C ``short * S32`` semantics.
+
+    Faithful translation of the C macro:
+
+    .. code-block:: c
+
+        #define frac1mul(x,y)  (((x)*(S32)(y))>>15)
+
+    Same widen-then-shift pattern as :func:`frac4mul` but with a Q15
+    scale (32768 represents 1.0 instead of 4096). Used by the
+    noise-source lowpass and aspiration-modulation paths in the VTM.
+
+    Args:
+        x: 16-bit signed multiplicand.
+        y: 16-bit signed multiplicand.
+
+    Returns:
+        The 32-bit signed product ``(x * y) >> 15``.
+    """
+    a = _to_s16(x)
+    b = _to_s32(y)
+    return (a * b) >> 15
+
+
+__all__ = ["frac1mul", "frac4mul"]
