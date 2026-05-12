@@ -1,9 +1,22 @@
-"""Verify ``ls_util_is_year`` parity with ls_util.c."""
+"""Verify ``ls_util_is_*`` predicates parity with ls_util.c."""
 
 from __future__ import annotations
 
 import pytest
 
+from dectalk.include.cmd_codes import (
+    INDEX,
+    INDEX_BOOKMARK,
+    INDEX_NOISE,
+    INDEX_REPLY,
+    INDEX_SENTENCE,
+    INDEX_START,
+    INDEX_STOP,
+    INDEX_VOLUME,
+    INDEX_WORDPOS,
+    PFCONTROL,
+    PSFONT,
+)
 from dectalk.lts import util_helpers as uh
 
 
@@ -91,3 +104,172 @@ def test_x00y_form_rejected() -> None:
     accepted = ["2010", "2020", "1050", "1234", "9876"]
     for year in accepted:
         assert uh.ls_util_is_year(year) is True, year
+
+
+# ---- ls_util_is_white ----
+
+
+@pytest.mark.parametrize(
+    "char",
+    [
+        " ",  # SPACE
+        chr(0xA0),  # NBSP
+        "\n",  # LF
+        "\r",  # CR
+        "\f",  # FF
+    ],
+)
+def test_is_white_accepts_recognized_whitespace(char: str) -> None:
+    """SPACE / NBSP / LF / CR / FF in the PFASCII font are whitespace."""
+    assert uh.ls_util_is_white(ord(char)) is True
+
+
+@pytest.mark.parametrize(
+    "char",
+    [
+        "\t",  # HT — NOT whitespace per the C comment
+        "\v",  # VT — NOT whitespace per the C comment
+        "a",  # letter
+        "0",  # digit
+        ".",  # punctuation
+        ",",  # comma
+    ],
+)
+def test_is_white_rejects_other_chars(char: str) -> None:
+    """HT/VT and printable characters are not whitespace."""
+    assert uh.ls_util_is_white(ord(char)) is False
+
+
+def test_is_white_rejects_non_ascii_font() -> None:
+    """A space-value with a non-ASCII font is not whitespace."""
+    # SPACE (0x20) with PFCONTROL font (0x1F00) — wrong font, not white.
+    space_in_control_font = (PFCONTROL << PSFONT) | ord(" ")
+    assert uh.ls_util_is_white(space_in_control_font) is False
+
+
+# ---- ls_util_is_index ----
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        INDEX,
+        INDEX_REPLY,
+        INDEX_BOOKMARK,
+        INDEX_WORDPOS,
+        INDEX_START,
+        INDEX_STOP,
+        INDEX_SENTENCE,
+        INDEX_VOLUME,
+        INDEX_NOISE,
+    ],
+)
+def test_is_index_accepts_all_index_codes(code: int) -> None:
+    """Each of the nine INDEX_* control codes is recognised."""
+    assert uh.ls_util_is_index(code) is True
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        0,  # nul
+        ord("a"),  # plain ASCII
+        ord(" "),  # space
+        (PFCONTROL << PSFONT) | 0,  # control font, offset 0 = RATE
+        (PFCONTROL << PSFONT) | 23,  # WORD_CLASS — not an index
+    ],
+)
+def test_is_index_rejects_non_index_codes(code: int) -> None:
+    """Non-index control codes and plain ASCII are not index markers."""
+    assert uh.ls_util_is_index(code) is False
+
+
+# ---- ls_util_is_dot ----
+
+
+def test_is_dot_accepts_period_in_ascii() -> None:
+    """A literal '.' in the PFASCII font is a dot."""
+    assert uh.ls_util_is_dot(ord(".")) is True
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        0,
+        ord(","),
+        ord("a"),
+        ord(" "),
+        (PFCONTROL << PSFONT) | ord("."),  # '.' but wrong font
+    ],
+)
+def test_is_dot_rejects_other_codes(code: int) -> None:
+    """Other characters / wrong fonts are not dots."""
+    assert uh.ls_util_is_dot(code) is False
+
+
+# ---- ls_util_is_clause ----
+
+
+@pytest.mark.parametrize(
+    # MARK_clause covers every character ls_task treats as a hard
+    # clause break: ``! ' , - . : ; ?``. The C ``char_types`` array
+    # is the source of truth.
+    "char",
+    ["!", "'", ",", "-", ".", ":", ";", "?"],
+)
+def test_is_clause_accepts_clause_punctuation(char: str) -> None:
+    """Each MARK_clause character returns True."""
+    assert uh.ls_util_is_clause(ord(char)) is True
+
+
+@pytest.mark.parametrize(
+    "char",
+    ["a", "0", " ", "(", ")", '"'],
+)
+def test_is_clause_rejects_other_chars(char: str) -> None:
+    """Letters, digits, space, brackets, double-quote are not clause."""
+    assert uh.ls_util_is_clause(ord(char)) is False
+
+
+# ---- ls_util_is_aword ----
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        "hello",
+        "world",
+        "a",  # 1 char vowel
+        "cat",
+        "Banana",
+    ],
+)
+def test_is_aword_accepts_real_words(word: str) -> None:
+    """Words with letters and at least one vowel are aword."""
+    assert uh.ls_util_is_aword(word) is True
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        "",  # empty
+        "bcdfg",  # all consonants (no vowel — 'y' counts as vowel in this table)
+        "hello!",  # punctuation
+        "hello world",  # space
+        "abc123",  # digit
+    ],
+)
+def test_is_aword_rejects_non_words(word: str) -> None:
+    """Empty / non-alpha / vowelless inputs are rejected."""
+    assert uh.ls_util_is_aword(word) is False
+
+
+def test_is_aword_y_counts_as_vowel() -> None:
+    """``y`` carries the CFEAT_vowel bit, so ``xyz`` qualifies as an aword."""
+    assert uh.ls_util_is_aword("xyz") is True
+
+
+def test_is_aword_bytes_accepted() -> None:
+    """Function accepts bytes input too."""
+    assert uh.ls_util_is_aword(b"hello") is True
+    assert uh.ls_util_is_aword(b"bcdfg") is False
