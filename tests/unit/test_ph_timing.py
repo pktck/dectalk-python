@@ -7,7 +7,7 @@ import pytest
 from dectalk.include.cmd_codes import PSFONT
 from dectalk.include.phoneme_codes import PFUSA
 from dectalk.ph import timing as t
-from dectalk.ph.rom_tables import us_inhdr, us_mindur
+from dectalk.ph.rom_tables import us_featb, us_inhdr, us_mindur
 
 
 def _us_phone(code: int) -> int:
@@ -58,3 +58,18 @@ def test_other_language_fonts_fall_back_to_us_until_tables_landed() -> None:
         phone = (font << PSFONT) | 3
         assert t.min_timing(phone) == us_mindur[3]
         assert t.inh_timing(phone) == us_inhdr[3]
+
+
+# ---- phone_feature ----
+
+
+def test_phone_feature_us_font() -> None:
+    """For US-font phones, ``phone_feature`` returns ``us_featb[code]``."""
+    for code in (0, 1, 5, 10, 20, 50):
+        assert t.phone_feature(_us_phone(code)) == us_featb[code]
+
+
+def test_phone_feature_unknown_font_falls_back_to_us() -> None:
+    """Unknown fonts fall back to us_featb (Python keeps it defined)."""
+    fake_phone = (0x0F << PSFONT) | 5
+    assert t.phone_feature(fake_phone) == us_featb[5]

@@ -1,16 +1,17 @@
 """Per-phoneme timing dispatch helpers from ph_timng.c.
 
-Translated from ``src/dapi/src/ph/ph_timng.c``:
+Translated from ``src/dapi/src/ph/ph_timng.c`` and the
+``phone_feature`` macro from ``ph_setar.c``:
 
 - :func:`min_timing` — minimum duration in samples for a phone code.
 - :func:`inh_timing` — inherent (typical) duration in samples.
+- :func:`phone_feature` — feature-flag lookup for a phone code.
 
-Both functions dispatch on the phone code's **font field** (the
-upper 5 bits) to choose between language-specific duration tables.
-This Python port only ships the US tables (:data:`us_mindur`,
-:data:`us_inhdr`) at the moment; the C source's "OH MY GOD! THEY'VE
-KILLED KENNY" default branch returns the US table for unknown fonts,
-so we preserve that behaviour to keep US parity intact while leaving
+All three dispatch on the phone code's **font field** (the upper 5
+bits) to choose between language-specific tables. This Python port
+only ships the US tables; the C source's "OH MY GOD! THEY'VE KILLED
+KENNY" default branch returns the US table for unknown fonts, so we
+preserve that behaviour to keep US parity intact while leaving
 room for the other-language tables to land later.
 """
 
@@ -20,7 +21,7 @@ from typing import Final
 
 from dectalk.include.cmd_codes import PFONT, PSFONT, PVALUE
 from dectalk.include.phoneme_codes import PFUSA
-from dectalk.ph.rom_tables import us_inhdr, us_mindur
+from dectalk.ph.rom_tables import us_featb, us_inhdr, us_mindur
 
 # Font-shifted PF codes (the upper 5 bits of a phone code).
 _FONT_USA: Final[int] = PFUSA << PSFONT
@@ -104,4 +105,39 @@ def inh_timing(phone: int) -> int:
     return us_inhdr[code]
 
 
-__all__ = ["inh_timing", "min_timing"]
+def phone_feature(phone: int) -> int:
+    """Return the feature flags for a phone code via the ``all_featb`` LUT.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        #define phone_feature(a,b) (all_featb[(b)>>8][(b)&0x00ff])
+
+    The C macro picks one of the per-language ``*_featb`` tables
+    indexed by the phone's font byte, then looks up the feature
+    flags by the low-byte code. The ``a`` argument (``pDph_t``) is
+    unused in the macro expansion — it exists only to keep the call
+    sites parametric on the thread state.
+
+    Currently only the US font (0x1E) is wired up; other fonts fall
+    back to ``us_featb`` (matching the C source's NULL-pointer fault
+    behaviour but giving a defined Python value).
+
+    Args:
+        phone: 16-bit font-encoded phone code.
+
+    Returns:
+        The feature flags from ``us_featb[code]`` for US-font phones,
+        or for any other font (which the C source would crash on).
+    """
+    font = phone >> PSFONT
+    code = phone & PVALUE
+    # all_featb[0x1E] = us_featb; other indices are NULL in C (would
+    # crash). For US-bit-parity we route everything to us_featb.
+    if font in (PFUSA, 0):  # 0x1E (US) or 0x00 (slot 0 also points at us_featb)
+        return us_featb[code]
+    return us_featb[code]
+
+
+__all__ = ["inh_timing", "min_timing", "phone_feature"]
