@@ -14,6 +14,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 #include "llsyn.h"
 
 #define EXPECTED_ARGC 61  /* argv[0] + 11 speaker + 1 nframes + 48 frame fields */
@@ -23,6 +27,12 @@ static int parse_short(const char *s) {
 }
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+  /* Windows opens stdout in text mode by default; that translates every
+   * 0x0A byte in our raw int16 PCM output to 0x0D 0x0A. Force binary so
+   * the Python harness reads the exact bytes we write. */
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif
   if (argc != EXPECTED_ARGC) {
     fprintf(stderr, "usage: %s expects %d positional fields, got %d\n",
             argv[0], EXPECTED_ARGC - 1, argc - 1);
