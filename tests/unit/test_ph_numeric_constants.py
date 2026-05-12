@@ -86,3 +86,29 @@ def test_param_indices_dense() -> None:
 def test_max_speakers() -> None:
     """``MAX_SPEAKERS`` (10) matches ph_data.h."""
     assert nc.MAX_SPEAKERS == 10
+
+
+def test_nsamp_frame_11khz() -> None:
+    """``NSAMP_FRAME`` is 71 for the 11 kHz Linux/HLSYN build."""
+    assert nc.NSAMP_FRAME == 71
+
+
+def test_nphon_max() -> None:
+    """``NPHON_MAX`` is 300 (Linux default; ARM7 uses 150)."""
+    assert nc.NPHON_MAX == 300
+
+
+def test_index_tone_pars() -> None:
+    """``INDEX_PARS`` (2) / ``TONE_PARS`` (5)."""
+    assert nc.INDEX_PARS == 2
+    assert nc.TONE_PARS == 5
+
+
+def test_spdef_pars() -> None:
+    """``SPDEF_PARS = SPDEF + 1 = 40``."""
+    assert nc.SPDEF_PARS == 40
+
+
+def test_malline() -> None:
+    """``MALLINE`` (9) — parameters per locus-code line."""
+    assert nc.MALLINE == 9

@@ -79,6 +79,26 @@ SYNC_PARS: Final[int] = 0
 MAX_SPEAKERS: Final[int] = 10
 """Maximum number of voice slots in the per-PH speaker table (ph_data.h)."""
 
+NSAMP_FRAME: Final[int] = 71
+"""Samples per Klatt output frame at 11 kHz (the Linux/HLSYN sample rate).
+The 10 kHz variant uses 64 samples; the Python port is built for 11 kHz."""
+
+NPHON_MAX: Final[int] = 300
+"""Maximum phone-array length (size of ``pDph_t->phonemes[]`` and friends).
+Linux build value; the ARM7 build uses 150 and the TOMBUCHLER build 2800."""
+
+INDEX_PARS: Final[int] = 2
+"""Number of words in an index-mark block."""
+
+TONE_PARS: Final[int] = 5
+"""Number of words in a tone packet."""
+
+SPDEF_PARS: Final[int] = 40  # = SPDEF + 1; SPDEF == 39
+"""Number of words in a speaker definition (= SPDEF + 1)."""
+
+MALLINE: Final[int] = 9
+"""Number of parameters per line of locus code in ``p_us_rom.c``."""
+
 
 __all__ = [
     "F0",
@@ -91,9 +111,15 @@ __all__ = [
     "FRAC_HALF",
     "FRAC_ONE",
     "FZ",
+    "INDEX_PARS",
     "MALE",
+    "MALLINE",
     "MAX_SPEAKERS",
+    "NPHON_MAX",
+    "NSAMP_FRAME",
+    "SPDEF_PARS",
     "SYNC_PARS",
+    "TONE_PARS",
     "VOICE_PARS",
     "F2max",
     "F3max",
