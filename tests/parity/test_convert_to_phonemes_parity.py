@@ -59,6 +59,45 @@ _CORPUS: tuple[str, ...] = (
 )
 
 
+# Pre-captured ``CAPI.convert_to_phonemes(text)`` outputs from the
+# locally-built libtts_us.so. Locked in as the byte-identical golden
+# target any future pure-Python LTS implementation must reproduce.
+_KNOWN_OUTPUTS: tuple[tuple[str, bytes], ...] = (
+    ("hello world", b"hxaxll' ow  w ' rrlld "),
+    ("the quick brown fox", b"dhax  k w ' ihk   b r ' awn   f ' aak s "),
+    ("she sells sea shells", b"sh` iy  ) s ' ehllz   s ' iy  sh' ehllz "),
+    ("one two three four five", b"w ' ahn   t ' uw  thr ' iy  f ' owr   f ' ayv "),
+    (
+        "supercalifragilisticexpialidocious",
+        b"s uwp rrk aellihf r aejhihllihs t ihs ehk s p ihaellihd aashixs ",
+    ),
+    (
+        "DECtalk version 6.2.0",
+        b"d ' ehk # t aok   v ' rrzhen  s ' ihk s   p ' oyn t   t ' uw  p ' oyn t   z ' iyr ow",
+    ),
+    (
+        "this is a test, with a comma, and a period.",
+        b"dh` ihs   ihz   ^ ax  t ' ehs t , w ihth  ^ ax  k ' aam ax,"
+        b" ^ ( aen d   ^ ax  p ' iyr iyaxd . ",
+    ),
+    ("the answer is 42", b"dhax  ' aen s rr  ihz   f ' ort iy  t ' uw"),
+    ("3 point 14", b"thr ' iy  p ' oyn t   f ' or* t ' iyn "),
+    (
+        "one hundred and one dalmatians",
+        b"w ' ahn   hx' ahn d r axd   ^ ( aen d   w ' ahn   d axllm ' aeshixn z ",
+    ),
+    ("hello! how are you?", b"hxaxll' ow! hx` aw  aar   yx` uw. "),
+    ("wait... what just happened?", b"w ' eyt . w ` aht   jh' ahs t   ) hx' aep axn d . "),
+    ("FBI", b"' ehf   b iy  ' ay"),
+    ("NASA", b"n ' aes ax"),
+    ("USA", b"` yuehs ' ey"),
+    ("MIT", b"` ehm ayt ' iy"),
+    ("judge thought rhythms", b"jh' ahjh  th' aot   r ' ihdhaxm z "),
+    ("knight light right", b"n ' ayt   ll' ayt   r ' ayt "),
+    ("Dr. Smith said hello.", b"d aak t rr  s m ' ihth  ) s ` ehd   hxaxll' ow. "),
+)
+
+
 @pytest.fixture(scope="module")
 def capi() -> CAPI:
     """Module-scoped CAPI instance."""
@@ -88,6 +127,24 @@ def test_known_output_hello_world(capi: CAPI) -> None:
     """
     expected = b"hxaxll' ow  w ' rrlld "
     assert capi.convert_to_phonemes("hello world") == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    _KNOWN_OUTPUTS,
+    ids=[t for t, _ in _KNOWN_OUTPUTS],
+)
+def test_known_outputs(text: str, expected: bytes, capi: CAPI) -> None:
+    """The C library's phoneme stream for each input matches the locked golden value.
+
+    These 19 (text → phonemes) pairs are pre-captured from the
+    locally-built libtts_us.so. They serve as the byte-identical
+    target a pure-Python LTS implementation must reproduce when
+    Phase D translation lands.
+    """
+    assert capi.convert_to_phonemes(text) == expected, (
+        f"phoneme stream changed for {text!r}: did the C source or patch change?"
+    )
 
 
 def test_different_inputs_yield_different_outputs(capi: CAPI) -> None:
