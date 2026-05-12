@@ -62,4 +62,50 @@ ambiguous_char: Final[tuple[tuple[int, ...], ...]] = (
 )
 
 
-__all__ = ["ambiguous_char"]
+def par_lookup_ambiguous(
+    cur_type: int,
+    from_reverse: int,
+    new_type: int,
+    to_reverse: int,
+) -> int:
+    """Look up an ambiguity bit from :data:`ambiguous_char`.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        short par_lookup_ambiguous(int cur_type, int from_reverse,
+                                    int new_type, int to_reverse) {
+            char bit_to_check = 0x01;
+            if (!from_reverse) bit_to_check <<= 2;
+            if (!to_reverse)   bit_to_check <<= 1;
+            return ambiguous_char[cur_type][new_type] & bit_to_check;
+        }
+
+    Encodes the bit lookup in a single byte where 4 bits represent
+    each combination of (from_reverse, to_reverse) ∈ {0,1}^2:
+
+    * ``from_reverse=1, to_reverse=1`` → bit 0 (0x01)
+    * ``from_reverse=1, to_reverse=0`` → bit 1 (0x02)
+    * ``from_reverse=0, to_reverse=1`` → bit 2 (0x04)
+    * ``from_reverse=0, to_reverse=0`` → bit 3 (0x08)
+
+    Args:
+        cur_type: Current character type (row index, 0..14).
+        from_reverse: ``1`` for reverse, ``0`` for forward direction.
+        new_type: Next character type (column index, 0..19).
+        to_reverse: ``1`` for reverse, ``0`` for forward direction.
+
+    Returns:
+        The masked bit (``0``, ``0x01``, ``0x02``, ``0x04``, or
+        ``0x08``); non-zero is truthy.
+    """
+    bit_to_check = 0x01
+    if not from_reverse:
+        bit_to_check <<= 2
+    if not to_reverse:
+        bit_to_check <<= 1
+    return ambiguous_char[cur_type][new_type] & bit_to_check
+
+
+__all__ = ["ambiguous_char", "par_lookup_ambiguous"]
