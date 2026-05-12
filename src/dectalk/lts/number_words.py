@@ -95,17 +95,21 @@ def speak_3_digits(d1: int, d2: int, d3: int) -> list[int] | None:
 
         void ls_proc_do_3_digits(LPTTS_HANDLE_T phTTS, LETTER *lp) {
             if (lp->l_ch == '0')
-                ls_spel_spell(...);                // spell each digit
+                ls_spel_spell(...);                  // spell each digit
             else {
-                ls_util_send_phone_list(phTTS, punits[lp->l_ch-'0']);
+                ls_util_send_phone_list(phTTS, upunits[lp->l_ch-'0']);
                 ls_util_send_phone(phTTS, WBOUND);
-                ls_util_send_phone_list(phTTS, phundred);
-                if ((lp+1)->l_ch != '0' || (lp+2)->l_ch != '0') {
-                    ls_util_send_phone(phTTS, WBOUND);
+                if ((lp+1)->l_ch=='0' && (lp+2)->l_ch=='0')
+                    ls_util_send_phone_list(phTTS, phundred);
+                else
                     ls_proc_do_2_digits(phTTS, lp+1);
-                }
             }
         }
+
+    The C doc comment is explicit on the format:
+    ``0XX → spell``, ``X00 → "X hundred"``, ``XYY → "X YY"``
+    (note: XYY does NOT say "hundred and YY" — just "X YY").
+    The "hundred and..." form lives in :func:`speak_digit_group`.
 
     Args:
         d1: Hundreds digit (0..9).
@@ -118,22 +122,16 @@ def speak_3_digits(d1: int, d2: int, d3: int) -> list[int] | None:
     """
     if d1 == 0:
         return None
-    out = _list_until_sil(punits[d1])
+    out = _list_until_sil(upunits[d1])
     out.append(_WBOUND)
-    out.extend(_list_until_sil(phundred))
-    # If the trailing 2 digits aren't both 0, add WBOUND + the 2-digit form.
-    if d2 != 0 or d3 != 0:
-        out.append(_WBOUND)
-        if d2 == 0:
-            # "X-oh-Y" — spell each digit. Caller handles this via say_it.
-            # The C source recurses into ls_proc_do_2_digits which spells "0Y".
-            # For our pure helper, we return punits[d3] preceded by a "oh" —
-            # but the spelling path is handled by say_it in the caller.
-            out.extend(_list_until_sil(punits[d3]))
-        else:
-            two_digits = speak_2_digits(d2, d3)
-            if two_digits is not None:
-                out.extend(two_digits)
+    if d2 == 0 and d3 == 0:
+        # X00 → "X hundred"
+        out.extend(_list_until_sil(phundred))
+        return out
+    # XYY → "X YY" (the 2-digit form handles leading-zero like 03 via spell)
+    two = speak_2_digits(d2, d3)
+    if two is not None:
+        out.extend(two)
     return out
 
 

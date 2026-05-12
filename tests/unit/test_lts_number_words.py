@@ -20,7 +20,6 @@ from dectalk.lts.phoneme_words import (
     pordin,
     ptens,
     pthousand,
-    punits,
     upunits,
 )
 
@@ -60,20 +59,31 @@ def test_3_digit_leading_zero_returns_none() -> None:
 
 
 def test_3_digit_round_hundred() -> None:
-    """``200`` returns punits[2] + WBOUND + phundred (no trailing)."""
+    """``200`` returns upunits[2] + WBOUND + phundred (no trailing)."""
     result = speak_3_digits(2, 0, 0)
     assert result is not None
-    expected_prefix = iter_phone_list_until_sil(punits[2])
+    expected_prefix = iter_phone_list_until_sil(upunits[2])
     assert result[: len(expected_prefix)] == expected_prefix
     hundred = iter_phone_list_until_sil(phundred)
     assert hundred[0] in result
 
 
-def test_3_digit_full_form() -> None:
-    """``234`` includes ``two``, ``hundred``, and ``thirty four``."""
+def test_3_digit_xyy_form() -> None:
+    """``234`` per the C doc-comment: ``X YY`` (not ``X hundred YY``).
+
+    The C ``ls_proc_do_3_digits`` doc-comment explicitly states the
+    rule: ``XYY → speak X, speak YY``. The 'hundred and...' phrasing
+    lives in speak_digit_group instead.
+    """
     result = speak_3_digits(2, 3, 4)
     assert result is not None
-    assert result.count(WBOUND) >= 2
+    # No phundred token in this result — just upunits[2] + WBOUND + 2-digit(34).
+    hundred = iter_phone_list_until_sil(phundred)
+    # Verify result does not contain the phundred substring.
+    if hundred:
+        # The 'HX' phoneme at the start of phundred — confirm it's NOT in the result.
+        # (phundred starts with HX = 28; if 28 not in result, no 'hundred' was spoken)
+        assert 28 not in result, "X34 should NOT include the 'hundred' phoneme"
 
 
 def test_4_digit_leading_zero_returns_none() -> None:
