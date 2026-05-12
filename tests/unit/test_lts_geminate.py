@@ -8,9 +8,11 @@ from dectalk.include.phoneme_codes import USPhoneme
 from dectalk.lts.geminate import (
     ls_adju_del_phone,
     ls_adju_delgemphone,
+    ls_adju_ins_phone,
+    ls_adju_is_obs,
     ls_rule_delete_geminate_pairs,
 )
-from dectalk.lts.phone_list import ls_rule_add_phone
+from dectalk.lts.phone_list import SNONE, ls_rule_add_phone
 from dectalk.lts.phone_predicates import ls_adju_is_cons
 from dectalk.lts.structs import PFMORPH, Phone
 
@@ -145,3 +147,46 @@ def test_delete_geminate_no_change_on_distinct_phones() -> None:
     plist = _build_chain([b, aa, b])
     ls_rule_delete_geminate_pairs(plist)
     assert len(plist) == 3
+
+
+# ---- ls_adju_ins_phone ----
+
+
+def test_ins_phone_inserts_before_target() -> None:
+    """ls_adju_ins_phone inserts a new PHONE before the given one."""
+    plist = _build_chain([1, 2, 3])
+    head, mid, tail = plist
+    mid.p_flag = 0x0F  # flags will be forwarded to the new PHONE
+    mid.p_stress = 5
+
+    result = ls_adju_ins_phone(plist, mid, sph=99, uph=98, stress=7)
+    assert result is True
+    # Now the chain should be: head, new, mid, tail
+    assert len(plist) == 4
+    new = plist[1]
+    assert new.p_sphone == 99
+    assert new.p_uphone == 98
+    assert new.p_stress == 7
+    assert new.p_flag == 0x0F  # forwarded from mid
+    # mid's flag and stress are cleared.
+    assert mid.p_flag == 0
+    assert mid.p_stress == SNONE
+    # Linked-list pointers are correct.
+    assert head.p_fp is new
+    assert new.p_bp is head
+    assert new.p_fp is mid
+    assert mid.p_bp is new
+    assert mid.p_fp is tail
+
+
+# ---- ls_adju_is_obs ----
+
+
+def test_is_obs_for_obstruent() -> None:
+    """T (stop, obstruent) returns True."""
+    assert ls_adju_is_obs(int(USPhoneme.T)) is True
+
+
+def test_is_obs_for_vowel() -> None:
+    """A vowel (e.g. AA) is not an obstruent."""
+    assert ls_adju_is_obs(int(USPhoneme.AA)) is False

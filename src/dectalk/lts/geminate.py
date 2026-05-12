@@ -168,8 +168,97 @@ def ls_rule_delete_geminate_pairs(plist: list[Phone]) -> None:
         i += 1
 
 
+def ls_adju_ins_phone(
+    plist: list[Phone],
+    fpp: Phone,
+    sph: int,
+    uph: int,
+    stress: int,
+) -> bool:
+    """Insert a new PHONE before ``fpp``; return True on success.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        int ls_adju_ins_phone(PLTS_T pLts_t, PHONE *fpp,
+                              int sph, int uph, int stress) {
+            PHONE *ipp = ls_rule_phone_alloc(pLts_t);
+            if (ipp == NULL) return FALSE;
+            PHONE *bpp = fpp->p_bp;
+            bpp->p_fp = ipp;
+            ipp->p_fp = fpp;
+            fpp->p_bp = ipp;
+            ipp->p_bp = bpp;
+            ipp->p_sphone = sph;
+            ipp->p_uphone = uph;
+            ipp->p_flag = fpp->p_flag;       // forward the flags
+            fpp->p_flag = 0;
+            ipp->p_stress = stress;
+            fpp->p_stress = SNONE;
+            return TRUE;
+        }
+
+    The new PHONE inherits ``fpp``'s flags and the new stress; ``fpp``
+    is cleared (flags=0, stress=SNONE). The C source's pool
+    allocator can fail with NULL → FALSE; the Python port always
+    succeeds (GC, no fixed pool).
+
+    Args:
+        plist: PHONE list (mutated in place).
+        fpp: PHONE before which to insert.
+        sph: Stressed phoneme code for the new PHONE.
+        uph: Unstressed phoneme code.
+        stress: Stress code to assign.
+
+    Returns:
+        Always ``True`` in the Python port (the C alloc-failure path
+        is unreachable).
+    """
+    from dectalk.lts.phone_list import SNONE  # noqa: PLC0415 — cycle break
+
+    ipp = Phone(p_sphone=sph, p_uphone=uph, p_flag=fpp.p_flag, p_stress=stress)
+    bpp = fpp.p_bp
+    if bpp is not None:
+        bpp.p_fp = ipp
+    ipp.p_fp = fpp
+    fpp.p_bp = ipp
+    ipp.p_bp = bpp
+    fpp.p_flag = 0
+    fpp.p_stress = SNONE
+    # Insert into the list at fpp's index.
+    plist.insert(plist.index(fpp), ipp)
+    return True
+
+
+def ls_adju_is_obs(p_sphone: int) -> bool:
+    """Return True iff the phoneme has the POBS (obstruent) feature.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        int ls_adju_is_obs(PHONE *pp) {
+            if ((pfeat[pp->p_sphone] & POBS) != 0)
+                return TRUE;
+            return FALSE;
+        }
+
+    Args:
+        p_sphone: The ``p_sphone`` byte from a PHONE struct.
+
+    Returns:
+        ``True`` iff ``pfeat[p_sphone]`` has bit POBS set.
+    """
+    from dectalk.lts.grapheme_features import POBS, pfeat  # noqa: PLC0415 — local import
+
+    return bool(pfeat[p_sphone] & POBS)
+
+
 __all__ = [
     "ls_adju_del_phone",
     "ls_adju_delgemphone",
+    "ls_adju_ins_phone",
+    "ls_adju_is_obs",
     "ls_rule_delete_geminate_pairs",
 ]
