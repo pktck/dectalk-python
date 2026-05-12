@@ -273,3 +273,89 @@ def test_is_aword_bytes_accepted() -> None:
     """Function accepts bytes input too."""
     assert uh.ls_util_is_aword(b"hello") is True
     assert uh.ls_util_is_aword(b"bcdfg") is False
+
+
+# ---- ls_util_is_ordinal ----
+
+
+@pytest.mark.parametrize(
+    ("word", "integer_end"),
+    [
+        (b"1st", 1),
+        (b"2nd", 1),
+        (b"3rd", 1),
+        (b"4th", 1),
+        (b"5th", 1),
+        (b"9th", 1),
+        (b"21st", 2),
+        (b"22nd", 2),
+        (b"23rd", 2),
+        (b"24th", 2),
+        (b"100th", 3),
+        (b"101st", 3),
+    ],
+)
+def test_is_ordinal_accepts_canonical_suffix(word: bytes, integer_end: int) -> None:
+    """Standard English ordinal suffixes are accepted."""
+    assert uh.ls_util_is_ordinal(word, integer_end) is True
+
+
+@pytest.mark.parametrize(
+    ("word", "integer_end"),
+    [
+        # Teens: 11th, 12th, 13th, 14th, ..., 19th — all use 'th' (treat unit as 0).
+        (b"11th", 2),
+        (b"12th", 2),
+        (b"13th", 2),
+        (b"14th", 2),
+        (b"19th", 2),
+        (b"111th", 3),
+        (b"112th", 3),
+        (b"113th", 3),
+        (b"1011th", 4),
+        (b"1012th", 4),
+        (b"1013th", 4),
+    ],
+)
+def test_is_ordinal_teens_use_th(word: bytes, integer_end: int) -> None:
+    """11th/12th/13th and the like all use ``th`` because the tens digit is 1."""
+    assert uh.ls_util_is_ordinal(word, integer_end) is True
+
+
+@pytest.mark.parametrize(
+    ("word", "integer_end"),
+    [
+        # Wrong suffix for the unit digit.
+        (b"1nd", 1),  # 1 wants st, not nd
+        (b"2st", 1),  # 2 wants nd, not st
+        (b"3st", 1),  # 3 wants rd, not st
+        (b"4st", 1),  # 4 wants th, not st
+        (b"11st", 2),  # teen — must use th, not st
+        (b"12nd", 2),  # teen — must use th
+        (b"13rd", 2),  # teen — must use th
+    ],
+)
+def test_is_ordinal_rejects_wrong_suffix(word: bytes, integer_end: int) -> None:
+    """Suffix must match the unit digit (with teens treated specially)."""
+    assert uh.ls_util_is_ordinal(word, integer_end) is False
+
+
+def test_is_ordinal_rejects_fraction_quarter() -> None:
+    """A trailing ``¼`` (0xBC) is not an ordinal."""
+    assert uh.ls_util_is_ordinal(b"1\xbcth", 2) is False
+
+
+def test_is_ordinal_rejects_fraction_half() -> None:
+    """A trailing ``½`` (0xBD) is not an ordinal."""
+    assert uh.ls_util_is_ordinal(b"1\xbdth", 2) is False
+
+
+def test_is_ordinal_rejects_short_suffix() -> None:
+    """Suffix shorter than 2 chars is rejected (no ``-st``/``-nd``/etc.)."""
+    assert uh.ls_util_is_ordinal(b"1s", 1) is False
+    assert uh.ls_util_is_ordinal(b"1", 1) is False
+
+
+def test_is_ordinal_rejects_zero_integer() -> None:
+    """An empty integer prefix is rejected."""
+    assert uh.ls_util_is_ordinal(b"st", 0) is False

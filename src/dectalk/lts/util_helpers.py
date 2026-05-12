@@ -292,11 +292,79 @@ def ls_util_is_index(i_word0: int) -> bool:
     return i_word0 in _INDEX_CODES
 
 
+_FRAC_QUARTER: int = 0xBC
+_FRAC_HALF: int = 0xBD
+_FRACTION_BYTES: frozenset[int] = frozenset({_FRAC_QUARTER, _FRAC_HALF})
+_TEEN_LOOKBACK: int = 2
+
+
+def ls_util_is_ordinal(word: bytes, integer_end: int) -> bool:
+    """Return True iff a number suffix marks the integer as an ordinal.
+
+    Faithful translation of the US English branch of:
+
+    .. code-block:: c
+
+        int ls_util_is_ordinal(LPTTS_HANDLE_T phTTS, NUM *np) {
+            if (np->n_ilp==NULL || np->n_flp!=NULL || np->n_elp!=NULL)
+                return FALSE;
+            lp = np->n_irp;             // just past the integer
+            ud = (lp-1)->l_ch;          // unit digit
+            if (ud==0xBC || ud==0xBD)   // 1/4, 1/2 — not ordinals
+                return FALSE;
+            if (lp > np->n_ilp+1 && (lp-2)->l_ch=='1')
+                ud = '0';               // 11th/12th/...: treat as Xth
+            #ifdef ENGLISH
+            switch (ud) {
+                case '1': return (lp[0]=='s' && lp[1]=='t');
+                case '2': return (lp[0]=='n' && lp[1]=='d');
+                case '3': return (lp[0]=='r' && lp[1]=='d');
+                default : return (lp[0]=='t' && lp[1]=='h');
+            }
+            #endif
+        }
+
+    Translates the pointer-arithmetic NUM access to bytes-plus-index:
+    the integer occupies ``word[:integer_end]`` and the suffix
+    starts at ``word[integer_end]``. The caller has already
+    validated that there's no fractional or exponent part (the C
+    body's first guard).
+
+    Args:
+        word: The complete number-word as bytes (digits + suffix).
+        integer_end: Index just past the last digit of the integer
+            part (equivalent to ``n_irp`` in the C source).
+
+    Returns:
+        ``True`` iff the suffix is a valid US English ordinal
+        marker for the unit digit: ``st`` for 1, ``nd`` for 2,
+        ``rd`` for 3, ``th`` otherwise, with the teens (``11th``
+        / ``12th`` / ``13th``) treated under the default branch.
+    """
+    if integer_end < 1 or integer_end + 1 >= len(word):
+        return False
+    ud = word[integer_end - 1]
+    if ud in _FRACTION_BYTES:
+        return False
+    if integer_end >= _TEEN_LOOKBACK and word[integer_end - _TEEN_LOOKBACK] == ord("1"):
+        ud = ord("0")
+    s0 = word[integer_end]
+    s1 = word[integer_end + 1]
+    if ud == ord("1"):
+        return s0 == ord("s") and s1 == ord("t")
+    if ud == ord("2"):
+        return s0 == ord("n") and s1 == ord("d")
+    if ud == ord("3"):
+        return s0 == ord("r") and s1 == ord("d")
+    return s0 == ord("t") and s1 == ord("h")
+
+
 __all__ = [
     "ls_util_is_aword",
     "ls_util_is_clause",
     "ls_util_is_dot",
     "ls_util_is_index",
+    "ls_util_is_ordinal",
     "ls_util_is_white",
     "ls_util_is_year",
 ]
