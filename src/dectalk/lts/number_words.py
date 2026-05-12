@@ -16,9 +16,21 @@ the codes however they like.
 
 from __future__ import annotations
 
-from dectalk.include.phoneme_codes import WBOUND
+from dectalk.include.phoneme_codes import WBOUND, USPhoneme
 from dectalk.lts.phone_list import iter_phone_list_until_sil
-from dectalk.lts.phoneme_words import phundred, pteens, ptens, pthousand, punits, upunits
+from dectalk.lts.phoneme_words import (
+    pand,
+    phundred,
+    pordin,
+    pteens,
+    ptens,
+    pthousand,
+    punits,
+    upunits,
+)
+
+_US_IX: int = int(USPhoneme.IX)
+_US_TH: int = int(USPhoneme.TH)
 
 _WBOUND: int = WBOUND
 
@@ -201,4 +213,88 @@ def speak_4_digits(d1: int, d2: int, d3: int, d4: int) -> list[int] | None:
     return out
 
 
-__all__ = ["speak_2_digits", "speak_3_digits", "speak_4_digits"]
+def speak_digit_group(d1: int, d2: int, d3: int, *, ordinal: bool = False) -> list[int]:
+    """Return the phoneme sequence for a 3-digit group (000..999).
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        void ls_proc_do_digit_group(LPTTS_HANDLE_T phTTS,
+                                     unsigned char buf[3], int oflag) {
+            if (buf[0] != '0') {
+                ls_util_send_phone_list(phTTS, upunits[buf[0]-'0']);
+                ls_util_send_phone(phTTS, WBOUND);
+                ls_util_send_phone_list(phTTS, phundred);
+                if (buf[1]=='0' && buf[2]=='0') {
+                    if (oflag) ls_util_send_phone(phTTS, US_TH);
+                    return;
+                }
+                ls_util_send_phone_list(phTTS, pand);
+            }
+            if (buf[1] == '1') {
+                ls_util_send_phone_list(phTTS, pteens[buf[2]-'0']);
+                if (oflag) ls_util_send_phone(phTTS, US_TH);
+                return;
+            }
+            if (buf[1] != '0') {
+                ls_util_send_phone_list(phTTS, ptens[buf[1]-'0']);
+                if (buf[2] == '0') {
+                    if (oflag) {
+                        ls_util_send_phone(phTTS, US_IX);
+                        ls_util_send_phone(phTTS, US_TH);
+                    }
+                    return;
+                }
+                ls_util_send_phone(phTTS, WBOUND);
+            }
+            if (oflag) ls_util_send_phone_list(phTTS, pordin[buf[2]-'0']);
+            else       ls_util_send_phone_list(phTTS, punits[buf[2]-'0']);
+        }
+
+    Used for both bare 3-digit groups and as a building block for
+    larger numbers (read in thousand/million groups).
+
+    Args:
+        d1: Hundreds digit (0..9).
+        d2: Tens digit.
+        d3: Units digit.
+        ordinal: If True, render as an ordinal (``hundredth``,
+            ``thirtieth``, ``second``, etc.).
+
+    Returns:
+        Phoneme code list. Always returns a list (never None) — the
+        leading-zero case is handled by the caller upstream of
+        ``do_digit_group``.
+    """
+    out: list[int] = []
+    if d1 != 0:
+        out.extend(_list_until_sil(upunits[d1]))
+        out.append(_WBOUND)
+        out.extend(_list_until_sil(phundred))
+        if d2 == 0 and d3 == 0:
+            if ordinal:
+                out.append(_US_TH)
+            return out
+        out.extend(_list_until_sil(pand))
+    if d2 == 1:
+        out.extend(_list_until_sil(pteens[d3]))
+        if ordinal:
+            out.append(_US_TH)
+        return out
+    if d2 != 0:
+        out.extend(_list_until_sil(ptens[d2 - 2]))
+        if d3 == 0:
+            if ordinal:
+                out.append(_US_IX)
+                out.append(_US_TH)
+            return out
+        out.append(_WBOUND)
+    if ordinal:
+        out.extend(_list_until_sil(pordin[d3]))
+    else:
+        out.extend(_list_until_sil(punits[d3]))
+    return out
+
+
+__all__ = ["speak_2_digits", "speak_3_digits", "speak_4_digits", "speak_digit_group"]
