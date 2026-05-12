@@ -167,3 +167,20 @@ def test_par_illegal_cluster_known_pairs() -> None:
     """Spot-check: the well-known onset clusters appear."""
     for pair in ("bn", "bt", "db", "mb", "mc"):
         assert pair in pt.par_illegal_cluster
+
+
+def test_char_type_table_matches_c() -> None:
+    """``char_type_table`` matches the 16-entry C lookup in par_pars1.c."""
+    expected = (
+        pt.TYPE_null, pt.TYPE_alpha_num, pt.TYPE_alpha, pt.TYPE_any_char,
+        pt.TYPE_clause, pt.TYPE_consonant, pt.TYPE_lower, pt.TYPE_non_alpha,
+        pt.TYPE_number, pt.TYPE_punct_some, pt.TYPE_punct, pt.TYPE_upper,
+        pt.TYPE_vowel, pt.TYPE_vowel_non_y, pt.TYPE_white, pt.TYPE_digit,
+    )  # fmt: skip
+    assert pt.char_type_table == expected
+
+
+def test_char_type_table_has_16_entries() -> None:
+    """Exactly 16 entries — one per 4-bit tag value."""
+    expected = 16
+    assert len(pt.char_type_table) == expected

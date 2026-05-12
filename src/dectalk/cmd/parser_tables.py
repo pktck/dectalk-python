@@ -93,6 +93,31 @@ par_illegal_cluster: Final[tuple[str, ...]] = (
 )  # fmt: skip
 
 
+# par_pars1.c::char_type_table — index-to-flag lookup used by the
+# parser's table-driven dispatch. Each entry is one of the TYPE_*
+# constants above. The 16 entries cover the 4-bit type tags the
+# parser packs into its state machine table.
+
+char_type_table: Final[tuple[int, ...]] = (
+    TYPE_null,        # 0
+    TYPE_alpha_num,   # 1
+    TYPE_alpha,       # 2
+    TYPE_any_char,    # 3
+    TYPE_clause,      # 4
+    TYPE_consonant,   # 5
+    TYPE_lower,       # 6
+    TYPE_non_alpha,   # 7
+    TYPE_number,      # 8
+    TYPE_punct_some,  # 9
+    TYPE_punct,       # 10
+    TYPE_upper,       # 11
+    TYPE_vowel,       # 12
+    TYPE_vowel_non_y, # 13
+    TYPE_white,       # 14
+    TYPE_digit,       # 15
+)  # fmt: skip
+
+
 __all__ = [
     "TYPE_alpha",
     "TYPE_alpha_num",
@@ -111,6 +136,7 @@ __all__ = [
     "TYPE_vowel",
     "TYPE_vowel_non_y",
     "TYPE_white",
+    "char_type_table",
     "par_illegal_cluster",
     "parser_char_types",
 ]
