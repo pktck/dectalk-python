@@ -188,6 +188,39 @@ F_TIME_RISE: Final[int] = 0o1000000
 """Special-cased timing rise marker (same value as :data:`FSBOUND`,
 distinguished by context)."""
 
+PRESSBOUND: Final[int] = 0o4000000
+"""Pressure-boundary marker (syllable boundary with extra emphasis)."""
+
+# -- Part-of-speech feature bits in sentstruc -----------------------------
+
+F_NOUN: Final[int] = 0o2000000
+"""Word is a noun (added for stress / timing rules)."""
+
+F_ADJ: Final[int] = 0o4000000
+"""Word is an adjective."""
+
+F_VERB: Final[int] = 0o10000000
+"""Word is a verb."""
+
+F_FUNC: Final[int] = 0o20000000
+"""Word is a function word."""
+
+# -- High-bit feature flags -----------------------------------------------
+
+F_IRESET: Final[int] = 0o4000000000
+"""Intonation reset request flag."""
+
+FMAXIMUM: Final[int] = 0o10000000000
+"""Highest feature-bit value used by the C source (loop sentinel)."""
+
+# -- Word-end / hat markers ------------------------------------------------
+
+FWBEND: Final[int] = 0o10000
+"""Last phone of a word (overlay on FSYBNEXT in the boundary nibble)."""
+
+FHAT_ROOF: Final[int] = 0o100000
+"""Hat roof marker (dangerous; overlaps with FHAT_BEGINS/FHAT_ENDS)."""
+
 # -- Composite OTHER mask --------------------------------------------------
 
 FOTHER: Final[int] = FSBOUND | FCODA | FBLOCK | FWINITC
@@ -212,8 +245,10 @@ __all__ = [
     "FFIRSTSYL",
     "FHAT_BEGINS",
     "FHAT_ENDS",
+    "FHAT_ROOF",
     "FHYPHENATED",
     "FISBOUND",
+    "FMAXIMUM",
     "FMBNEXT",
     "FMEDIALSYL",
     "FMONOSYL",
@@ -237,8 +272,15 @@ __all__ = [
     "FTRISYL",
     "FTYPESYL",
     "FVPNEXT",
+    "FWBEND",
     "FWBNEXT",
     "FWINITC",
+    "F_ADJ",
+    "F_FUNC",
+    "F_IRESET",
+    "F_NOUN",
     "F_TIME_RISE",
+    "F_VERB",
     "PHO_FEA_MAX",
+    "PRESSBOUND",
 ]
