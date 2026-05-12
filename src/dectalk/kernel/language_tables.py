@@ -71,6 +71,32 @@ class DtpcLanguageTables:
 
 
 @dataclass(slots=True)
+class DtpcCodePages:
+    """One loaded DOS code page (one node in a linked list).
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        struct dtpc_code_pages {
+            struct dtpc_code_pages far *link;
+            int dos_id;
+            unsigned char far *translation_page;
+        };
+
+    Attributes:
+        link: Next node in the linked list, or None at the tail.
+        dos_id: DOS code-page ID (e.g. 437 for US, 850 for Latin-1).
+        translation_page: 256-byte translation table mapping the
+            code page's byte values to ISO Latin-1 equivalents.
+    """
+
+    link: DtpcCodePages | None = None
+    dos_id: int = 0
+    translation_page: bytes | None = None
+
+
+@dataclass(slots=True)
 class LangTables:
     """Per-language table-pointer struct indexed by language ID.
 
@@ -117,4 +143,4 @@ class LangTables:
     error_table: list[bytes] | None = None
 
 
-__all__ = ["DtpcLanguageTables", "LangTables"]
+__all__ = ["DtpcCodePages", "DtpcLanguageTables", "LangTables"]

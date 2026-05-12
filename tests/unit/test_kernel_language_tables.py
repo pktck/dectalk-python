@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from dectalk.kernel.language_tables import DtpcLanguageTables, LangTables
+from dectalk.kernel.language_tables import (
+    DtpcCodePages,
+    DtpcLanguageTables,
+    LangTables,
+)
 
 
 def test_dtpc_language_tables_defaults() -> None:
@@ -76,3 +80,29 @@ def test_both_use_slots() -> None:
     """Both dataclasses use slots=True."""
     assert not hasattr(DtpcLanguageTables(), "__dict__")
     assert not hasattr(LangTables(), "__dict__")
+    assert not hasattr(DtpcCodePages(), "__dict__")
+
+
+def test_dtpc_code_pages_defaults() -> None:
+    """DtpcCodePages defaults to all-None / 0."""
+    cp = DtpcCodePages()
+    assert cp.link is None
+    assert cp.dos_id == 0
+    assert cp.translation_page is None
+
+
+def test_dtpc_code_pages_linked_list() -> None:
+    """``link`` lets code-page nodes form a forward-linked list."""
+    tail = DtpcCodePages(dos_id=850)  # Latin-1
+    head = DtpcCodePages(dos_id=437, link=tail)  # US
+    assert head.link is tail
+    assert head.link is not None
+    assert head.link.dos_id == 850
+
+
+def test_dtpc_code_pages_translation_page() -> None:
+    """A code-page node can carry a 256-byte translation table."""
+    cp = DtpcCodePages(dos_id=437, translation_page=bytes(range(256)))
+    assert cp.translation_page is not None
+    assert len(cp.translation_page) == 256
+    assert cp.translation_page[0x41] == 0x41
