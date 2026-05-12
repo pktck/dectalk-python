@@ -121,6 +121,9 @@ EXACT_CHAR_DELIM: Final[int] = ord("'")
 EXACT_CASE_DELIM: Final[int] = ord("`")
 HEXADECIMAL_DELIM: Final[int] = ord("0")
 NO_LOOKAHEAD: Final[int] = ord("x")
+ESCAPE_DELIM: Final[int] = ord("\\")
+CONDITIONAL_DELIM: Final[int] = ord("|")
+STATE_PART_DELIM: Final[int] = ord("/")
 
 # ---- TYPE2 codes — zero-based indices for the rule-action table ----
 #
@@ -162,6 +165,7 @@ __all__ = [
     "CLAUSE_CHAR_DELIM",
     "CLAUSE_CHAR_TYPE",
     "CLAUSE_CHAR_TYPE2",
+    "CONDITIONAL_DELIM",
     "CONSONANT_CHAR_DELIM",
     "CONSONANT_CHAR_TYPE",
     "CONSONANT_CHAR_TYPE2",
@@ -174,6 +178,7 @@ __all__ = [
     "DIGIT_CHAR_DELIM",
     "DIGIT_CHAR_TYPE",
     "DIGIT_CHAR_TYPE2",
+    "ESCAPE_DELIM",
     "EXACT_CASE_DELIM",
     "EXACT_CASE_TYPE",
     "EXACT_CASE_TYPE2",
@@ -221,6 +226,7 @@ __all__ = [
     "SOME_PUNCT_TYPE",
     "SOME_PUNCT_TYPE2",
     "START_SAVE_STATE",
+    "STATE_PART_DELIM",
     "STATUS_STATE",
     "STATUS_STATE_DELIM",
     "UPPER_CHAR_DELIM",
