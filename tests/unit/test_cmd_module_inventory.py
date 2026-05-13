@@ -257,8 +257,6 @@ _DEFERRED: dict[str, str] = {
     "par_dict_find_word": "Bisects against the system dictionary; Python uses dectalk.dic",
     "par_dict_ufind_word": "Bisects against the user dictionary; Python user-dict differs",
     "par_dict_dlook": "Looks up a single word against system dict; Python uses dectalk.dic",
-    "par_dict_udlook": "Looks up a single word against user dict; not yet implemented",
-    "par_dict_where_to_ulook": "Computes user-dict bucket; deferred with par_dict_udlook",
     # ------------------------------------------------------------------
     # par_pars1.c (textually included into par_pars.c) -- the wide
     # rule-table parser machinery. The Python port plans to call into
