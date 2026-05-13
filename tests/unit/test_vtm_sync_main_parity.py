@@ -86,7 +86,10 @@ def test_macro_lives_in_posix_branch() -> None:
     preceding = text[:macro_idx]
     last_if = preceding.rfind("#if")
     assert last_if != -1, "no preceding #if before OP_THREAD_ROUTINE(sync_main, ...)"
-    guard_line = text[last_if : preceding.find("\n", last_if) if "\n" in text[last_if:] else None]
+    line_end = text.find("\n", last_if)
+    if line_end == -1:
+        line_end = len(text)
+    guard_line = text[last_if:line_end]
     assert "__linux__" in guard_line, (
         f"OP_THREAD_ROUTINE(sync_main, ...) is not gated by a Linux guard: {guard_line!r}"
     )
