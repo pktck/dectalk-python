@@ -132,8 +132,10 @@ _DEFERRED: dict[str, str] = {
         "the Python audio backend uses a different output path"
     ),
     "SendVisualNotification": (
-        "Posts phoneme/duration events back to the host (for lipsync "
-        "UIs); no visual-notification surface in the Python port yet"
+        "ported as vtm.send_visual_notification.send_visual_notification "
+        "(PEP8 rename) — architectural shim that returns the VisualNotification "
+        "payload and invokes an optional visual_sink callable; the Python "
+        "pipeline has no host-callback surface yet"
     ),
     # ---- playtone.c -- DTMF / sine-pair tone injection. ---------------
     "PlayTones": "ported as vtm.play_tones.play_tones (PEP8 rename)",
