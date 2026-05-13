@@ -1,4 +1,4 @@
-# ruff: noqa: N815 — preserve C-source mixedCase field names (phTTS, pSTphsettar)
+# ruff: noqa: N815 — preserve C-source mixedCase field names (phTTS, pSTphsettar, etc.)
 """PH-thread instance data struct (DPH_T) from ph_data.h.
 
 Translated from ``src/dapi/src/ph/ph_data.h`` lines 431-716.
@@ -31,6 +31,12 @@ pointer / object fields default to ``None``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from dectalk.ph.inton_constants import SAFETY
+from dectalk.ph.numeric_constants import NPHON_MAX
+
+# Array-size aliases mirroring the C source.
+_NPHON_BUF: int = NPHON_MAX + SAFETY + 2
 
 
 @dataclass(slots=True)
@@ -147,20 +153,20 @@ class DphT:
     nallotot: int = 0
     malfem: int = 0
     del_av: int = 0
-    p_locus: int = 0
-    p_diph: int = 0
-    p_tar: int = 0
-    p_amp: int = 0
+    p_locus: list[int] | None = None
+    p_diph: list[int] | None = None
+    p_tar: list[int] | None = None
+    p_amp: list[int] | None = None
     arg1: int = 0
     arg2: int = 0
     arg3: int = 0
     symbols: list[int] = field(default_factory=list[int])
     nsymbtot: int = 0
-    user_durs: int = 0
-    user_f0: int = 0
-    user_offset: int = 0
-    phonemes: int = 0
-    sentstruc: int = 0
+    user_durs: list[int] | None = None
+    user_f0: list[int] | None = None
+    user_offset: list[int] | None = None
+    phonemes: list[int] | None = None
+    sentstruc: list[int] | None = None
     nphonetot: int = 0
     newparagsw: int = 0
     f0mode: int = 0
@@ -195,7 +201,7 @@ class DphT:
     number_words: int = 0
     number_verbs: int = 0
     number_fsyls: int = 0
-    f0baseline: int = 0
+    f0baseline: list[int] | None = None
     f0basetypes: list[int] = field(default_factory=list[int])
     f0tim: list[int] = field(default_factory=list[int])
     cumdur: int = 0
@@ -216,7 +222,7 @@ class DphT:
     ph_init: int = 0
     longcumdur: int = 0
     dipspec: list[int] = field(default_factory=list[int])
-    Cibles_Defaut: int = 0
+    Cibles_Defaut: list[int] | None = None
     NbSyllabes: int = 0
     fconsfeats: list[int] = field(default_factory=list[int])
     asperation: int = 0
@@ -252,8 +258,8 @@ class DphT:
     lastf0: int = 0
     evryoth: int = 0
     emphasisflag: int = 0
-    pbvalue: int = 0
-    p_bvalue: int = 0
+    pbvalue: list[int] | None = None
+    p_bvalue: list[int] | None = None
     impulse_width: int = 0
     vowel_portion: int = 0
     test_targf0: int = 0
