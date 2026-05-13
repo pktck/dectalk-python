@@ -287,7 +287,6 @@ _DEFERRED: dict[str, str] = {
     # splitting yet (US English doesn't rely on it for parity).
     # ------------------------------------------------------------------
     "par_break_down_word": "Breaks a word into compound parts; English doesn't exercise it",
-    "par_compound_break": "Wrapper over par_break_down_word selecting the splitter",
     "par_find_word_in_dict": "Helper invoked by par_break_down_word vs the compound dict",
 }
 
