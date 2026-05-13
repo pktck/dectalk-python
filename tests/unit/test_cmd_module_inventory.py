@@ -173,7 +173,6 @@ _DEFERRED: dict[str, str] = {
     # ------------------------------------------------------------------
     "cm_cmd_code_page": "Sets pKsd_t->code_page; Python uses Unicode, no code-page model",
     "cm_cmd_comma": "Sets MIN_COMMA_PAUSE; Python preprocessor handles commas directly",
-    "cm_cmd_debug": "Sets pKsd_t->dt_debug switch bits; no Python debug-switch surface",
     "cm_cmd_define": "Loads a dictionary entry; Python uses dict_search directly",
     "cm_cmd_dial": "DTMF dialing primitive; not exposed by Python TTS layer",
     "cm_cmd_digitized": "Plays digitized audio; Python TTS hands off to PCM output",
@@ -182,7 +181,6 @@ _DEFERRED: dict[str, str] = {
     "cm_cmd_gender": "Selects male/female voice variant; Python uses voice presets directly",
     "cm_cmd_latin": "Sets pKsd_t->latin_curr; Python only models US English so far",
     "cm_cmd_loadv": "[:loadv] reads voice parameter blob; deferred until voice loader lands",
-    "cm_cmd_log": "[:log] opens/closes text log; Python has no log surface",
     "cm_cmd_mark": "[:mark] inserts an index marker; Python uses Segment indices",
     "cm_cmd_mode": "[:mode] toggles reader modes; Python has no reader-mode flag yet",
     "cm_cmd_name": "[:name <speaker>] picks Paul/Betty/...; Python exposes voice presets via API",
@@ -192,7 +190,6 @@ _DEFERRED: dict[str, str] = {
     "cm_cmd_preamble": "Selects PH preamble (preamble_1/2a/2b/3a/3b); Python ph picks directly",
     "cm_cmd_pronounce": "[:pronounce] runs string through LTS; Python uses lts.lookup_arpa",
     "cm_cmd_rate": "[:rate] command; Python sets rate via dectalk.api.set_rate directly",
-    "cm_cmd_resume": "[:resume] pairs with [:pause] thread-blocking; n/a in synchronous port",
     "cm_cmd_samples_per_frame": "Sets VTM sample-per-frame divisor; Python uses fixed 11025 Hz",
     "cm_cmd_stress": "Sets stress prominence; Python ph layer uses defaults",
     "cm_cmd_sync": "[:sync] inter-thread barrier; Python is synchronous so sync is a no-op",
@@ -250,7 +247,6 @@ _DEFERRED: dict[str, str] = {
     # via dectalk._capi.CAPI and bypasses the C-level [:wave] code,
     # which threads bytes through the kernel pipe and PH layer.
     # ------------------------------------------------------------------
-    "cm_cmd_play": "[:wave] handler; Python WAV output goes through CAPI / VTM directly",
     "wave_file_open": "Static helper to cm_cmd_play; deferred along with it",
     # ------------------------------------------------------------------
     # par_dict.c dictionary lookup engine. The Python port uses the
