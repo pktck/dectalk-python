@@ -43,9 +43,7 @@ from dectalk.vtm.play_tones import (
     render_tone_burst,
 )
 
-_C_FILE = (
-    Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/vtm/playtone.c"
-)
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/vtm/playtone.c"
 
 pytestmark = pytest.mark.skipif(
     not _C_FILE.is_file(),
@@ -164,7 +162,7 @@ def test_two_pi_equivalent_matches_c() -> None:
     """Non-LOWCOMPUTE: ``TWO_PI_EQUIVALENT = 2 * M_PI`` (radians)."""
     text = _read_playtone_c()
     assert re.search(r"#define\s+TWO_PI_EQUIVALENT\s+2\s*\*\s*M_PI\b", text)
-    assert pytest.approx(2.0 * math.pi) == TWO_PI_EQUIVALENT
+    assert abs(TWO_PI_EQUIVALENT - 2.0 * math.pi) < 1e-12
 
 
 # --------------------------------------------------------------------------
@@ -292,7 +290,10 @@ def test_software_volume_branch_scales_amplitudes() -> None:
     """``iSwVolume < 0`` scales both amps by ``10 ** (iSwVolume / 10.0)``."""
     body = _extract_playtones_body()
     assert re.search(r"if\s*\(\s*pKsd_t->iSwVolume\s*<\s*0\s*\)", body)
-    amp_scale_re = r"Amp_{}\s*\*=\s*pow\s*\(\s*10\s*,\s*\(\s*pKsd_t->iSwVolume\s*/\s*10\.0\s*\)\s*\)"
+    amp_scale_re = (
+        r"Amp_{}\s*\*=\s*pow\s*\(\s*10\s*,"
+        r"\s*\(\s*pKsd_t->iSwVolume\s*/\s*10\.0\s*\)\s*\)"
+    )
     assert re.search(amp_scale_re.format(0), body)
     assert re.search(amp_scale_re.format(1), body)
 
@@ -459,6 +460,7 @@ def test_tone_frequency_appears_in_spectrum() -> None:
         sample_rate=sample_rate,
         sample_period=1.0 / sample_rate,
     )
+
     # Compute |X(1000)| and a couple of off-target bins for contrast.
     def _bin_mag(freq: float) -> float:
         real = 0.0
@@ -506,9 +508,9 @@ def test_dtmf_pair_has_both_tones() -> None:
     assert mag_1209 > 5 * mag_900
 
 
-def test_software_volume_scales_amplitude() -> None:
-    """``sw_volume_db < 0`` reduces the rendered peak amplitude."""
-    args = {
+def _render_quiet_burst_args() -> dict[str, float]:
+    """Shared positional-arg bundle for the software-volume tests."""
+    return {
         "duration_in_msec": 100.0,
         "freq_0": 1000.0,
         "amp_0": 20000.0,
@@ -517,8 +519,30 @@ def test_software_volume_scales_amplitude() -> None:
         "sample_rate": 11025.0,
         "sample_period": 1.0 / 11025.0,
     }
-    samples_full = render_tone_burst(**args)
-    samples_quiet = render_tone_burst(**args, sw_volume_db=-30)
+
+
+def test_software_volume_scales_amplitude() -> None:
+    """``sw_volume_db < 0`` reduces the rendered peak amplitude."""
+    args = _render_quiet_burst_args()
+    samples_full = render_tone_burst(
+        args["duration_in_msec"],
+        args["freq_0"],
+        args["amp_0"],
+        args["freq_1"],
+        args["amp_1"],
+        args["sample_rate"],
+        args["sample_period"],
+    )
+    samples_quiet = render_tone_burst(
+        args["duration_in_msec"],
+        args["freq_0"],
+        args["amp_0"],
+        args["freq_1"],
+        args["amp_1"],
+        args["sample_rate"],
+        args["sample_period"],
+        sw_volume_db=-30,
+    )
     peak_full = max(abs(s) for s in samples_full)
     peak_quiet = max(abs(s) for s in samples_quiet)
     # -30 dB ≈ factor of 0.001 power, i.e. amplitude factor of ~0.001
@@ -529,18 +553,19 @@ def test_software_volume_scales_amplitude() -> None:
 
 def test_software_volume_non_negative_leaves_amplitude_unchanged() -> None:
     """``sw_volume_db >= 0`` or ``None`` -> no scaling applied."""
-    args = {
-        "duration_in_msec": 100.0,
-        "freq_0": 1000.0,
-        "amp_0": 20000.0,
-        "freq_1": 0.0,
-        "amp_1": 0.0,
-        "sample_rate": 11025.0,
-        "sample_period": 1.0 / 11025.0,
-    }
-    samples_none = render_tone_burst(**args)
-    samples_zero = render_tone_burst(**args, sw_volume_db=0)
-    samples_positive = render_tone_burst(**args, sw_volume_db=10)
+    args = _render_quiet_burst_args()
+    base_call = (
+        args["duration_in_msec"],
+        args["freq_0"],
+        args["amp_0"],
+        args["freq_1"],
+        args["amp_1"],
+        args["sample_rate"],
+        args["sample_period"],
+    )
+    samples_none = render_tone_burst(*base_call)
+    samples_zero = render_tone_burst(*base_call, sw_volume_db=0)
+    samples_positive = render_tone_burst(*base_call, sw_volume_db=10)
     assert samples_none == samples_zero == samples_positive
 
 
@@ -702,6 +727,4 @@ def test_phase_continuity_across_segments() -> None:
         abs(samples[i] - samples[i - 1])
         for i in (rise, rise + 1, len(samples) - rise - 1, len(samples) - rise)
     )
-    assert max_step < 3000, (
-        f"phase discontinuity at segment boundary: step {max_step}"
-    )
+    assert max_step < 3000, f"phase discontinuity at segment boundary: step {max_step}"
