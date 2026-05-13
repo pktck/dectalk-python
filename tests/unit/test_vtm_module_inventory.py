@@ -99,9 +99,6 @@ _DEFERRED: dict[str, str] = {
         "Inner Klatt waveform loop; the bit-accurate synth lives in "
         "src/dectalk/hlsyn/, this is the C-style entry not yet wrapped"
     ),
-    "read_speaker_definition": (
-        "Parses the speaker .def files into VTM state; deferred with the speaker-table layout"
-    ),
     # ---- sync.c -- the VTM-side sync thread and WFASTP helper. --------
     "OP_THREAD_ROUTINE": (
         "ported as synchronous shims (PEP8 rename): the two thread entries "
