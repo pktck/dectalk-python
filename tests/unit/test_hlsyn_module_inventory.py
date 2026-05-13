@@ -127,10 +127,7 @@ _DEFERRED: dict[str, str] = {
     "Compute_acd": (
         "Computes the dorsal constriction area acd; part of the unported acxf1c tongue-body layer"
     ),
-    "Set_acx_loc": (
-        "Decides whether the tongue-body constriction is lateral, dorsal "
-        "or retroflex and routes acl/acd to acx accordingly"
-    ),
+    "Set_acx_loc": "ported as hlsyn.set_acx_loc.set_acx_loc (PEP8 rename)",
     "Tongue_acx_f1c": (
         "Top-level tongue-body -> (acx, f1c) mapping; called first inside HLSynthesizeLLFrame"
     ),
