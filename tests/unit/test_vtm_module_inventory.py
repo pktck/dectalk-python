@@ -124,8 +124,9 @@ _DEFERRED: dict[str, str] = {
     ),
     # ---- vtmiont.c -- the VTM output thread and pipe machinery. -------
     "EmptyVtmPipe": (
-        "Drains pending VTM packets back into the audio queue; depends "
-        "on the unported VTM pipe/packet layout"
+        "ported as vtm.empty_vtm_pipe.empty_vtm_pipe (PEP8 rename) — "
+        "synchronous-pipeline no-op shim; the Python pipeline has no "
+        "inter-thread VTM pipe to drain"
     ),
     "OutputData": (
         "Pushes a buffer of synthesised samples onto the audio handle; "
