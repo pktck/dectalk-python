@@ -110,13 +110,6 @@ _DEFERRED: dict[str, str] = {
     "read_speaker_definition": (
         "Parses the speaker .def files into VTM state; deferred with the speaker-table layout"
     ),
-    "getmax": (
-        "Static debug helper that tracks absolute-value peaks across the "
-        "VTM pipeline; deferred until a debug surface exists"
-    ),
-    "checkmax": (
-        "Static debug helper that flags out-of-range coefficients; deferred along with getmax"
-    ),
     # ---- sync.c -- the VTM-side sync thread and WFASTP helper. --------
     "OP_THREAD_ROUTINE": (
         "OP_THREAD_ROUTINE() expands to a thread-entry function "
