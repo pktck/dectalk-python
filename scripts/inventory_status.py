@@ -100,6 +100,23 @@ _NON_TODO_MARKERS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bBuild-time helper\b", re.IGNORECASE),
     # vtm/ hlsyn-delegation pattern
     re.compile(r"\bbit-accurate synth lives in src/dectalk/hlsyn\b", re.IGNORECASE),
+    # More cmd/ pipe-substitution phrasings
+    re.compile(r"\bn/a in synchronous port\b", re.IGNORECASE),
+    re.compile(r"\bPython parser handles directly\b", re.IGNORECASE),
+    re.compile(r"\bPython parser reads bytes directly\b", re.IGNORECASE),
+    re.compile(r"\bPython sets rate via\b", re.IGNORECASE),
+    re.compile(r"\bPython ph picks directly\b", re.IGNORECASE),
+    re.compile(r"\bPython ph layer\b", re.IGNORECASE),
+    re.compile(r"\bPython TTS has no\b", re.IGNORECASE),
+    re.compile(r"\bPython audio bypasses\b", re.IGNORECASE),
+    re.compile(r"\bPython phoneme path\b", re.IGNORECASE),
+    re.compile(r"\bPython handles via\b", re.IGNORECASE),
+    re.compile(r"\bPython typing path\b", re.IGNORECASE),
+    re.compile(r"\bPython user-dict\b", re.IGNORECASE),
+    re.compile(r"\bPython WAV output\b", re.IGNORECASE),
+    re.compile(r"\bStatic inline duplicate\b", re.IGNORECASE),
+    re.compile(r"\bno Python debug-switch\b", re.IGNORECASE),
+    re.compile(r"\bPython is single-threaded\b", re.IGNORECASE),
 )
 
 
