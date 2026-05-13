@@ -15,6 +15,7 @@ from dectalk.ph.rom_tables import (
     us_inhdr,
     us_mindur,
     us_place,
+    us_plocu,
     us_ptram,
 )
 
@@ -129,3 +130,14 @@ def test_place_us(code: int) -> None:
 def test_place_lookup_uses_low_byte() -> None:
     """``place(phone)`` only reads the low byte — font bits are masked."""
     assert t.place(_us_phone(5)) == t.place((0x1D << PSFONT) | 5)
+
+
+@pytest.mark.parametrize("code", [0, 1, 5, 10, 20, 50, 60])
+def test_plocu_us(code: int) -> None:
+    """For US-font phones, ``plocu`` returns ``us_plocu[code]``."""
+    assert t.plocu(_us_phone(code)) == us_plocu[code]
+
+
+def test_plocu_lookup_uses_low_byte() -> None:
+    """``plocu(index)`` only reads the low byte — font bits are masked."""
+    assert t.plocu(_us_phone(5)) == t.plocu((0x1D << PSFONT) | 5)

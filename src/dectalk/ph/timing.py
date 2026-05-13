@@ -10,6 +10,8 @@ helpers in ``ph_setar.c``:
 - :func:`endtyp` — end-segment type lookup.
 - :func:`ptram` — parallel-amplitude index for fricatives.
 - :func:`burdr` — burst-duration lookup for plosives.
+- :func:`place` — place-of-articulation feature bits.
+- :func:`plocu` — phoneme-locus index for parallel-amplitude tables.
 
 All dispatch on the phone code's **font field** (the upper 5 bits)
 to choose between language-specific tables. This Python port only
@@ -33,6 +35,7 @@ from dectalk.ph.rom_tables import (
     us_inhdr,
     us_mindur,
     us_place,
+    us_plocu,
     us_ptram,
 )
 
@@ -277,6 +280,31 @@ def place(phone: int) -> int:
     return us_place[code]
 
 
+def plocu(index: int) -> int:
+    """Return the phoneme-locus index for the parallel-amplitude tables.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        __inline short plocu(int index) {
+            return all_plocu[index>>8][index&0xFF];
+        }
+
+    The ``plocu`` table maps a phone code to an index into the
+    ``flocu`` / ``malamp`` / ``femamp`` parallel-formant arrays.
+    Used in ph_setar.c when assigning fricative friction targets.
+
+    Args:
+        index: 16-bit font-encoded phone code.
+
+    Returns:
+        Index into the per-language locus tables (``us_plocu[code]``).
+    """
+    code = index & 0xFF
+    return us_plocu[code]
+
+
 __all__ = [
     "begtyp",
     "burdr",
@@ -285,5 +313,6 @@ __all__ = [
     "min_timing",
     "phone_feature",
     "place",
+    "plocu",
     "ptram",
 ]
