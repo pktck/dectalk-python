@@ -63,6 +63,7 @@ class KsdT:
     # Mode flags read by cm_cmd_break / cm_cmd_say.
     wbreak: int = 0  # word-boundary pause toggle ([:break on/off]).
     sayflag: int = 0  # SAY_CLAUSE / SAY_WORD / SAY_LETTER / SAY_LINE / SAY_SYLLABLE.
+    input_timeout: int = 0  # mirror of pCmd_t->timeout ([:timeout <n>]).
 
     # Sync semaphore (read .value in flush_done).
     spc_sync: DtSemaphore = field(default_factory=DtSemaphore)
