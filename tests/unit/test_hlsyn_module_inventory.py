@@ -112,21 +112,10 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
     # ---- acxf1c.c -- tongue-body acoustic / Helmholtz frequencies. ----
-    "HelmholtzFrequency": (
-        "Helmholtz resonator frequency from constriction area / volume; "
-        "part of the unported acxf1c tongue-body layer"
-    ),
-    "HelmholtzConstriction": (
-        "Inverse: constriction area from desired Helmholtz frequency; "
-        "part of the unported acxf1c tongue-body layer"
-    ),
-    "Compute_acl": (
-        "Computes the lateral (palato-alveolar) constriction area acl; "
-        "part of the unported acxf1c tongue-body layer"
-    ),
-    "Compute_acd": (
-        "Computes the dorsal constriction area acd; part of the unported acxf1c tongue-body layer"
-    ),
+    "HelmholtzFrequency": "ported as hlsyn.helmholtz.helmholtz_frequency (PEP8 rename)",
+    "HelmholtzConstriction": "ported as hlsyn.helmholtz.helmholtz_constriction (PEP8 rename)",
+    "Compute_acl": "ported as hlsyn.compute_ac.compute_acl (PEP8 rename)",
+    "Compute_acd": "ported as hlsyn.compute_ac.compute_acd (PEP8 rename)",
     "Set_acx_loc": "ported as hlsyn.set_acx_loc.set_acx_loc (PEP8 rename)",
     "Tongue_acx_f1c": (
         "Top-level tongue-body -> (acx, f1c) mapping; called first inside HLSynthesizeLLFrame"
