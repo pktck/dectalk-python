@@ -133,6 +133,11 @@ def _default_match_arrays() -> list[bytearray]:
     return [bytearray(PAR_MAX_MATCH_ARRAY) for _ in range(PAR_MAX_ARRAYS)]
 
 
+def _default_array_lengths() -> list[int]:
+    """Factory: 10 zero-initialised lengths (one per match array)."""
+    return [0 for _ in range(PAR_MAX_ARRAYS)]
+
+
 @dataclass(slots=True)
 class MatchArrays:
     """10 by 30-byte temporary buffers for the rule matcher.
@@ -142,13 +147,19 @@ class MatchArrays:
     .. code-block:: c
 
         struct match_arrays_s {
+            int array_lengths[PAR_MAX_ARRAYS];
             unsigned char array[PAR_MAX_ARRAYS][PAR_MAX_MATCH_ARRAY];
         };
 
     Attributes:
+        array_lengths: Per-slot count of bytes saved into ``array``
+            by ``par_save_string`` (and friends). The matcher's
+            ``BIN_RESTORE`` branches read this when re-applying a
+            saved span.
         array: List of 10 :class:`bytearray` of length 30 each.
     """
 
+    array_lengths: list[int] = field(default_factory=_default_array_lengths)
     array: list[bytearray] = field(default_factory=_default_match_arrays)
 
 
