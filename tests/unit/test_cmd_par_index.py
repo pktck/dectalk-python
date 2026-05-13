@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dectalk.cmd.par_index import par_copy_index, par_is_index_set
+from dectalk.cmd.par_index import par_copy_index, par_copy_index_list, par_is_index_set
 from dectalk.cmd.par_structs import IndexData
 
 
@@ -53,3 +53,27 @@ def test_par_is_index_set_position_selects_record() -> None:
     assert par_is_index_set(indexes, 0) is False
     assert par_is_index_set(indexes, 1) is True
     assert par_is_index_set(indexes, 2) is False
+
+
+def test_par_copy_index_list_copies_length_records() -> None:
+    """``par_copy_index_list`` copies ``length`` consecutive records."""
+    src = [
+        IndexData(index=[1, 2, 3]),
+        IndexData(index=[4, 5, 6]),
+        IndexData(index=[7, 8, 9]),
+        IndexData(index=[10, 11, 12]),
+    ]
+    dest = [IndexData() for _ in range(4)]
+    par_copy_index_list(dest, 0, src, 1, 3)
+    assert dest[0].index == [4, 5, 6]
+    assert dest[1].index == [7, 8, 9]
+    assert dest[2].index == [10, 11, 12]
+    assert dest[3].index == [0, 0, 0]
+
+
+def test_par_copy_index_list_zero_length_is_noop() -> None:
+    """A length-0 copy is a no-op."""
+    src = [IndexData(index=[1, 2, 3])]
+    dest = [IndexData()]
+    par_copy_index_list(dest, 0, src, 0, 0)
+    assert dest[0].index == [0, 0, 0]

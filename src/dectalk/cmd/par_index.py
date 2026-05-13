@@ -79,4 +79,41 @@ def par_is_index_set(indexes: list[IndexData], pos: int) -> bool:
     return record[0] != 0 or record[1] != 0 or record[2] != 0
 
 
-__all__ = ["par_copy_index", "par_is_index_set"]
+def par_copy_index_list(
+    dest_indexes: list[IndexData],
+    dest_pos: int,
+    src_indexes: list[IndexData],
+    src_pos: int,
+    length: int,
+) -> None:
+    """Copy ``length`` consecutive index records from src to dest.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        void par_copy_index_list(pindex_data_t dest_index, short dest_pos,
+                                 pindex_data_t src_index,  short src_pos,
+                                 short length) {
+            memcpy(dest_index[dest_pos].index,
+                   src_index[src_pos].index,
+                   length * sizeof(index_data_t));
+        }
+
+    Note the C source does a single bulk ``memcpy`` covering
+    ``length`` records starting at ``src_index[src_pos].index``.
+    Python iterates per-record via :func:`par_copy_index` for
+    parity.
+
+    Args:
+        dest_indexes: Destination index array.
+        dest_pos: Destination start position.
+        src_indexes: Source index array.
+        src_pos: Source start position.
+        length: Number of records to copy.
+    """
+    for i in range(length):
+        par_copy_index(dest_indexes, dest_pos + i, src_indexes, src_pos + i)
+
+
+__all__ = ["par_copy_index", "par_copy_index_list", "par_is_index_set"]
