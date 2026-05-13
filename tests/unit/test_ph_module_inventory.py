@@ -119,9 +119,6 @@ _DEFERRED: dict[str, str] = {
         "Big intonation engine entry point; depends on N unported f0 helpers "
         "and the hat-state machine"
     ),
-    # ph_timng.c -- per-clause timing.
-    "prdurs": "Debug-only duration printer; deferred until a debug surface exists",
-    "prphdurs": "Debug-only per-phone duration printer; deferred until a debug surface exists",
 }
 
 
