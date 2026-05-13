@@ -195,10 +195,7 @@ _DEFERRED: dict[str, str] = {
         "Newton-style aerodynamic circuit solver for Pm/Pcw/Uw/agx/Ug/"
         "Uacx/Un/Uw across one frame; deferred with the rest of the HL layer"
     ),
-    "PmRootFunction": (
-        "Brent target function for the SpeechCircuit Pm solve; private "
-        "to circuit.c, deferred along with SpeechCircuit"
-    ),
+    "PmRootFunction": "ported as hlsyn.pm_root_function.pm_root_function (PEP8 rename)",
 }
 
 
