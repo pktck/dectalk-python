@@ -112,9 +112,11 @@ _DEFERRED: dict[str, str] = {
     ),
     # ---- sync.c -- the VTM-side sync thread and WFASTP helper. --------
     "OP_THREAD_ROUTINE": (
-        "OP_THREAD_ROUTINE() expands to a thread-entry function "
-        "definition; the two underlying entries (sync_main in sync.c and "
-        "vtm_main in vtmiont.c) are both deferred until threading lands"
+        "ported as synchronous shims (PEP8 rename): the two thread entries "
+        "the macro expands to -- sync_main in sync.c and vtm_main in "
+        "vtmiont.c -- are now vtm.sync_main.sync_main_tick and "
+        "vtm.vtm_main.vtm_main_tick respectively; the Python pipeline runs "
+        "inline on the main thread so each tick is a no-op"
     ),
     "WaitForAudioSampleToPlay": (
         "Blocks the sync thread until PA_GetPosition crosses a sample "
