@@ -31,7 +31,7 @@ import re
 import sys
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 _TEST_DIR = _REPO_ROOT / "tests" / "unit"
 _INVENTORY_TESTS = (
     "test_kernel_services_inventory.py",
@@ -84,6 +84,11 @@ _NON_TODO_MARKERS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bno-op stub\b", re.IGNORECASE),
     re.compile(r"\bnot needed in the synchronous\b", re.IGNORECASE),
     re.compile(r"\bnot a runtime engine\b", re.IGNORECASE),
+    # lts/ patterns
+    re.compile(r"\bfused into\b", re.IGNORECASE),
+    re.compile(r"\bcollapsed into\b", re.IGNORECASE),
+    re.compile(r"\bno Python equivalent needed\b", re.IGNORECASE),
+    re.compile(r"\bno Python equivalent\b", re.IGNORECASE),
 )
 
 

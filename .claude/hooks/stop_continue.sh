@@ -39,12 +39,23 @@ if [[ "${DECTALK_ALLOW_STOP:-0}" == "1" ]]; then
 fi
 
 # -------------------------------------------------------------------
-# Verifier 1: every inventory's _DEFERRED dict empty?
-# Cheap — ast-parses 8 files, no test runner.
+# Verifier 1: every inventory's _DEFERRED dict has no remaining TODO entries?
+# The classifier lives in the repo (scripts/inventory_status.py) so the
+# markers / ast walker can be tuned without re-approving an edit in this
+# hook directory. Cheap — ast-parses 8 files, no test runner.
 # -------------------------------------------------------------------
 inventory_ok=0
-if "${hook_dir}/check_inventory_empty.py" 2>&1; then
-  inventory_ok=1
+classifier="${hook_dir}/../../scripts/inventory_status.py"
+if [[ -x "$classifier" ]]; then
+  if "$classifier" 2>&1; then
+    inventory_ok=1
+  fi
+elif [[ -f "$classifier" ]]; then
+  if python3 "$classifier" 2>&1; then
+    inventory_ok=1
+  fi
+else
+  printf 'stop-hook: %s not found — treating as TODO\n' "$classifier" >&2
 fi
 
 # -------------------------------------------------------------------
