@@ -148,8 +148,7 @@ _DEFERRED: dict[str, str] = {
         "private to hlframe.c, deferred along with HLSynthesizeLLFrame"
     ),
     "UnusedLLParameters": (
-        "Zeros LL-frame slots the HL layer does not drive (DI, JV, JF, "
-        "...); private cleanup helper deferred along with HLSynthesizeLLFrame"
+        "ported as hlsyn.unused_ll_parameters.unused_ll_parameters (PEP8 rename)"
     ),
     # ---- log10table.c / sqrttable.c -- tiny math wrappers. -------------
     "DT_f_log10": "ported as hlsyn.log10_table.dt_f_log10 (PEP8 rename)",
@@ -172,10 +171,7 @@ _DEFERRED: dict[str, str] = {
         "Sets the nasal anti-resonance (FNZ, BNZ) from an area; private "
         "to nasalf1x.c, deferred along with SetNasals_f1x"
     ),
-    "Compute_fm": (
-        "Computes the nasal-tract Helmholtz frequency fm from f1c and an; "
-        "private to nasalf1x.c, deferred along with SetNasals_f1x"
-    ),
+    "Compute_fm": "ported as hlsyn.compute_fm.compute_fm (PEP8 rename)",
     "NasalFirstFormant": (
         "Places the nasal first formant F1 from f1c, an, ap; private to "
         "nasalf1x.c, deferred along with SetNasals_f1x"
