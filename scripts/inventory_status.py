@@ -89,6 +89,17 @@ _NON_TODO_MARKERS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bcollapsed into\b", re.IGNORECASE),
     re.compile(r"\bno Python equivalent needed\b", re.IGNORECASE),
     re.compile(r"\bno Python equivalent\b", re.IGNORECASE),
+    # api/ pthread / synchronous-pipeline patterns
+    re.compile(r"\bPython port owns no\b", re.IGNORECASE),
+    re.compile(r"\bPython relies on\b", re.IGNORECASE),
+    re.compile(r"\bPython port runs\b", re.IGNORECASE),
+    re.compile(r"\bsynchronous Python\b", re.IGNORECASE),
+    # dic/ build-time diagnostic patterns
+    re.compile(r"\bBuild-time diagnostic\b", re.IGNORECASE),
+    re.compile(r"\bno runtime equivalent\b", re.IGNORECASE),
+    re.compile(r"\bBuild-time helper\b", re.IGNORECASE),
+    # vtm/ hlsyn-delegation pattern
+    re.compile(r"\bbit-accurate synth lives in src/dectalk/hlsyn\b", re.IGNORECASE),
 )
 
 
