@@ -55,6 +55,7 @@ def _count_deferred(path: Path) -> int:
 
 
 def main() -> int:
+    """Walk the inventory tests and exit 0 iff every ``_DEFERRED`` is empty."""
     summary: list[str] = []
     total = 0
     missing_files = 0
