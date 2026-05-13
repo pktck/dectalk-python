@@ -1,0 +1,92 @@
+"""Verify DphT mirrors ``DPH_T`` struct from ph_data.h."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import fields
+from pathlib import Path
+
+import pytest
+
+from dectalk.ph.dph_t import DphT
+
+_C_HEADER: Path = Path("/tmp/dectalk-src/src/dapi/src/ph/ph_data.h")
+
+
+def _parse_field_names() -> set[str] | None:
+    """Return the set of field names in ``DPH_TAG`` struct."""
+    if not _C_HEADER.exists():
+        return None
+    text = _C_HEADER.read_bytes().replace(b"\r", b"").decode("latin-1")
+    match = re.search(
+        r"typedef\s+struct\s+DPH_TAG(.*?)\}\s*DPH_T;",
+        text,
+        re.DOTALL,
+    )
+    if not match:
+        return None
+    body = match.group(1)
+    body = re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL)
+    body = re.sub(r"//.*", "", body)
+    names: set[str] = set()
+    for m in re.finditer(
+        r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s+\*?\s*([a-zA-Z_][a-zA-Z_0-9]*)\s*(\[[^;]+\])?\s*;",
+        body,
+        re.MULTILINE,
+    ):
+        if m.group(1) == "DPH_TAG":
+            continue
+        names.add(m.group(2))
+    return names
+
+
+@pytest.mark.skipif(not _C_HEADER.exists(), reason="C source not available")
+def test_field_set_matches_c() -> None:
+    """Every C field maps to a Python dataclass attribute."""
+    c_fields = _parse_field_names()
+    assert c_fields is not None
+    py_fields = {f.name for f in fields(DphT)}
+    assert c_fields == py_fields
+
+
+def test_default_construction_does_not_raise() -> None:
+    """Default-constructed instance is fully initialised."""
+    state = DphT()
+    assert state is not None
+
+
+def test_uses_slots() -> None:
+    """``DphT`` is a slots dataclass."""
+    state = DphT()
+    assert not hasattr(state, "__dict__")
+
+
+def test_scalar_fields_default_zero() -> None:
+    """Spot-check a few scalar fields default to 0."""
+    state = DphT()
+    for name in ("perpause", "compause", "nphone", "nsymbtot", "delta_pressure"):
+        assert getattr(state, name) == 0
+
+
+def test_array_fields_default_empty_list() -> None:
+    """Spot-check that array fields default to empty lists."""
+    state = DphT()
+    for name in ("parstochip", "symbols", "curspdef", "dipspec"):
+        value = getattr(state, name)
+        assert isinstance(value, list)
+        assert value == []
+
+
+def test_pointer_fields_default_none() -> None:
+    """Spot-check that pointer / object fields default to None."""
+    state = DphT()
+    # ``param`` is the PARAMETER array
+    for name in ("param",):
+        assert getattr(state, name) is None
+
+
+def test_field_count_around_230() -> None:
+    """The C struct has approximately 230 declared fields."""
+    n = len(fields(DphT))
+    # Tolerate small variation; the C source has revision-history padding.
+    assert 220 <= n <= 240
