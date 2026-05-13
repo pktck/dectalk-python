@@ -117,9 +117,7 @@ _DEFERRED: dict[str, str] = {
     "Compute_acl": "ported as hlsyn.compute_ac.compute_acl (PEP8 rename)",
     "Compute_acd": "ported as hlsyn.compute_ac.compute_acd (PEP8 rename)",
     "Set_acx_loc": "ported as hlsyn.set_acx_loc.set_acx_loc (PEP8 rename)",
-    "Tongue_acx_f1c": (
-        "Top-level tongue-body -> (acx, f1c) mapping; called first inside HLSynthesizeLLFrame"
-    ),
+    "Tongue_acx_f1c": "ported as hlsyn.tongue_acx_f1c.tongue_acx_f1c (PEP8 rename)",
     # ---- hlframe.c -- top-level HL->LL frame mapping. ------------------
     "HLSynthesizeLLFrame": (
         "Top-level HL->LL frame mapping; the C oracle dispatches through "
