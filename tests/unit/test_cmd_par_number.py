@@ -151,3 +151,31 @@ def test_convert_hex_invalid(buf: bytes, num: int) -> None:
 def test_convert_hex_str_input() -> None:
     """Accepts str input."""
     assert pn.par_convert_hex_number("0xCAFE", 4) == 0xCAFE
+
+
+@pytest.mark.parametrize(
+    ("i", "expected"),
+    [
+        (0, 1),
+        (1, 1),
+        (9, 1),
+        (10, 2),
+        (99, 2),
+        (100, 3),
+        (999, 3),
+        (1000, 4),
+        (9999, 4),
+        (10000, 5),
+        (99999, 5),
+        (100000, 5),  # capped at 5 by the C source
+        (1234567, 5),  # also capped
+    ],
+)
+def test_par_get_int_length(i: int, expected: int) -> None:
+    """``par_get_int_length`` returns the decimal-digit count capped at 5."""
+    assert pn.par_get_int_length(i) == expected
+
+
+def test_par_get_int_length_zero_is_one() -> None:
+    """C source documents: ``the number zero has a length of 1``."""
+    assert pn.par_get_int_length(0) == 1

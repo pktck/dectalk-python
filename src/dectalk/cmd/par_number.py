@@ -194,9 +194,48 @@ def par_convert_hex_number(string: str | bytes, num: int) -> int:
     return total
 
 
+def par_get_int_length(i: int) -> int:
+    """Return the decimal digit-count of a non-negative integer.
+
+    Faithful translation of:
+
+    .. code-block:: c
+
+        int par_get_int_length(register int i) {
+            if (i < 10)    return 1;
+            else if (i < 100)   return 2;
+            else if (i < 1000)  return 3;
+            else if (i < 10000) return 4;
+            else                return 5;
+        }
+
+    Per the C source: ``the number zero has a length of 1`` and
+    ``this function only converts positive numbers correctly``.
+    The Python port preserves both quirks — values >= 100000 still
+    return 5 (the C source caps out at 5 digits), and negative
+    inputs are not specially handled.
+
+    Args:
+        i: Non-negative integer.
+
+    Returns:
+        Number of decimal digits in ``i`` (1..5, capped at 5).
+    """
+    if i < 10:  # noqa: PLR2004 — digit range constants
+        return 1
+    if i < 100:  # noqa: PLR2004
+        return 2
+    if i < 1000:  # noqa: PLR2004
+        return 3
+    if i < 10000:  # noqa: PLR2004
+        return 4
+    return 5
+
+
 __all__ = [
     "par_convert_hex_number",
     "par_convert_number",
     "par_convert_number_new",
     "par_convert_number_new2",
+    "par_get_int_length",
 ]
