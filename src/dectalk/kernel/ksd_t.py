@@ -64,6 +64,7 @@ class KsdT:
     wbreak: int = 0  # word-boundary pause toggle ([:break on/off]).
     sayflag: int = 0  # SAY_CLAUSE / SAY_WORD / SAY_LETTER / SAY_LINE / SAY_SYLLABLE.
     input_timeout: int = 0  # mirror of pCmd_t->timeout ([:timeout <n>]).
+    phoneme_mode: int = 0  # PHONEME_ASCKY / PHONEME_SPEAK / PHONEME_OFF bitfield.
 
     # Sync semaphore (read .value in flush_done).
     spc_sync: DtSemaphore = field(default_factory=DtSemaphore)
