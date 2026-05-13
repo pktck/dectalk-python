@@ -264,7 +264,10 @@ _DEFERRED: dict[str, str] = {
     # ------------------------------------------------------------------
     "par_process_input": "Main entry of the rule-tabling driver; Python parser routes elsewhere",
     "par_match_rule": "Matches a single compiled rule against the input window",
-    "par_look_ahead_dictionary": "Stubbed: returns 0 until par_match_rule lands; Python uses _capi for actual dict lookahead",
+    "par_look_ahead_dictionary": (
+        "Stubbed: returns 0 until par_match_rule lands; "
+        "Python uses _capi for actual dict lookahead"
+    ),
 }
 
 
