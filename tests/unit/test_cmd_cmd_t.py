@@ -30,7 +30,7 @@ def _parse_field_names() -> set[str] | None:
     body = re.sub(r"//.*", "", body)
     names: set[str] = set()
     for m in re.finditer(
-        r"^\s*(?:unsigned\s+|signed\s+)?([A-Za-z_][A-Za-z_0-9]*)\s+\*?\s*([a-zA-Z_][a-zA-Z_0-9]*)\s*(\[[^;]+\])?\s*;",
+        r"^\s*(?:unsigned\s+|signed\s+)?([A-Za-z_][A-Za-z_0-9]*)\s*\*?\s+\*?\s*([a-zA-Z_][a-zA-Z_0-9]*)\s*(\[[^;]+\])?\s*;",
         body,
         re.MULTILINE,
     ):
@@ -61,9 +61,9 @@ def test_uses_slots() -> None:
     assert not hasattr(state, "__dict__")
 
 
-def test_field_count_is_68() -> None:
-    """The C struct has 68 unique field names after de-duping #ifdef branches."""
-    assert len(fields(CmdT)) == 68
+def test_field_count_is_69() -> None:
+    """The C struct has 69 unique field names after de-duping #ifdef branches."""
+    assert len(fields(CmdT)) == 69
 
 
 def test_scalar_fields_default_zero() -> None:

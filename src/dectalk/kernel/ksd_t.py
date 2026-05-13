@@ -60,6 +60,10 @@ class KsdT:
     # Process-flush flags.
     cmd_flush: int = 0
 
+    # Mode flags read by cm_cmd_break / cm_cmd_say.
+    wbreak: int = 0  # word-boundary pause toggle ([:break on/off]).
+    sayflag: int = 0  # SAY_CLAUSE / SAY_WORD / SAY_LETTER / SAY_LINE / SAY_SYLLABLE.
+
     # Sync semaphore (read .value in flush_done).
     spc_sync: DtSemaphore = field(default_factory=DtSemaphore)
 

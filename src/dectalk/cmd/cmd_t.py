@@ -32,6 +32,7 @@ class CmdT:
 
     params: list[int] = field(default_factory=list[int])
     setv: list[int] = field(default_factory=list[int])
+    pString: list[bytes] = field(default_factory=list[bytes])  # noqa: N815
     defaults: list[int] = field(default_factory=list[int])
     param_index: int = 0
     p_count: int = 0
