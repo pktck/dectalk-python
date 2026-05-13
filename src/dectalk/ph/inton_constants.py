@@ -84,6 +84,9 @@ SINGING: Final[int] = 4
 PHONE_TARGETS_SPECIFIED: Final[int] = 5
 """F0 mode: user-specified F0 targets per phone."""
 
+TIME_VALUE_SPECIFIED: Final[int] = 6
+"""F0 mode: user-spec F0 targets at ``{time, value}`` pairs (ph_defs.h)."""
+
 # -- Speaker-def filter "zap" magic values ---------------------------------
 
 ZAPF: Final[int] = 6000
@@ -119,6 +122,7 @@ __all__ = [
     "QUESTCLAUSE",
     "SAFETY",
     "SINGING",
+    "TIME_VALUE_SPECIFIED",
     "VERBPHRASE",
     "ZAPB",
     "ZAPF",
