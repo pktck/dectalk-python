@@ -46,6 +46,25 @@ GY: Final[int] = 25
 GZ: Final[int] = 26
 GGU: Final[int] = 27  # GU pseudo-consonant
 GQU: Final[int] = 28  # QU pseudo-consonant
+GQUOTE: Final[int] = 29  # "'", as in contractions
+GMBOUND: Final[int] = 30  # "+", the morpheme boundary
+
+# -- Lookup-table sizes / rule-LHS class codes ------------------------------
+
+NGRAPH: Final[int] = 31
+"""Number of grapheme codes in a rule-lookup table (= :data:`GMBOUND` + 1)."""
+
+GRANGE: Final[int] = 31
+"""Range marker — same numeric value as :data:`NGRAPH`."""
+
+GDISJ: Final[int] = 32
+"""Rule-LHS disjunction class code."""
+
+GFEAT: Final[int] = 33
+"""Rule-LHS feature class code."""
+
+GWBOUND: Final[int] = 34
+"""Rule-LHS word-boundary class code."""
 
 
 def is_vowel(g: int) -> bool:
@@ -64,9 +83,11 @@ __all__ = [
     "GB",
     "GC",
     "GD",
+    "GDISJ",
     "GE",
     "GEOS",
     "GF",
+    "GFEAT",
     "GG",
     "GGU",
     "GH",
@@ -75,19 +96,24 @@ __all__ = [
     "GK",
     "GL",
     "GM",
+    "GMBOUND",
     "GN",
     "GO",
     "GP",
     "GQ",
     "GQU",
+    "GQUOTE",
     "GR",
+    "GRANGE",
     "GS",
     "GT",
     "GU",
     "GV",
     "GW",
+    "GWBOUND",
     "GX",
     "GY",
     "GZ",
+    "NGRAPH",
     "is_vowel",
 ]

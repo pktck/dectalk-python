@@ -27,10 +27,11 @@ pytestmark = pytest.mark.skipif(
 
 
 def _parse_grapheme_defines() -> dict[str, int]:
-    """Parse the first occurrence of each ``#define G* N`` (G followed by uppercase letters)."""
+    """Parse the first occurrence of each grapheme-related ``#define``."""
     text = _C_FILE.read_text(encoding="latin-1")
     out: dict[str, int] = {}
-    for m in re.finditer(r"^#define\s+(G[A-Z]+)\s+(\d+)\b", text, re.MULTILINE):
+    pattern = r"^#define\s+(G[A-Z]+|NGRAPH)\s+(\d+)\b"
+    for m in re.finditer(pattern, text, re.MULTILINE):
         name = m.group(1)
         if name not in out:  # take first occurrence only
             out[name] = int(m.group(2))
@@ -69,6 +70,13 @@ def _parse_grapheme_defines() -> dict[str, int]:
         "GZ",
         "GGU",
         "GQU",
+        "GQUOTE",
+        "GMBOUND",
+        "NGRAPH",
+        "GRANGE",
+        "GDISJ",
+        "GFEAT",
+        "GWBOUND",
     ],
 )
 def test_grapheme_code_matches_c(name: str) -> None:
