@@ -262,12 +262,9 @@ _DEFERRED: dict[str, str] = {
     # rule-table parser machinery. The Python port plans to call into
     # this via dectalk.parser eventually, but most helpers are C-only.
     # ------------------------------------------------------------------
-    "ERROR_func1": "Diagnostic helper raised on invalid rule-tab opcode",
-    "ERROR_func2": "Diagnostic helper raised on out-of-range rule-tab index",
     "par_process_input": "Main entry of the rule-tabling driver; Python parser routes elsewhere",
     "par_match_rule": "Matches a single compiled rule against the input window",
     "par_look_ahead_dictionary": "Look-ahead that consults the dictionary; with par_dict_*",
-    "par_search_for_word": "Searches for a word boundary inside the rule engine's window",
     "par_dom_dict_search": "Domain dictionary search invoked from inside par_match_rule",
     "par_build_string_from_rule": "Materialises a replacement string from a compiled rule",
     "par_replace_string": "Replaces a matched run with a generated string in the output buffer",
@@ -275,12 +272,6 @@ _DEFERRED: dict[str, str] = {
     "par_insert_string_after": "Variant of par_insert_string anchored after a match",
     "par_insert_string_before": "Variant of par_insert_string anchored before a match",
     "par_status_string": "Builds a debug status string for parser diagnostics",
-    # ------------------------------------------------------------------
-    # par_pars1.c compound-word machinery. Hooks into German-compound
-    # noun splitting, but the Python port doesn't implement compound
-    # splitting yet (US English doesn't rely on it for parity).
-    # ------------------------------------------------------------------
-    "par_find_word_in_dict": "Helper invoked by par_break_down_word vs the compound dict",
 }
 
 
