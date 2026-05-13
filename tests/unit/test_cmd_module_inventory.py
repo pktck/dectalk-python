@@ -233,11 +233,6 @@ _DEFERRED: dict[str, str] = {
     # ------------------------------------------------------------------
     "cm_util_initialize": "Initialises pCmd_t->cm array; Python uses static module data",
     "cm_util_flush_init": "Resets the pipe-flush state; Python has no flush state",
-    "cm_util_say_string": (
-        "ported as cm.cm_util_say_string.cm_util_say_string -- architectural "
-        "shim that exposes the PFASCII-font encoded packets via an injectable "
-        "lts_sink callback (Python pipeline has no LTS pipe to write into)"
-    ),
     "cm_util_type_out": "Writes ASCII typing chars onto the PH pipe; Python typing path differs",
     "cm_util_dtpc_tones": "Builds DTMF tone packets and writes them to vtm_pipe",
     # ------------------------------------------------------------------
