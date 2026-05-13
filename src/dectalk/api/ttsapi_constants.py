@@ -168,8 +168,25 @@ WAVE_OUT_DEVICE_ID: Final[int] = 2
 # -- Log channel bitmask ----------------------------------------------------
 
 LOG_TEXT: Final[int] = 0x0001
+"""Log raw input text to the host log file."""
+
 LOG_PHONEMES: Final[int] = 0x0002
+"""Log generated phonemes to the host log file."""
+
+LOG_NAME_TYPES: Final[int] = 0x0004
+"""Log per-name type classifications to the console."""
+
+LOG_FORM_TYPES: Final[int] = 0x0008
+"""Log per-name form-class assignments to the console."""
+
 LOG_SYLLABLES: Final[int] = 0x0010
+"""Log per-name syllable structure to the host log file."""
+
+LOG_OUTPHON: Final[int] = 0x0020
+"""Log final output phonemes with duration and F0."""
+
+LOG_DBGLOG: Final[int] = 0x0040
+"""Log generic debug information to ``dbglog.txt``."""
 
 
 # -- Language IDs -----------------------------------------------------------
@@ -288,6 +305,10 @@ __all__ = [
     "LIC_NO_MORE_UNITS",
     "LIC_NO_PAK",
     "LIC_UNKNOWN_ERR",
+    "LOG_DBGLOG",
+    "LOG_FORM_TYPES",
+    "LOG_NAME_TYPES",
+    "LOG_OUTPHON",
     "LOG_PHONEMES",
     "LOG_SYLLABLES",
     "LOG_TEXT",
