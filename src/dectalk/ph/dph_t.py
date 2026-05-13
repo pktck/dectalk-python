@@ -175,10 +175,12 @@ class DphT:
     nfcomma: int = 0
     oddeven: int = 0
     curspdef: list[int] = field(default_factory=list[int])
-    voidef: list[int] = field(default_factory=list[int])
-    voidef_8: list[int] = field(default_factory=list[int])
-    tunedef: list[int] = field(default_factory=list[int])
-    tunedef_8: list[int] = field(default_factory=list[int])
+    # voidef / tunedef are 'short *foo[MAX_SPEAKERS]' in C - an array of
+    # pointers to per-voice short arrays. Modelled as a list-of-lists.
+    voidef: list[list[int]] = field(default_factory=list[list[int]])
+    voidef_8: list[list[int]] = field(default_factory=list[list[int]])
+    tunedef: list[list[int]] = field(default_factory=list[list[int]])
+    tunedef_8: list[list[int]] = field(default_factory=list[list[int]])
     var_val: list[int] = field(default_factory=list[int])
     loadspdef: int = 0
     assertiveness: int = 0
