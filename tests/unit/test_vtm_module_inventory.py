@@ -99,10 +99,6 @@ _DEFERRED: dict[str, str] = {
         "Top-level VTM init; depends on the full speaker-definition / "
         "filter-state layout not yet ported"
     ),
-    "SetSampleRate": (
-        "Switches the synth sample rate (8k/11k); depends on the VTM "
-        "state struct and resampler chain"
-    ),
     "speech_waveform_generator": (
         "Inner Klatt waveform loop; the bit-accurate synth lives in "
         "src/dectalk/hlsyn/, this is the C-style entry not yet wrapped"
