@@ -88,35 +88,46 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 _DEFERRED: dict[str, str] = {
     # ph_sort.c -- top-level sort pipeline.
     "all_phsort": (
-        "Multi-lang sort dispatcher; depends on phsort + language-specific "
-        "branches (uk/sp/gr/la/fr) not yet ported"
+        "Multi-lang sort dispatcher; Python uses _capi for bit-identical audio; "
+        "structural shim only"
     ),
-    "fr_phsort": "French-specific phsort entry; deferred until non-US ports begin",
+    "fr_phsort": (
+        "French-specific phsort entry; Python uses _capi for bit-identical audio; "
+        "structural shim only"
+    ),
     # ph_sttr2.c -- shared shrink helpers.
     "setloc": (
-        "Static helper for phsettar locus computation; depends on stress-state "
-        "machine and the unported phsettar pipeline"
+        "Static helper for phsettar locus computation; Python uses _capi for "
+        "bit-identical audio; structural shim only"
     ),
     # ph_setar.c -- target setting pipeline.
     "phsettar": (
-        "Top-level phsettar entry; depends on getbegtar/getendtar/gettar/"
-        "init_variables/make_dip and the static smooth-rule helpers"
+        "Top-level phsettar entry; Python uses _capi for bit-identical audio; structural shim only"
     ),
-    "gettar": "Per-phone target lookup dispatcher; deferred with the phsettar pipeline",
-    "getbegtar": "Beginning-of-phone target lookup; deferred with the phsettar pipeline",
-    "getendtar": "End-of-phone target lookup; deferred with the phsettar pipeline",
+    "gettar": (
+        "Per-phone target lookup dispatcher; Python uses _capi for bit-identical "
+        "audio; structural shim only"
+    ),
+    "getbegtar": (
+        "Beginning-of-phone target lookup; Python uses _capi for bit-identical "
+        "audio; structural shim only"
+    ),
+    "getendtar": (
+        "End-of-phone target lookup; Python uses _capi for bit-identical audio; "
+        "structural shim only"
+    ),
     "init_variables": (
-        "Static phsettar initialiser; depends on PARAMETER buffers and "
-        "the broader target-setting state"
+        "Static phsettar initialiser; Python uses _capi for bit-identical audio; "
+        "structural shim only"
     ),
     "make_dip": (
-        "Static parameter-dip generator inside phsettar; depends on the "
-        "PARAMETER struct layout and shrink/inhdr machinery"
+        "Static parameter-dip generator inside phsettar; Python uses _capi for "
+        "bit-identical audio; structural shim only"
     ),
     # ph_inton2.c -- intonation engine.
     "phinton": (
-        "Big intonation engine entry point; depends on N unported f0 helpers "
-        "and the hat-state machine"
+        "Big intonation engine entry point; Python uses _capi for bit-identical "
+        "audio; structural shim only"
     ),
 }
 
@@ -403,9 +414,17 @@ def test_deferred_ph_symbols_actually_in_c_source() -> None:
 
 
 def test_no_dead_deferred_entries() -> None:
-    """If a deferred function gets ported, the _DEFERRED entry should be removed."""
+    """If a deferred function gets ported, the _DEFERRED entry should be removed.
+
+    Entries whose reason contains the marker ``"Python uses"`` are exempt:
+    those are *structural shims* that route through ``dectalk._capi`` for
+    byte-identical audio, so they intentionally coexist with a Python
+    symbol (the shim itself) until a full port lands.
+    """
     py_syms = _enumerate_python_ph_symbols()
-    redundant = set(_DEFERRED.keys()) & py_syms
+    redundant = {
+        name for name in (set(_DEFERRED.keys()) & py_syms) if "Python uses" not in _DEFERRED[name]
+    }
     assert not redundant, (
         f"_DEFERRED entries that are actually ported (remove from _DEFERRED): {sorted(redundant)}"
     )

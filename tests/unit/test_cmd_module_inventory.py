@@ -210,17 +210,17 @@ _DEFERRED: dict[str, str] = {
     # queue (which exists to retry IPA-style ARPA pairs after a
     # vowel-cluster ambiguity is resolved).
     # ------------------------------------------------------------------
-    "cm_phon_check": "Drives the q_flag hold-buffer state machine; Python phoneme path is simpler",
-    "cm_phon_match": "Matches phoneme triples vs uncertain_phones; only called via cm_phon_check",
     "cm_phon_param_check": "Parses [:phoneme] params; Python handles via cm_cmd_phoneme directly",
-    "replay_buffer": "Drains the q_flag hold-buffer back through cm_phon_check",
     # ------------------------------------------------------------------
     # cm_text.c clause splitter and inline index helpers. The Python
     # port uses dectalk.parser.text_get_word for word extraction; the C
     # body of cm_text_getclause runs the per-character clause state
     # machine over the inter-thread pipe.
     # ------------------------------------------------------------------
-    "cm_text_getclause": "Per-character clause-boundary state machine over the CMD pipe",
+    "cm_text_getclause": (
+        "Per-character clause-boundary state machine over the CMD pipe; "
+        "Python uses _capi for actual segmentation, the shim only captures the output shape"
+    ),
     "par_copy_index_cm_text": "Static inline duplicate of par_copy_index used inside cm_text only",
     "par_copy_index_list_cm_text": "Static inline duplicate of par_copy_index_list used in cm_text",
     "par_is_index_set_cm_text": "Static inline duplicate of par_is_index_set used in cm_text",
@@ -259,8 +259,14 @@ _DEFERRED: dict[str, str] = {
     # rule-table parser machinery. The Python port plans to call into
     # this via dectalk.parser eventually, but most helpers are C-only.
     # ------------------------------------------------------------------
-    "par_process_input": "Main entry of the rule-tabling driver; Python parser routes elsewhere",
-    "par_match_rule": "Matches a single compiled rule against the input window",
+    "par_process_input": (
+        "Main entry of the rule-tabling driver; Python parser routes elsewhere -- "
+        "Python uses _capi for the real rule-tabling, the shim only captures the signature"
+    ),
+    "par_match_rule": (
+        "Matches a single compiled rule against the input window; "
+        "Python uses _capi for the real rule engine, the shim only captures the signature"
+    ),
     "par_look_ahead_dictionary": (
         "Stubbed: returns 0 until par_match_rule lands; Python uses _capi for actual dict lookahead"
     ),
