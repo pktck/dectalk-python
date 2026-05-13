@@ -110,10 +110,6 @@ _DEFERRED: dict[str, str] = {
     "read_speaker_definition": (
         "Parses the speaker .def files into VTM state; deferred with the speaker-table layout"
     ),
-    "setzeroabc": (
-        "Computes (a,b,c) coefficients for the nasal/anti-resonance "
-        "zeros; depends on radius_table / cosine_table layout"
-    ),
     "getmax": (
         "Static debug helper that tracks absolute-value peaks across the "
         "VTM pipeline; deferred until a debug surface exists"
