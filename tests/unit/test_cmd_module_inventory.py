@@ -277,7 +277,6 @@ _DEFERRED: dict[str, str] = {
     "par_dom_dict_search": "Domain dictionary search invoked from inside par_match_rule",
     "par_build_string_from_rule": "Materialises a replacement string from a compiled rule",
     "par_replace_string": "Replaces a matched run with a generated string in the output buffer",
-    "par_copy_string_data": "Bulk byte copy used by par_replace_string et al.",
     "par_insert_string": "Inserts a string into the parser's output window",
     "par_insert_string_after": "Variant of par_insert_string anchored after a match",
     "par_insert_string_before": "Variant of par_insert_string anchored before a match",
