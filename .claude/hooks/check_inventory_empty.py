@@ -112,10 +112,7 @@ def _value_as_text(value: ast.expr) -> str | None:
 
 def _is_todo(value_text: str) -> bool:
     """Return True iff the entry represents remaining TODO work."""
-    for pat in _NON_TODO_MARKERS:
-        if pat.search(value_text):
-            return False
-    return True
+    return all(not pat.search(value_text) for pat in _NON_TODO_MARKERS)
 
 
 def _classify_deferred(path: Path) -> tuple[int, int]:
