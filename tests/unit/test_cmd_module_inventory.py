@@ -265,8 +265,7 @@ _DEFERRED: dict[str, str] = {
     "par_process_input": "Main entry of the rule-tabling driver; Python parser routes elsewhere",
     "par_match_rule": "Matches a single compiled rule against the input window",
     "par_look_ahead_dictionary": (
-        "Stubbed: returns 0 until par_match_rule lands; "
-        "Python uses _capi for actual dict lookahead"
+        "Stubbed: returns 0 until par_match_rule lands; Python uses _capi for actual dict lookahead"
     ),
 }
 
@@ -588,9 +587,7 @@ def test_no_dead_deferred_entries() -> None:
     """
     py_syms = _enumerate_python_cmd_symbols()
     redundant = {
-        name
-        for name in _DEFERRED.keys() & py_syms
-        if "Python uses" not in _DEFERRED[name]
+        name for name in _DEFERRED.keys() & py_syms if "Python uses" not in _DEFERRED[name]
     }
     assert not redundant, (
         f"_DEFERRED entries that are actually ported (remove from _DEFERRED): {sorted(redundant)}"

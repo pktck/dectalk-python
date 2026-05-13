@@ -74,10 +74,7 @@ def _extract_body() -> str:  # noqa: PLR0912 — paren-balancing across #ifdef a
     body brace beyond the trailing ``#endif`` / whitespace.
     """
     text = _read_par_pars1_c()
-    starts = [
-        m.start()
-        for m in re.finditer(r"\bvoid\s+par_dom_dict_search\s*\(", text)
-    ]
+    starts = [m.start() for m in re.finditer(r"\bvoid\s+par_dom_dict_search\s*\(", text)]
     assert starts, "par_dom_dict_search definition not found"
     for start in starts:
         i = text.index("(", start)

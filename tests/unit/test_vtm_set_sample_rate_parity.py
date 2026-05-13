@@ -48,6 +48,7 @@ def _close(a: float, b: float, eps: float = 1e-9) -> bool:
     """Manual epsilon comparison (avoiding pytest.approx for pyright)."""
     return abs(a - b) < eps
 
+
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/vtm/vtm_i.c"
 
 pytestmark = pytest.mark.skipif(
