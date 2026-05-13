@@ -154,14 +154,8 @@ _DEFERRED: dict[str, str] = {
         "...); private cleanup helper deferred along with HLSynthesizeLLFrame"
     ),
     # ---- log10table.c / sqrttable.c -- tiny math wrappers. -------------
-    "DT_f_log10": (
-        "Lookup-table wrapper around log10(); the Python ports use "
-        "math.log10 directly (no need for the LUT speedup)"
-    ),
-    "DT_f_sqrt": (
-        "Lookup-table wrapper around sqrt(); the Python ports use "
-        "math.sqrt directly (no need for the LUT speedup)"
-    ),
+    "DT_f_log10": "ported as hlsyn.log10_table.dt_f_log10 (PEP8 rename)",
+    "DT_f_sqrt": "ported as hlsyn.sqrt_table.dt_f_sqrt (PEP8 rename)",
     # ---- brent.c -- Brent's-method root finder. ------------------------
     "Brent": "ported as hlsyn.brent.brent (PEP8 rename)",
     "BrentBracket": "ported as hlsyn.brent.brent_bracket (PEP8 rename)",
