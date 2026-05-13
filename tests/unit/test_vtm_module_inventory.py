@@ -95,10 +95,6 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
     # ---- vtm3.c -- the speech waveform generator (Klatt synthesiser). --
-    "InitializeVTM": (
-        "Top-level VTM init; depends on the full speaker-definition / "
-        "filter-state layout not yet ported"
-    ),
     "speech_waveform_generator": (
         "Inner Klatt waveform loop; the bit-accurate synth lives in "
         "src/dectalk/hlsyn/, this is the C-style entry not yet wrapped"

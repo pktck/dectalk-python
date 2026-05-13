@@ -180,7 +180,6 @@ _DEFERRED: dict[str, str] = {
     "cm_cmd_flush": "Drives the pipe-flush state; Python is synchronous, no flush state",
     "cm_cmd_gender": "Selects male/female voice variant; Python uses voice presets directly",
     "cm_cmd_latin": "Sets pKsd_t->latin_curr; Python only models US English so far",
-    "cm_cmd_loadv": "[:loadv] reads voice parameter blob; deferred until voice loader lands",
     "cm_cmd_mark": "[:mark] inserts an index marker; Python uses Segment indices",
     "cm_cmd_mode": "[:mode] toggles reader modes; Python has no reader-mode flag yet",
     "cm_cmd_name": "[:name <speaker>] picks Paul/Betty/...; Python exposes voice presets via API",
@@ -212,7 +211,6 @@ _DEFERRED: dict[str, str] = {
     # vowel-cluster ambiguity is resolved).
     # ------------------------------------------------------------------
     "cm_phon_check": "Drives the q_flag hold-buffer state machine; Python phoneme path is simpler",
-    "cm_phon_flush": "Flushes the hold-buffer at clause boundaries; deferred with cm_phon_check",
     "cm_phon_match": "Matches phoneme triples vs uncertain_phones; only called via cm_phon_check",
     "cm_phon_param_check": "Parses [:phoneme] params; Python handles via cm_cmd_phoneme directly",
     "replay_buffer": "Drains the q_flag hold-buffer back through cm_phon_check",
@@ -234,7 +232,6 @@ _DEFERRED: dict[str, str] = {
     "cm_util_initialize": "Initialises pCmd_t->cm array; Python uses static module data",
     "cm_util_flush_init": "Resets the pipe-flush state; Python has no flush state",
     "cm_util_type_out": "Writes ASCII typing chars onto the PH pipe; Python typing path differs",
-    "cm_util_dtpc_tones": "Builds DTMF tone packets and writes them to vtm_pipe",
     # ------------------------------------------------------------------
     # cmd_init.c memory teardown. The C function FreeCMDThreadMemory
     # frees malloc()'d pCmd_t state; Python relies on GC. We expose the

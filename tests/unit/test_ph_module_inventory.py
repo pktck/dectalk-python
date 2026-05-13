@@ -87,7 +87,6 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
     # ph_sort.c -- top-level sort pipeline.
-    "phsort": "Top-level PH-sort entry point; needs full pipeline wired",
     "all_phsort": (
         "Multi-lang sort dispatcher; depends on phsort + language-specific "
         "branches (uk/sp/gr/la/fr) not yet ported"
