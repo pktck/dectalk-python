@@ -74,9 +74,20 @@ def test_scalar_fields_default_zero() -> None:
 
 
 def test_array_fields_default_empty_list() -> None:
-    """Spot-check that array fields default to empty lists."""
+    """Spot-check that scalar-array fields default to empty lists."""
     state = CmdT()
-    for name in ("params", "defaults", "string_buff", "setv"):
+    for name in ("params", "defaults", "string_buff"):
         value = getattr(state, name)
         assert isinstance(value, list)
         assert value == []
+
+
+def test_setv_defaults_to_10_icomm_slots() -> None:
+    """``setv`` is the C source's ``ICOMM_T setv[10]`` array."""
+    state = CmdT()
+    assert isinstance(state.setv, list)
+    assert len(state.setv) == 10
+    # Each slot is a default-constructed IComm.
+    for slot in state.setv:
+        assert slot.cmd == b""
+        assert slot.seen == 0

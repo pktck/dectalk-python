@@ -25,13 +25,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from dectalk.cmd.icomm_struct import IComm
+
 
 @dataclass(slots=True)
 class CmdT:
     """CMD-thread instance data (CMD_T in C). 55 fields total."""
 
     params: list[int] = field(default_factory=list[int])
-    setv: list[int] = field(default_factory=list[int])
+    setv: list[IComm] = field(default_factory=lambda: [IComm() for _ in range(10)])
     pString: list[bytes] = field(default_factory=list[bytes])  # noqa: N815
     defaults: list[int] = field(default_factory=list[int])
     param_index: int = 0
