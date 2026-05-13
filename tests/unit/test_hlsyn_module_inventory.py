@@ -124,8 +124,7 @@ _DEFERRED: dict[str, str] = {
         "libtts_us.so so the Python pipeline never calls this"
     ),
     "MapGlottalFormantsNotF1": (
-        "Adjusts F2..F6 / B3..B5 / TL for tracheal coupling; private to "
-        "hlframe.c, deferred along with HLSynthesizeLLFrame"
+        "ported as hlsyn.map_glottal_formants_not_f1.map_glottal_formants_not_f1 (PEP8 rename)"
     ),
     "FricativeFilters": (
         "Sets the parallel fricative-branch resonators (F2P..F6P, AB); "
@@ -167,10 +166,7 @@ _DEFERRED: dict[str, str] = {
         "Top-level nasal pole/zero setter called from HLSynthesizeLLFrame; "
         "deferred with the rest of the HL layer"
     ),
-    "NasalZero": (
-        "Sets the nasal anti-resonance (FNZ, BNZ) from an area; private "
-        "to nasalf1x.c, deferred along with SetNasals_f1x"
-    ),
+    "NasalZero": "ported as hlsyn.nasal_zero.nasal_zero (PEP8 rename)",
     "Compute_fm": "ported as hlsyn.compute_fm.compute_fm (PEP8 rename)",
     "NasalFirstFormant": (
         "Places the nasal first formant F1 from f1c, an, ap; private to "

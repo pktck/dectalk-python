@@ -134,10 +134,7 @@ _DEFERRED: dict[str, str] = {
         "UIs); no visual-notification surface in the Python port yet"
     ),
     # ---- playtone.c -- DTMF / sine-pair tone injection. ---------------
-    "PlayTones": (
-        "Multi-tone scheduler that fills the audio pipe with [INTONE..] "
-        "tone packets; depends on the unported pipe layer"
-    ),
+    "PlayTones": "ported as vtm.play_tones.play_tones (PEP8 rename)",
     "Tone": "ported as vtm.tone.tone (PEP8 rename)",
 }
 
