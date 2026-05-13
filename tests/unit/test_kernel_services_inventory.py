@@ -48,16 +48,6 @@ _LINUX_DEFINED: frozenset[str] = frozenset({"__linux__"})
 # ``test_no_dead_deferred_entries`` guard enforces that.
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
-    # Semaphore primitives -- the Linux build's bodies are empty (real
-    # synchronisation comes from pthread mutexes via opthread.h). The
-    # Python port relies on the GIL and explicit locks where needed.
-    "wait_semaphore": "Linux body is empty; Python relies on GIL/pthread shim, no port needed",
-    "signal_semaphore": "Linux body is empty; Python relies on GIL/pthread shim, no port needed",
-    # kernel_disable's only body is wrapped in #ifdef MSDOS -- on Linux it
-    # only `return(0);`s. kernel_enable IS ported (kernel_stubs.py); the
-    # disable counterpart isn't because no Python caller needs the flags
-    # value. If a caller materialises, port it then remove this entry.
-    "kernel_disable": "Linux body is empty (MSDOS-gated); no Python caller yet",
     # Windows multimedia / audio-handle helpers. These are dispatched
     # through libtts_us.so's PA_GetVolume / PA_SetVolume on Linux. The
     # Python audio backend does its own gain shaping, so the bridging
