@@ -72,6 +72,7 @@ def test_return_codes_form_dense_set() -> None:
 # -- Extended par_def.h constants -----------------------------------------
 
 
+@pytest.mark.skipif(not _C_HEADER.exists(), reason="C source not available")
 @pytest.mark.parametrize(
     ("py_attr", "c_name", "expected"),
     [
