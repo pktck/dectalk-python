@@ -22,6 +22,7 @@ their own letter-to-sound rules.
 from __future__ import annotations
 
 import io
+import os
 import wave
 from collections.abc import Iterable
 from pathlib import Path
@@ -61,8 +62,16 @@ class UnknownWordError(KeyError):
 
 
 def _try_get_capi() -> CAPI | None:
-    """Return the CAPI singleton, or None if the C library can't be loaded."""
+    """Return the CAPI singleton, or None if the C library can't be loaded.
+
+    Honours ``DECTALK_DISABLE_CAPI=1`` -- when set, the function returns
+    None unconditionally so the caller takes the pure-Python path. Used
+    by the stop-hook verifier to assert that the Python pipeline produces
+    byte-identical output without any C-library wrapper.
+    """
     global _capi_instance, _capi_unavailable  # noqa: PLW0603
+    if os.environ.get("DECTALK_DISABLE_CAPI") == "1":
+        return None
     if _capi_unavailable:
         return None
     if _capi_instance is None:

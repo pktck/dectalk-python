@@ -59,8 +59,18 @@ else
 fi
 
 # -------------------------------------------------------------------
-# Verifier 2: end-to-end parity test passes?
-# Only run if inventories are clear — saves ~30s of pytest on every
+# Verifier 2: end-to-end parity test passes WITHOUT the C library?
+# We set DECTALK_DISABLE_CAPI=1 so dectalk.to_wav skips its ctypes
+# wrapper around libtts_us.so and exercises the pure-Python pipeline
+# (kernel -> cmd -> lts -> ph -> vtm -> hlsyn). Bit parity here is
+# the project goalpost: the Python package must produce byte-identical
+# WAVs vs the shipped binary with no native dependency at runtime.
+#
+# To re-tune behaviour, edit tests/parity/test_binary_wav_parity.py
+# (or its conftest) and scripts/inventory_status.py rather than this
+# hook -- both live in the repo and need no hook-dir approval.
+#
+# Only run if inventories are clear -- saves ~30s of pytest on every
 # stop event while ports are still landing.
 # -------------------------------------------------------------------
 parity_ok=0
@@ -68,17 +78,18 @@ if [[ "$inventory_ok" -eq 1 ]]; then
   parity_test="tests/parity/test_binary_wav_parity.py"
   if [[ -f "${hook_dir}/../../${parity_test}" ]]; then
     if (cd "${hook_dir}/../.." && \
+        DECTALK_DISABLE_CAPI=1 \
         DECTALK_SRC=/tmp/dectalk-src \
         DECTALK_BIN=/tmp/dectalk-binary-stable \
         uv run pytest "${parity_test}" -q >/dev/null 2>&1); then
       parity_ok=1
-      printf 'stop-hook: %s passes\n' "${parity_test}" >&2
+      printf 'stop-hook: pure-Python %s passes (no _capi)\n' "${parity_test}" >&2
     else
-      printf 'stop-hook: %s does NOT pass — forcing continuation\n' \
+      printf 'stop-hook: pure-Python %s does NOT pass (DECTALK_DISABLE_CAPI=1) -- forcing continuation\n' \
         "${parity_test}" >&2
     fi
   else
-    printf 'stop-hook: %s not found — treating as not-yet-passing\n' \
+    printf 'stop-hook: %s not found -- treating as not-yet-passing\n' \
       "${parity_test}" >&2
   fi
 fi
@@ -93,12 +104,18 @@ fi
 # -------------------------------------------------------------------
 cat <<'EOF' >&2
 Standing instruction reminder: continue working toward byte-identical
-bit parity between dectalk.speak() output and the DECtalk binary.
+**pure-Python** bit parity between dectalk.speak() output and the
+DECtalk binary. The Python implementation must NOT depend on
+libtts_us.so or any other compiled-from-C artifacts at runtime --
+the verifier runs the parity test with DECTALK_DISABLE_CAPI=1, which
+forces speak() through the kernel/cmd/lts/ph/vtm/hlsyn pure-Python
+pipeline.
 
-Stop is only allowed when the verifier passes — i.e. every module-
+Stop is only allowed when the verifier passes -- i.e. every module-
 inventory test's _DEFERRED dict is empty AND
-tests/parity/test_binary_wav_parity.py is green. Until then, every
-stop event triggers a force-resume.
+tests/parity/test_binary_wav_parity.py is green under
+DECTALK_DISABLE_CAPI=1. Until then, every stop event triggers a
+force-resume.
 
 If you genuinely cannot proceed (architectural decision, missing
 permission, fundamental disagreement with the plan), ask the user
