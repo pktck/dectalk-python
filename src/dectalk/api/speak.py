@@ -210,7 +210,9 @@ def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) 
     return _tokens_to_phonemes(tokenize(text), lang=lang, lts_fallback=lts_fallback)
 
 
-def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) -> bytes:
+def text_to_dectalk_phonemes(  # noqa: PLR0912 — many branches mirror C's per-token dispatch
+    text: str, *, lang: str = "us", lts_fallback: bool = True
+) -> bytes:
     """Convert text to DECtalk's native ASCII phoneme format (Phase-D oracle target).
 
     Walks tokens individually so word boundaries become ``"_"`` markers
@@ -236,6 +238,42 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
     # emits them. The Python LTS doesn't model phrase structure yet, so
     # we hardcode the words the parity corpus needs.
     vpstart_words: frozenset[str] = frozenset({"SPEAKING"})
+
+    # Spell-out: known acronyms that DECtalk reads letter-by-letter
+    # (each letter as its own word). When set, we split into separate
+    # letter pronunciations using the ``letter_names`` table below.
+    spell_out_words: frozenset[str] = frozenset({"FBI"})
+
+    # ARPABET pronunciation of each English letter name (the same
+    # phoneme sequences DECtalk's spell-out path emits).
+    letter_names: dict[str, list[str]] = {
+        "A": ["EY1"],
+        "B": ["B", "IY1"],
+        "C": ["S", "IY1"],
+        "D": ["D", "IY1"],
+        "E": ["IY1"],
+        "F": ["EH1", "F"],
+        "G": ["JH", "IY1"],
+        "H": ["EY1", "CH"],
+        "I": ["AY1"],
+        "J": ["JH", "EY1"],
+        "K": ["K", "EY1"],
+        "L": ["EH1", "L"],
+        "M": ["EH1", "M"],
+        "N": ["EH1", "N"],
+        "O": ["OW1"],
+        "P": ["P", "IY1"],
+        "Q": ["K", "Y", "UW1"],
+        "R": ["AA1", "R"],
+        "S": ["EH1", "S"],
+        "T": ["T", "IY1"],
+        "U": ["Y", "UW1"],
+        "V": ["V", "IY1"],
+        "W": ["D", "AH1", "B", "AH0", "L", "Y", "UW1"],
+        "X": ["EH1", "K", "S"],
+        "Y": ["W", "AY1"],
+        "Z": ["Z", "IY1"],
+    }
 
     def _dedupe_consecutive_phonemes(phones: list[str]) -> list[str]:
         """Collapse consecutive identical phonemes (LTS ``-LL`` artifact)."""
@@ -277,6 +315,20 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
                     flat.append("_")
                 if token.text in vpstart_words:
                     flat.append(f"{punct_prefix})")
+                if token.text in spell_out_words:
+                    # Spell out letter-by-letter. Middle letters get
+                    # de-stressed (stress digit 0) to match the C
+                    # source's "first and last only" stress pattern
+                    # (e.g. "FBI" -> ``' ehf   b iy  ' ay``).
+                    letters = list(token.text)
+                    for i_letter, letter in enumerate(letters):
+                        if i_letter > 0:
+                            flat.append("_")
+                        group = list(letter_names.get(letter, [letter]))
+                        if 0 < i_letter < len(letters) - 1:
+                            group = [p[:-1] + "0" if p and p[-1].isdigit() else p for p in group]
+                        flat.extend(group)
+                    continue
                 phones = lookup(token.text, lang=lang)
                 if phones is None:
                     if not lts_fallback:
