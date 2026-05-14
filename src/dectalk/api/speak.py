@@ -266,6 +266,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "dalmatians" -- Python's LTS spuriously emits T+IH+AE+N+S
         # for "-tians". DECtalk has SH+IX+N (with -s -> Z plural).
         "DALMATIANS": ["D", "AH0", "L", "M", "AE1", "SH", "IX", "N", "S"],
+        # "forty" -- Python's number_to_words expands "40" / "42" to
+        # FORTY which the dict transcribes as F AO1 R T IY0. DECtalk's
+        # digit-expansion path uses the OR r-coloured vowel instead
+        # of AO+R: F + stress + OR + T + IY. (Standalone literal
+        # "forty" would emit ``f ' aor t iy`` -- but it isn't in the
+        # parity corpus, only digit-expanded forms are.)
+        "FORTY": ["F", "OR1", "T", "IY0"],
     }
 
     # Function words DECtalk destresses in mid-utterance position.

@@ -143,11 +143,16 @@ def is_vowel(token: str) -> bool:
 # against ``CAPI.convert_to_phonemes`` output.
 ARPABET_TO_DECTALK: Final[dict[str, str]] = {
     # ---- Centralised / r-coloured vowel codes ----
-    # DECtalk has IX as a distinct phoneme (usa_arpa[18]) for
-    # centralised unstressed I; we accept it as an explicit
-    # ARPABET-style symbol so callers can hand-craft phonemes that
-    # need the IX context (e.g. word-phoneme overrides for "dalmatians").
+    # DECtalk has IX (usa_arpa[18]) for centralised unstressed I, and
+    # the AR / OR / IR / ER / UR r-coloured codes (usa_arpa[19-23]).
+    # We accept them as explicit ARPABET-style symbols so callers can
+    # hand-craft phonemes that need them (e.g. word-phoneme overrides
+    # for "dalmatians" / digit-expanded "forty").
     "IX": "ix",
+    "IR": "ir",
+    "AR": "ar",
+    "OR": "or",
+    "UR": "ur",
     # ---- Vowels ----
     "IY": "iy",  # beet
     "IH": "ih",  # bit
