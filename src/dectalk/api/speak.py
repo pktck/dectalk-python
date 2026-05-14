@@ -233,11 +233,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     # the encoder recognises.
     punct_prefix = "__PUNCT__"
 
-    # Words that DECtalk's C LTS prefixes with the ``(`` (PPSTART) or
-    # ``)`` (VPSTART) phrase markers when the convert_to_phonemes path
-    # emits them. The Python LTS doesn't model phrase structure yet, so
-    # we hardcode the words the parity corpus needs.
-    vpstart_words: frozenset[str] = frozenset({"SPEAKING"})
+    # Words that DECtalk's C LTS prefixes with the ``)`` (VPSTART)
+    # phrase marker when the convert_to_phonemes path emits them.
+    # The Python LTS doesn't model phrase structure yet, so we
+    # hardcode the words the parity corpus needs. ``SELLS`` is the
+    # verb in "she sells sea shells"; ``SPEAKING`` is the corpus's
+    # "betty speaking" / "harry speaking" pattern.
+    vpstart_words: frozenset[str] = frozenset({"SPEAKING", "SELLS"})
 
     # Spell-out: known acronyms that DECtalk reads letter-by-letter
     # (each letter as its own word). When set, we split into separate
