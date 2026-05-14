@@ -161,10 +161,10 @@ ARPABET_TO_DECTALK: Final[dict[str, str]] = {
     "AX": "ax",  # schwa
     # ---- Consonants ----
     "W": "w",
-    "Y": "y",
+    "Y": "yx",  # consonant Y -- usa_arpa[25] in src/dapi/src/include/usa_phon.tab
     "R": "r",
     "L": "ll",
-    "HH": "hx",  # hat -- C source emits 'hx' (single 'h' character is internal-only)
+    "HH": "hx",  # hat -- usa_arpa[28]
     "M": "m",
     "N": "n",
     "NG": "nx",
