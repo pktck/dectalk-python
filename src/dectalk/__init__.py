@@ -16,7 +16,13 @@ Example:
     >>> dectalk.write_wav(samples, "hello.wav")
 """
 
-from dectalk.api import UnknownWordError, speak, text_to_phonemes, to_wav
+from dectalk.api import (
+    UnknownWordError,
+    speak,
+    text_to_dectalk_phonemes,
+    text_to_phonemes,
+    to_wav,
+)
 from dectalk.nt.audio import play, sine_tone, write_wav
 from dectalk.ph.sequencer import synthesize_phonemes
 
@@ -26,6 +32,7 @@ __all__ = [
     "sine_tone",
     "speak",
     "synthesize_phonemes",
+    "text_to_dectalk_phonemes",
     "text_to_phonemes",
     "to_wav",
     "write_wav",

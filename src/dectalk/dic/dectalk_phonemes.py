@@ -127,3 +127,123 @@ _VOWELS: Final[frozenset[str]] = frozenset(
 def is_vowel(token: str) -> bool:
     """Return True if ``token`` is an ARPABET vowel/diphthong (no stress digit)."""
     return token in _VOWELS
+
+
+# Canonical DECtalk phoneme table, ported from
+# ``/tmp/dectalk-src/src/samplosf/src/emacspeak/src/phoneme.c`` (the
+# ``eng_ph_table`` array at lines 41-117). Column 1 of the C table is
+# DECtalk's single-letter / bracketed internal phoneme code; column 2 is
+# the ASCII string emitted by ``TextToSpeechConvertToPhonemes`` (2-letter
+# in most cases, single letter for simple consonants); column 3 is an
+# example word (informational only).
+#
+# This table is the canonical mapping the C source uses when it
+# stringifies its internal phoneme stream. The Python port consumes it
+# to produce DECtalk-native phoneme strings that can be byte-compared
+# against ``CAPI.convert_to_phonemes`` output.
+ARPABET_TO_DECTALK: Final[dict[str, str]] = {
+    # ---- Vowels ----
+    "IY": "iy",  # beet
+    "IH": "ih",  # bit
+    "EY": "ey",  # bait
+    "EH": "eh",  # bet
+    "AE": "ae",  # bat
+    "AA": "aa",  # bob
+    "AY": "ay",  # buy
+    "AW": "aw",  # bout
+    "AH": "ah",  # but
+    "AO": "ao",  # bought
+    "OW": "ow",  # boat
+    "OY": "oy",  # boy
+    "UH": "uh",  # put
+    "UW": "uw",  # view
+    "ER": "rr",  # burr (r-coloured)
+    "AX": "ax",  # schwa
+    # ---- Consonants ----
+    "W": "w",
+    "Y": "y",
+    "R": "r",
+    "L": "ll",
+    "HH": "hx",  # hat -- C source emits 'hx' (single 'h' character is internal-only)
+    "M": "m",
+    "N": "n",
+    "NG": "nx",
+    "F": "f",
+    "V": "v",
+    "TH": "th",
+    "DH": "dh",
+    "S": "s",
+    "Z": "z",
+    "SH": "sh",
+    "ZH": "zh",
+    "P": "p",
+    "B": "b",
+    "T": "t",
+    "D": "d",
+    "K": "k",
+    "G": "g",
+    "CH": "ch",
+    "JH": "jh",
+    "Q": "q",
+}
+
+
+# Stress markers used in DECtalk's ASCII phoneme format. Primary stress
+# is ``'``, secondary stress is ``` ` ```; both appear as their own
+# space-separated tokens preceding the stressed vowel.
+DECTALK_PRIMARY_STRESS: Final[str] = "'"
+DECTALK_SECONDARY_STRESS: Final[str] = "`"
+
+
+def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
+    """Encode an ARPABET phoneme list as DECtalk's ASCII phoneme format.
+
+    The output is what ``TextToSpeechConvertToPhonemes`` would emit on
+    the C side: each ARPABET symbol is mapped to its 1- or 2-letter
+    DECtalk code via :data:`ARPABET_TO_DECTALK`, stress digits become
+    space-padded ``'`` / `` ` `` tokens preceding the vowel, and a
+    placeholder ``WBOUND`` or ``BLOCK_RULES`` symbol (None / "_") in
+    the input separates words with ``word_break``.
+
+    Args:
+        phonemes: ARPABET phonemes, each optionally suffixed with a
+            stress digit (``0`` = none, ``1`` = primary, ``2`` =
+            secondary, ``3`` = tertiary -- treated as secondary).
+            Word boundaries are signalled by ``"_"`` or empty strings.
+        word_break: Bytes to emit between words. Defaults to two
+            spaces (matching the C source's `` `` separator).
+
+    Returns:
+        A ``bytes`` value in DECtalk's native ASCII phoneme alphabet.
+        Empty input yields ``b""``.
+    """
+    out_parts: list[str] = []
+    for tok in phonemes:
+        if not tok or tok == "_":
+            out_parts.append(word_break)
+            continue
+        stress_digit = ""
+        base = tok
+        if tok and tok[-1].isdigit():
+            stress_digit = tok[-1]
+            base = tok[:-1]
+        dt = ARPABET_TO_DECTALK.get(base)
+        if dt is None:
+            # Unknown symbol: emit a question mark so callers can spot
+            # the gap. The pure-Python pipeline shouldn't emit these
+            # once all ARPABET symbols are covered.
+            dt = "?"
+        if stress_digit == "1":
+            out_parts.append(f" {DECTALK_PRIMARY_STRESS} {dt}")
+        elif stress_digit in ("2", "3"):
+            out_parts.append(f" {DECTALK_SECONDARY_STRESS} {dt}")
+        else:
+            out_parts.append(dt)
+    # Collapse a possible leading space before the first stress marker
+    # so the output starts at column 0 -- mirrors the C source which
+    # writes ``" ' ey"`` for the standalone word "a" (no leading
+    # space).
+    encoded = "".join(out_parts)
+    if encoded.startswith(" "):
+        encoded = encoded[1:]
+    return encoded.encode("ascii")

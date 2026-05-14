@@ -210,6 +210,25 @@ def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) 
     return _tokens_to_phonemes(tokenize(text), lang=lang, lts_fallback=lts_fallback)
 
 
+def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) -> bytes:
+    """Convert text to DECtalk's native ASCII phoneme format (Phase-D oracle target).
+
+    Wraps :func:`text_to_phonemes` and encodes the ARPABET output via
+    :func:`dectalk.dic.dectalk_phonemes.encode_to_dectalk` so the result
+    can be byte-compared against
+    :func:`dectalk._capi.CAPI.convert_to_phonemes` -- the LTS+dic
+    stage-boundary oracle on the path to pure-Python bit parity.
+
+    The two outputs do NOT match today. Each prompt that aligns here is
+    one step closer to LTS+dic byte parity (and ultimately, audio bit
+    parity, per the project goalpost in
+    ``/root/.claude/plans/create-a-python-port-smooth-hoare.md``).
+    """
+    from dectalk.dic.dectalk_phonemes import encode_to_dectalk  # noqa: PLC0415
+
+    return encode_to_dectalk(text_to_phonemes(text, lang=lang, lts_fallback=lts_fallback))
+
+
 def speak(
     text: str,
     *,

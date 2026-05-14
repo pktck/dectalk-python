@@ -58,16 +58,19 @@ pytestmark = pytest.mark.skipif(
 
 
 def _python_phonemes(text: str) -> bytes:
-    """Render Python's phoneme list as the same byte format the C source emits.
+    """Render Python's phoneme list in DECtalk's native ASCII format.
 
-    The C source returns a single space-separated bytes object using
-    DECtalk's native alphabet. The Python pipeline currently returns a
-    list of ARPABET symbols. This helper normalises Python's list into
-    the same byte format so the comparison is meaningful even before
-    the alphabet conversion lands.
+    Uses :func:`dectalk.text_to_dectalk_phonemes` which goes through
+    ``encode_to_dectalk`` (the ARPABET -> DECtalk 2-letter encoder),
+    so the result can be byte-compared against the C source's
+    ``convert_to_phonemes`` output.
+
+    Today the encoded byte string diverges on every prompt (different
+    LTS rules, different schwa/stress placement, missing trailing
+    spaces, no phrase/clause markers); each prompt that turns green
+    here closes the gap by one corner.
     """
-    syms = dectalk.text_to_phonemes(text)
-    return b" ".join(s.encode("ascii", "replace") for s in syms)
+    return dectalk.text_to_dectalk_phonemes(text)
 
 
 @pytest.mark.xfail(

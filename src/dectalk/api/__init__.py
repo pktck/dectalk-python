@@ -5,6 +5,7 @@ from dectalk.api.speak import (
     UnknownWordError,
     available_voices,
     speak,
+    text_to_dectalk_phonemes,
     text_to_phonemes,
     to_wav,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "sing",
     "sing_to_wav",
     "speak",
+    "text_to_dectalk_phonemes",
     "text_to_phonemes",
     "to_wav",
 ]
