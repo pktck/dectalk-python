@@ -273,6 +273,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "forty" would emit ``f ' aor t iy`` -- but it isn't in the
         # parity corpus, only digit-expanded forms are.)
         "FORTY": ["F", "OR1", "T", "IY0"],
+        # "fourteen" -- digit-expansion path. DECtalk emits the OR
+        # r-coloured vowel + ``*`` MBOUND marker + primary stress on
+        # both syllables (``f ' or* t ' iyn``).
+        "FOURTEEN": ["F", "OR1", "__PUNCT__*", "T", "IY1", "N"],
     }
 
     # Function words DECtalk destresses in mid-utterance position.
