@@ -244,23 +244,31 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
         return f"{punct_prefix}{ch}"
 
     flat: list[str] = []
-    for token in tokenize(text):
-        if token.kind is TokenKind.WORD:
-            # Only insert an inter-word break if there's no punctuation
-            # marker just before -- the C source's punctuation emit
-            # (``, `` / ``. `` / ``! `` / ``? ``) already carries its
-            # own trailing space and the next word starts directly after.
-            if flat and not flat[-1].startswith(punct_prefix):
-                flat.append("_")
-            phones = lookup(token.text, lang=lang)
-            if phones is None:
-                if not lts_fallback:
-                    raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
-                phones = lts(token.text)
-            flat.extend(phones)
-        elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
-            ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")
-            flat.append(_punct_marker(ch))
+    # Strip inline ``[:cmd value]`` blocks via cmd.parse so commands
+    # like ``[:nb]`` (voice change) and ``[:rate 200]`` don't leak
+    # into the phoneme stream as faux words.
+    for seg in parse(text):
+        if seg.state.phoneme_mode:
+            # ``[:phoneme on]`` body is already a phoneme stream; skip
+            # the LTS path entirely.
+            continue
+        for token in tokenize(seg.body):
+            if token.kind is TokenKind.WORD:
+                # Only insert an inter-word break if there's no
+                # punctuation marker just before -- the C source's
+                # punctuation emit (``, `` / ``. `` / ``! `` /
+                # ``? ``) already carries its own trailing space.
+                if flat and not flat[-1].startswith(punct_prefix):
+                    flat.append("_")
+                phones = lookup(token.text, lang=lang)
+                if phones is None:
+                    if not lts_fallback:
+                        raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
+                    phones = lts(token.text)
+                flat.extend(phones)
+            elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
+                ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")
+                flat.append(_punct_marker(ch))
     return encode_to_dectalk(flat)
 
 
