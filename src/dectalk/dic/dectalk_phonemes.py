@@ -265,10 +265,17 @@ def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token
                     next_base = nxt[:-1]
                 else:
                     next_base = nxt
-        # Y + UW collapses to the DECtalk diphthong ``yu`` (usa_arpa[16]).
-        # The stress on UW carries to the combined code; suppress the
-        # stress mark we'd have emitted from Y alone.
-        if base == "Y" and next_base == "UW":
+        # Y + UW collapses to the DECtalk diphthong ``yu`` (usa_arpa[16])
+        # only when there's at least one more PHONEME (not a word
+        # break or punctuation marker) after UW in the same word -- the
+        # C source's letter-U-pronounced-as-"yoo" context ("use",
+        # "USA", "unite"). When Y+UW are word-final ("you" / "human"
+        # endings), C keeps them as separate ``yx`` + ``uw``.
+        yu_after = False
+        if base == "Y" and next_base == "UW" and i + 2 < len(phonemes):
+            after = phonemes[i + 2]
+            yu_after = bool(after) and after != "_" and not after.startswith("__")
+        if yu_after:
             stress_mark_source = next_stress
             skip_next = True
             dt = "yu"
