@@ -373,6 +373,8 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # at the very start of an utterance ("to bed" -> ``^ ( t uh
         # b ' ehd``)).
         "TO": (["^", "("], ["T", "UH0"]),
+        # ``for`` -> ``^ ( f rr`` (SBOUND + PPSTART + F + ER unstressed).
+        "FOR": (["^", "("], ["F", "ER0"]),
     }
 
     # ARPABET pronunciation of each English letter name (the same
@@ -415,16 +417,23 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             out.append(p)
         return out
 
-    # Word-final S after a voiced CONSONANT voices to Z (plural /
-    # 3rd-person -s rule). Vowel + S stays S (which is why "yes" /
-    # "kiss" / "this" don't apply).
+    # Inflectional -s (plural / 3rd-person sg) after a voiced consonant
+    # voices to Z. The rule only fires when the word's *spelling* ends
+    # with ``s`` (or ``es``); root-internal S like ``COURSE`` / ``HORSE``
+    # stays as S even though it's preceded by R (a voiced consonant).
     voiced_cons_for_z: frozenset[str] = frozenset(
         {"B", "D", "G", "JH", "L", "M", "N", "NG", "R", "V", "Z", "ZH", "DH"}
     )
 
-    def _voice_final_s_after_consonant(phones: list[str]) -> list[str]:
-        """``...C S`` -> ``...C Z`` when C is a voiced consonant."""
+    def _voice_final_s_after_consonant(phones: list[str], word: str) -> list[str]:
+        """``...C S`` -> ``...C Z`` when ``word`` looks like inflectional -s."""
         if len(phones) < 2 or phones[-1] != "S":  # noqa: PLR2004 — len() < 2 means no preceding context
+            return phones
+        # Only voice when the spelling suggests a true ``-s`` ending.
+        # Heuristic: word ends with 's' but not 'ss' / 'us' / 'is' etc.
+        # where the orthographic 's' is part of the root.
+        word_lower = word.lower()
+        if not word_lower.endswith("s") or word_lower.endswith(("ss", "us", "is")):
             return phones
         prev_base = phones[-2].rstrip("0123456789")
         if prev_base in voiced_cons_for_z:
@@ -644,8 +653,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 # L S), but DECtalk's phoneme stream collapses them.
                 phones = _dedupe_consecutive_phonemes(phones)
                 # Word-final ``-s`` after a voiced consonant voices to
-                # Z ("sells" / "dogs" / etc.).
-                phones = _voice_final_s_after_consonant(phones)
+                # Z ("sells" / "dogs" / etc.). Gated on the word's
+                # spelling so root-internal S ("course" / "horse")
+                # stays voiceless.
+                phones = _voice_final_s_after_consonant(phones, token.text)
                 flat.extend(phones)
             elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
                 ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")

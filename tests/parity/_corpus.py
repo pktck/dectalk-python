@@ -72,6 +72,14 @@ CORPUS: tuple[str, ...] = (
     # Function-word destressing of ``to`` (SBOUND + PPSTART + T + UH).
     "to bed",
     "walk to the store",
+    # Function-word destressing of ``for`` (SBOUND + PPSTART + F + ER).
+    "for now",
+    "for ever",
+    # Root-internal S after R must NOT voice to Z (``course`` / ``horse``
+    # stay with final S; inflectional ``cars`` / ``sells`` voice to Z).
+    "of course",
+    "the horse",
+    "cars and trucks",
 )
 
 
