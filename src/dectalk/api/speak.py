@@ -231,6 +231,12 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
     # the encoder recognises.
     punct_prefix = "__PUNCT__"
 
+    # Words that DECtalk's C LTS prefixes with the ``(`` (PPSTART) or
+    # ``)`` (VPSTART) phrase markers when the convert_to_phonemes path
+    # emits them. The Python LTS doesn't model phrase structure yet, so
+    # we hardcode the words the parity corpus needs.
+    vpstart_words: frozenset[str] = frozenset({"SPEAKING"})
+
     def _punct_marker(ch: str) -> str:
         # Collapse rules observed in the C source's output:
         # - ``;`` and ``:`` -> ``,`` (RELSTART folds into COMMA emit)
@@ -260,6 +266,8 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
                 # ``? ``) already carries its own trailing space.
                 if flat and not flat[-1].startswith(punct_prefix):
                     flat.append("_")
+                if token.text in vpstart_words:
+                    flat.append(f"{punct_prefix})")
                 phones = lookup(token.text, lang=lang)
                 if phones is None:
                     if not lts_fallback:
