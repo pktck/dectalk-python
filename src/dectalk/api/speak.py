@@ -291,7 +291,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "DEC" and "talk" so the encoder emits the ``#`` syllable-
         # boundary token. The Python lexicon stores ``D EH1 K T AO0 K``
         # which would emit ``d ' ehk t aok`` (no ``#``). Insert the
-        # marker explicitly.
+        # marker explicitly. (The lexicon's ``V ER1 ZH N`` entry for
+        # "version" reads correctly as ``v ' rrzhen`` once the
+        # encoder's word-final-sonorant-after-consonant rule converts
+        # the final N to ``en`` -- no override needed.)
         "DECTALK": ["D", "EH1", "K", "__PUNCT__#", "T", "AO0", "K"],
         # "supercalifragilisticexpialidocious" -- the Python LTS
         # mis-stresses "su-" (emits stressed AH instead of unstressed
@@ -349,10 +352,6 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # `)` marker + unstressed EH + N + D, distinct from the literal
         # "and" which uses SBOUND ``^`` + PPSTART ``(`` + AE + N + D.
         "__NUM_AND__": ["__PUNCT__)", "EH0", "N", "D"],
-        # "version" -- the C source emits ``v ' rrzhen`` (V + stress +
-        # ER + ZH + syllabic-N). The bundled lexicon stores ``V ER1
-        # ZH N`` -- regular N. Override with the syllabic-N form.
-        "VERSION": ["V", "ER1", "ZH", "EN"],
     }
 
     # Function words DECtalk destresses in mid-utterance position.

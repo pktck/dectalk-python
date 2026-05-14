@@ -60,6 +60,9 @@ CORPUS: tuple[str, ...] = (
     "apple table bottle",
     "a little bottle",
     "middle of the road",
+    # Syllabic-N (US_EN) coverage: word-final N after consonant.
+    "button sudden reason",
+    "broken eaten",
 )
 
 
