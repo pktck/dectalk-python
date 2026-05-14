@@ -228,10 +228,20 @@ def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token
         Empty input yields ``b""``.
     """
     out_parts: list[str] = []
+    last_word_phoneme: str | None = None  # ARPABET phoneme of the previous word
     for tok in phonemes:
         if not tok or tok == "_":
+            # C convention: a consonant-final word gets a trailing space
+            # before the inter-word separator (so "one two" emits
+            # ``w ' ahn   t ' uw`` with 3 spaces between the words).
+            if last_word_phoneme is not None:
+                base = last_word_phoneme.rstrip("0123456789")
+                if base in ARPABET_TO_DECTALK and base not in _VOWELS:
+                    out_parts.append(" ")
             out_parts.append(word_break)
+            last_word_phoneme = None
             continue
+        last_word_phoneme = tok
         stress_digit = ""
         base = tok
         if tok and tok[-1].isdigit():
