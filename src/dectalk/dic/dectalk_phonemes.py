@@ -227,7 +227,9 @@ def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
         if tok and tok[-1].isdigit():
             stress_digit = tok[-1]
             base = tok[:-1]
-        dt = ARPABET_TO_DECTALK.get(base)
+        # AH0 (unstressed AH) is the schwa in DECtalk's alphabet --
+        # emit ``ax`` rather than ``ah``. The stressed AH1 stays ``ah``.
+        dt = "ax" if base == "AH" and stress_digit == "0" else ARPABET_TO_DECTALK.get(base)
         if dt is None:
             # Unknown symbol: emit a question mark so callers can spot
             # the gap. The pure-Python pipeline shouldn't emit these
@@ -246,4 +248,16 @@ def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
     encoded = "".join(out_parts)
     if encoded.startswith(" "):
         encoded = encoded[1:]
+    # C convention: words ending in a consonant get a trailing space;
+    # vowel-final words don't. We approximate by looking at the last
+    # ARPABET token that wasn't a word break.
+    last_phoneme = None
+    for tok in reversed(phonemes):
+        if tok and tok != "_":
+            last_phoneme = tok
+            break
+    if last_phoneme is not None:
+        base = last_phoneme.rstrip("0123456789")
+        if base in ARPABET_TO_DECTALK and base not in _VOWELS:
+            encoded = encoded + " "
     return encoded.encode("ascii")
