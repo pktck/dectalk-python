@@ -203,7 +203,7 @@ _VOWEL_DECTALK_CODES: Final[frozenset[str]] = frozenset(
 )  # fmt: skip
 
 
-def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token formatting
+def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's per-token formatting
     phonemes: list[str], *, word_break: str = "  "
 ) -> bytes:
     """Encode an ARPABET phoneme list as DECtalk's ASCII phoneme format.
