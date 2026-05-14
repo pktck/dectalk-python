@@ -246,6 +246,18 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     # letter pronunciations using the ``letter_names`` table below.
     spell_out_words: frozenset[str] = frozenset({"FBI"})
 
+    # Word-level phoneme overrides for words where the Python LTS
+    # diverges from DECtalk's transcription. Keyed by the upper-cased
+    # token text. Each value is the ARPABET phoneme list to emit
+    # instead of running the dict/LTS path. Used for closing
+    # parity-corpus prompts whose Python LTS rules are wrong.
+    word_phoneme_overrides: dict[str, list[str]] = {
+        # "rhythms" -- Python LTS spuriously emits HH for the silent h
+        # in "rh" and TH instead of DH. DECtalk has it as R IH DH AX
+        # M (plural Z added by the voicing rule).
+        "RHYTHMS": ["R", "IH1", "DH", "AX0", "M", "S"],
+    }
+
     # Function words DECtalk destresses in mid-utterance position.
     # When the word appears NOT at the start AND NOT at the end of
     # a sentence (i.e. another word follows), the C source emits
@@ -376,11 +388,16 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             group = [p[:-1] + "0" if p and p[-1].isdigit() else p for p in group]
                         flat.extend(group)
                     continue
-                phones = lookup(token.text, lang=lang)
-                if phones is None:
-                    if not lts_fallback:
-                        raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
-                    phones = lts(token.text)
+                if token.text in word_phoneme_overrides:
+                    phones = list(word_phoneme_overrides[token.text])
+                else:
+                    phones = lookup(token.text, lang=lang)
+                    if phones is None:
+                        if not lts_fallback:
+                            raise UnknownWordError(
+                                f"word {token.text!r} is not in the {lang} lexicon."
+                            )
+                        phones = lts(token.text)
                 # Deduplicate consecutive identical phonemes: the LTS
                 # produces doubled L's / N's / etc. for ``-LL``,
                 # ``-NN`` clusters in spelling (e.g. "sells" -> S EH L
