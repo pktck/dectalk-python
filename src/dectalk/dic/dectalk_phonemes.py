@@ -203,50 +203,46 @@ _VOWEL_DECTALK_CODES: Final[frozenset[str]] = frozenset(
 )  # fmt: skip
 
 
-def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's per-token formatting
-    phonemes: list[str], *, word_break: str = "  "
-) -> bytes:
+def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
     """Encode an ARPABET phoneme list as DECtalk's ASCII phoneme format.
 
-    The output is what ``TextToSpeechConvertToPhonemes`` would emit on
-    the C side: each ARPABET symbol is mapped to its 1- or 2-letter
-    DECtalk code via :data:`ARPABET_TO_DECTALK`, stress digits become
-    space-padded ``'`` / `` ` `` tokens preceding the vowel, and a
-    placeholder ``WBOUND`` or ``BLOCK_RULES`` symbol (None / "_") in
-    the input separates words with ``word_break``.
+    Faithful port of the C-source emitter in
+    ``src/dapi/src/lts/ls_util.c`` around line 1676: for each
+    phoneme symbol the emitter writes ``arpabet[idx]`` then
+    ``arpabet[idx+1]`` -- exactly two bytes per symbol. 2-character
+    DECtalk codes (``hx`` / ``ax`` / ``ll`` / ``rr`` ...) emit
+    as-is; 1-character codes (``f`` / ``b`` / ``k`` ...) emit
+    with a trailing space; stress marks emit as ``'`` + space or
+    `` ` `` + space.
 
     Args:
         phonemes: ARPABET phonemes, each optionally suffixed with a
             stress digit (``0`` = none, ``1`` = primary, ``2`` =
             secondary, ``3`` = tertiary -- treated as secondary).
             Word boundaries are signalled by ``"_"`` or empty strings.
-        word_break: Bytes to emit between words. Defaults to two
-            spaces (matching the C source's `` `` separator).
+        word_break: Extra bytes to emit between words. Defaults to a
+            single space; combined with the trailing space the
+            previous phoneme already carries, this yields the C
+            source's ``  `` (double-space) inter-word separator.
 
     Returns:
         A ``bytes`` value in DECtalk's native ASCII phoneme alphabet.
         Empty input yields ``b""``.
     """
     out_parts: list[str] = []
-    last_word_phoneme: str | None = None  # ARPABET phoneme of the previous word
     for tok in phonemes:
         if not tok or tok == "_":
-            # C convention: a consonant-final word gets a trailing space
-            # before the inter-word separator (so "one two" emits
-            # ``w ' ahn   t ' uw`` with 3 spaces between the words).
-            if last_word_phoneme is not None:
-                base = last_word_phoneme.rstrip("0123456789")
-                if base in ARPABET_TO_DECTALK and base not in _VOWELS:
-                    out_parts.append(" ")
             out_parts.append(word_break)
-            last_word_phoneme = None
             continue
-        last_word_phoneme = tok
         stress_digit = ""
         base = tok
         if tok and tok[-1].isdigit():
             stress_digit = tok[-1]
             base = tok[:-1]
+        if stress_digit == "1":
+            out_parts.append(f"{DECTALK_PRIMARY_STRESS} ")
+        elif stress_digit in ("2", "3"):
+            out_parts.append(f"{DECTALK_SECONDARY_STRESS} ")
         # Unstressed reduction: DECtalk emits the centralised variants
         # for unstressed vowels (``ax`` for AH0, ``ix`` for IH0).
         if base == "AH" and stress_digit == "0":
@@ -260,48 +256,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             # the gap. The pure-Python pipeline shouldn't emit these
             # once all ARPABET symbols are covered.
             dt = "?"
-        if stress_digit == "1":
-            mark = DECTALK_PRIMARY_STRESS
-        elif stress_digit in ("2", "3"):
-            mark = DECTALK_SECONDARY_STRESS
-        else:
-            mark = ""
-        if mark:
-            # C convention: when the previous DECtalk code is a 2-char
-            # consonant cluster (``ll`` / ``nx`` / ``dh`` / ``rr`` etc.)
-            # the stress mark is attached without space ("hxaxll' ow").
-            # When the previous code is a 1-char consonant or a vowel,
-            # the stress mark is space-separated ("k ' aet", "w ' rrl").
-            attached = (
-                bool(out_parts)
-                and len(out_parts[-1]) == _TWO_CHAR
-                and out_parts[-1].isalpha()
-                and out_parts[-1] not in _VOWEL_DECTALK_CODES
-            )
-            if attached:
-                out_parts[-1] = out_parts[-1] + mark
-                out_parts.append(f" {dt}")
-            else:
-                out_parts.append(f" {mark} {dt}")
-        else:
-            out_parts.append(dt)
-    # Collapse a possible leading space before the first stress marker
-    # so the output starts at column 0 -- mirrors the C source which
-    # writes ``" ' ey"`` for the standalone word "a" (no leading
-    # space).
-    encoded = "".join(out_parts)
-    if encoded.startswith(" "):
-        encoded = encoded[1:]
-    # C convention: words ending in a consonant get a trailing space;
-    # vowel-final words don't. We approximate by looking at the last
-    # ARPABET token that wasn't a word break.
-    last_phoneme = None
-    for tok in reversed(phonemes):
-        if tok and tok != "_":
-            last_phoneme = tok
-            break
-    if last_phoneme is not None:
-        base = last_phoneme.rstrip("0123456789")
-        if base in ARPABET_TO_DECTALK and base not in _VOWELS:
-            encoded = encoded + " "
-    return encoded.encode("ascii")
+        # The C emitter always writes 2 bytes per phoneme: single-char
+        # codes get padded with a trailing space.
+        out_parts.append(dt + " " if len(dt) == 1 else dt)
+    return "".join(out_parts).encode("ascii")
