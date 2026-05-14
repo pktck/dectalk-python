@@ -244,6 +244,22 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     # letter pronunciations using the ``letter_names`` table below.
     spell_out_words: frozenset[str] = frozenset({"FBI"})
 
+    # Function words DECtalk destresses in mid-utterance position.
+    # When the word appears NOT at the start AND NOT at the end of
+    # a sentence (i.e. another word follows), the C source emits
+    # the ``^`` (SBOUND) phrase marker + the unstressed schwa form
+    # instead of the dictionary's stressed pronunciation. Pairs of
+    # ``(name, prefix_markers, phonemes)`` -- ``prefix_markers`` is
+    # a list of punctuation-style markers ('^' / '(' / ')') prepended
+    # before the phonemes.
+    function_word_destress: dict[str, tuple[list[str], list[str]]] = {
+        # ``a`` -> ``^ ax`` mid-sentence.
+        "A": (["^"], ["AH0"]),
+        # ``and`` -> ``^ ( aen d`` everywhere (the C source preserves
+        # the AE+N+D phonemes but adds the SBOUND + PPSTART markers).
+        "AND": (["^", "("], ["AE0", "N", "D"]),
+    }
+
     # ARPABET pronunciation of each English letter name (the same
     # phoneme sequences DECtalk's spell-out path emits).
     letter_names: dict[str, list[str]] = {
@@ -321,7 +337,8 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             # ``[:phoneme on]`` body is already a phoneme stream; skip
             # the LTS path entirely.
             continue
-        for token in tokenize(seg.body):
+        tokens = list(tokenize(seg.body))
+        for tok_idx, token in enumerate(tokens):
             if token.kind is TokenKind.WORD:
                 # Only insert an inter-word break if there's no
                 # punctuation marker just before -- the C source's
@@ -331,6 +348,18 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     flat.append("_")
                 if token.text in vpstart_words:
                     flat.append(f"{punct_prefix})")
+                # Function-word destressing / phrase-marker injection.
+                # For "A": apply only when followed by another WORD
+                # (mid-sentence). For "AND": apply unconditionally
+                # (C emits the ``^ (`` markers in every position).
+                rule = function_word_destress.get(token.text)
+                has_following_word = any(t.kind is TokenKind.WORD for t in tokens[tok_idx + 1 :])
+                if rule is not None and (token.text != "A" or has_following_word):
+                    markers, custom_phones = rule
+                    for marker in markers:
+                        flat.append(f"{punct_prefix}{marker}")
+                    flat.extend(custom_phones)
+                    continue
                 if token.text in spell_out_words:
                     # Spell out letter-by-letter. Middle letters get
                     # de-stressed (stress digit 0) to match the C
