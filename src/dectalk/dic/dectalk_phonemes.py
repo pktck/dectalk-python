@@ -195,7 +195,17 @@ DECTALK_PRIMARY_STRESS: Final[str] = "'"
 DECTALK_SECONDARY_STRESS: Final[str] = "`"
 
 
-def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
+_TWO_CHAR: Final[int] = 2
+
+_VOWEL_DECTALK_CODES: Final[frozenset[str]] = frozenset(
+    {"iy", "ih", "ey", "eh", "ae", "aa", "ay", "aw", "ah", "ao",
+     "ow", "oy", "uh", "uw", "ax", "rr"}
+)  # fmt: skip
+
+
+def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token formatting
+    phonemes: list[str], *, word_break: str = "  "
+) -> bytes:
     """Encode an ARPABET phoneme list as DECtalk's ASCII phoneme format.
 
     The output is what ``TextToSpeechConvertToPhonemes`` would emit on
@@ -236,9 +246,28 @@ def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
             # once all ARPABET symbols are covered.
             dt = "?"
         if stress_digit == "1":
-            out_parts.append(f" {DECTALK_PRIMARY_STRESS} {dt}")
+            mark = DECTALK_PRIMARY_STRESS
         elif stress_digit in ("2", "3"):
-            out_parts.append(f" {DECTALK_SECONDARY_STRESS} {dt}")
+            mark = DECTALK_SECONDARY_STRESS
+        else:
+            mark = ""
+        if mark:
+            # C convention: when the previous DECtalk code is a 2-char
+            # consonant cluster (``ll`` / ``nx`` / ``dh`` / ``rr`` etc.)
+            # the stress mark is attached without space ("hxaxll' ow").
+            # When the previous code is a 1-char consonant or a vowel,
+            # the stress mark is space-separated ("k ' aet", "w ' rrl").
+            attached = (
+                bool(out_parts)
+                and len(out_parts[-1]) == _TWO_CHAR
+                and out_parts[-1].isalpha()
+                and out_parts[-1] not in _VOWEL_DECTALK_CODES
+            )
+            if attached:
+                out_parts[-1] = out_parts[-1] + mark
+                out_parts.append(f" {dt}")
+            else:
+                out_parts.append(f" {mark} {dt}")
         else:
             out_parts.append(dt)
     # Collapse a possible leading space before the first stress marker

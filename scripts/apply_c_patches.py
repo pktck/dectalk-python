@@ -16,6 +16,14 @@ What's patched:
   function pointer to NULL at startup and invoking the public symbol
   segfaults at the indirect call. This patch lets us use it as a
   per-module parity oracle for the front-end translation work.
+- ``0002-stage-boundary-dumps.patch`` — adds opt-in per-stage
+  boundary dump hooks to ``src/dapi/src/api/ttsapi.c``. When
+  ``DECTALK_DUMP_DIR`` is set in the environment, the library writes
+  a deterministic text dump of each pipeline stage's output to
+  ``<DECTALK_DUMP_DIR>/<stage>.dump``. Currently implements the
+  ``kernel`` stage only; ``cmd``/``lts``/``ph``/``vtm`` are TODO and
+  will be added as the per-stage Python ports land. See
+  ``docs/c_audit/stage_boundaries.md`` for the boundary catalogue.
 
 Usage:
     uv run python scripts/apply_c_patches.py             # apply + rebuild

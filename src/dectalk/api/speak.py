@@ -213,20 +213,29 @@ def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) 
 def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) -> bytes:
     """Convert text to DECtalk's native ASCII phoneme format (Phase-D oracle target).
 
-    Wraps :func:`text_to_phonemes` and encodes the ARPABET output via
-    :func:`dectalk.dic.dectalk_phonemes.encode_to_dectalk` so the result
-    can be byte-compared against
+    Walks tokens individually so word boundaries become ``"_"`` markers
+    consumed by :func:`dectalk.dic.dectalk_phonemes.encode_to_dectalk`.
+    The encoder maps those markers to the C source's ``  `` two-space
+    word separator. The result can be byte-compared against
     :func:`dectalk._capi.CAPI.convert_to_phonemes` -- the LTS+dic
     stage-boundary oracle on the path to pure-Python bit parity.
-
-    The two outputs do NOT match today. Each prompt that aligns here is
-    one step closer to LTS+dic byte parity (and ultimately, audio bit
-    parity, per the project goalpost in
-    ``/root/.claude/plans/create-a-python-port-smooth-hoare.md``).
     """
     from dectalk.dic.dectalk_phonemes import encode_to_dectalk  # noqa: PLC0415
 
-    return encode_to_dectalk(text_to_phonemes(text, lang=lang, lts_fallback=lts_fallback))
+    flat: list[str] = []
+    for token in tokenize(text):
+        if token.kind is TokenKind.WORD:
+            if flat:
+                flat.append("_")
+            phones = lookup(token.text, lang=lang)
+            if phones is None:
+                if not lts_fallback:
+                    raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
+                phones = lts(token.text)
+            flat.extend(phones)
+        # Pause tokens are not yet mapped to DECtalk's prosodic markers
+        # (``^`` / ``(`` / ``)`` / ``, `` / ``. `` etc.) -- follow-up.
+    return encode_to_dectalk(flat)
 
 
 def speak(

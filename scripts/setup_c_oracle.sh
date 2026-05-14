@@ -37,6 +37,10 @@ else
 fi
 
 # --- 2. Apply our C-source patches and build -------------------------------
+# apply_c_patches.py iterates every `.patch` file under
+# tests/parity/c_patches/ in sorted order. Currently:
+#   0001-expose-convert-to-phonemes-on-linux.patch
+#   0002-stage-boundary-dumps.patch   (kernel stage; cmd/lts/ph/vtm TODO)
 
 log "Applying C-source patches and building libtts_us.so + samples"
 uv run python "${REPO_ROOT}/scripts/apply_c_patches.py" --src-root "${DECTALK_SRC}"

@@ -273,6 +273,20 @@ _DEFERRED: dict[str, str] = {
         "Internal RIFF/WAV header writer used by the worker thread; "
         "Python uses the stdlib ``wave`` module via ``to_wav``"
     ),
+    # ----- ttsapi.c -- per-stage boundary-dump hooks (Phase A.4). -------
+    # Added by tests/parity/c_patches/0002-stage-boundary-dumps.patch.
+    # These are C-only test instrumentation, gated on DECTALK_DUMP_DIR.
+    # The Python side reads the resulting dump files via
+    # ``dectalk._capi.CAPI.dump_pipeline`` (which is itself the Python
+    # equivalent of "what these helpers do").
+    "_dectalk_dump_kernel_open": (
+        "C-only test hook (lazy fopen of kernel.dump); Python-side "
+        "equivalent is ``CAPI.dump_pipeline`` setting DECTALK_DUMP_DIR"
+    ),
+    "_dectalk_dump_kernel_chunk": (
+        "C-only test hook (per-write_pipe-chunk record emitter); "
+        "Python-side equivalent is ``CAPI.dump_pipeline`` reading the dump file"
+    ),
     # ----- ttsapi.c -- public TextToSpeech* entry points. ---------------
     # These are the symbols ``libtts_us.so`` exports. ``dectalk._capi.CAPI``
     # binds the ones the Python port needs (``TextToSpeechStartup`` /

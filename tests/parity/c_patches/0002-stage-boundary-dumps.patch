@@ -1,0 +1,98 @@
+--- a/src/dapi/src/api/ttsapi.c
++++ b/src/dapi/src/api/ttsapi.c
+@@ -9228,6 +9228,79 @@
+ #endif // WIN32 && !defined NOWIN
+ #if defined __osf__ || defined __linux__ || defined VXWORKS || defined _SPARC_SOLARIS_ || defined __EMSCRIPTEN__ || defined NOWIN || defined (__APPLE__)
+ 
++/* ============================================================
++ * dectalk-python port: per-stage boundary dump hooks (Phase A.4)
++ * ============================================================
++ *
++ * When the environment variable DECTALK_DUMP_DIR is set, each pipeline
++ * stage's boundary writes are captured to a deterministic text file
++ * under that directory. This lets the Python port compare its
++ * intermediate state byte-for-byte against the C oracle.
++ *
++ * Currently implemented stages:
++ *   kernel  -> <DECTALK_DUMP_DIR>/kernel.dump
++ *
++ * TODO: cmd, lts, ph, vtm (see docs/c_audit/stage_boundaries.md
++ *       in the dectalk-python repo for the boundary catalogue).
++ *
++ * File format (kernel.dump): one record per write_pipe() chunk
++ *   kernel_write <length>
++ *   <space-separated %02x bytes for the chunk>
++ *
++ * The file is opened lazily on first chunk and reopened whenever the
++ * caller swaps DECTALK_DUMP_DIR (the Python wrapper uses a fresh temp
++ * dir per call). When the env var is unset/empty, the hook is a no-op.
++ */
++static FILE *_dectalk_dump_fp_kernel = NULL;
++static char  _dectalk_dump_kernel_dir[1024] = {0};
++
++static void _dectalk_dump_kernel_open(void)
++{
++	const char *dir;
++	char path[1024];
++
++	dir = getenv("DECTALK_DUMP_DIR");
++	if (dir == NULL || dir[0] == '\0') {
++		if (_dectalk_dump_fp_kernel != NULL) {
++			fclose(_dectalk_dump_fp_kernel);
++			_dectalk_dump_fp_kernel = NULL;
++			_dectalk_dump_kernel_dir[0] = '\0';
++		}
++		return;
++	}
++	if (_dectalk_dump_fp_kernel != NULL && strcmp(dir, _dectalk_dump_kernel_dir) == 0)
++		return;
++	if (_dectalk_dump_fp_kernel != NULL) {
++		fclose(_dectalk_dump_fp_kernel);
++		_dectalk_dump_fp_kernel = NULL;
++	}
++	if (strlen(dir) + sizeof("/kernel.dump") >= sizeof(path))
++		return;
++	snprintf(path, sizeof(path), "%s/kernel.dump", dir);
++	_dectalk_dump_fp_kernel = fopen(path, "wb");
++	if (_dectalk_dump_fp_kernel != NULL) {
++		strncpy(_dectalk_dump_kernel_dir, dir, sizeof(_dectalk_dump_kernel_dir) - 1);
++		_dectalk_dump_kernel_dir[sizeof(_dectalk_dump_kernel_dir) - 1] = '\0';
++	}
++}
++
++static void _dectalk_dump_kernel_chunk(const unsigned char *buf, unsigned int len)
++{
++	unsigned int i;
++
++	_dectalk_dump_kernel_open();
++	if (_dectalk_dump_fp_kernel == NULL)
++		return;
++	fprintf(_dectalk_dump_fp_kernel, "kernel_write %u\n", len);
++	for (i = 0; i < len; i++) {
++		fprintf(_dectalk_dump_fp_kernel,
++		        (i + 1 < len) ? "%02x " : "%02x",
++		        buf[i]);
++	}
++	fputc('\n', _dectalk_dump_fp_kernel);
++	fflush(_dectalk_dump_fp_kernel);
++}
++
+ static OP_THREAD_ROUTINE(TextToSpeechThreadMain, LPTTS_HANDLE_T phTTS)
+ {
+ 	PKSD_T pKsd_t = phTTS->pKernelShareData;
+@@ -9323,6 +9396,7 @@
+ #endif // 0
+ /* *************************************************************** */
+ 
++					_dectalk_dump_kernel_chunk(pText, MAX_TEXT_WRITE_LENGTH);
+ 					write_pipe( pKsd_t->cmd_pipe, pText, MAX_TEXT_WRITE_LENGTH );
+ 					uiLength -= MAX_TEXT_WRITE_LENGTH;
+ 					pText += MAX_TEXT_WRITE_LENGTH;
+@@ -9347,6 +9421,7 @@
+ 				
+ 				if (( uiLength > 0 ) && ( ! (pKsd_t->halting )))
+ 				{
++					_dectalk_dump_kernel_chunk(pText, uiLength);
+ 					write_pipe( pKsd_t->cmd_pipe, pText, uiLength );
+ 				}
+ 

@@ -315,6 +315,59 @@ class CAPI:
         finally:
             os.chdir(prev_cwd)
 
+    # Stages currently implemented by the C-side dump hooks. Update this
+    # list as new patches under ``tests/parity/c_patches/`` land.
+    _SUPPORTED_DUMP_STAGES: tuple[str, ...] = ("kernel",)
+
+    def dump_pipeline(self, text: str, stages: list[str]) -> dict[str, bytes]:
+        """Return per-stage boundary dumps from the C oracle.
+
+        Activates the ``DECTALK_DUMP_DIR`` side-effect hooks added by
+        ``tests/parity/c_patches/0002-stage-boundary-dumps.patch``, runs
+        a single ``speak(text)`` call to populate the dump files, then
+        reads them back. The returned mapping is keyed by stage name
+        with the raw bytes of ``<DECTALK_DUMP_DIR>/<stage>.dump``.
+
+        :param text: input string passed to ``speak()`` — audio output
+            is discarded; we only care about the dump side effects.
+        :param stages: subset of supported stage names. Each must be
+            present in :pyattr:`_SUPPORTED_DUMP_STAGES`; the C hook for
+            unsupported stages is TODO and would silently produce
+            empty results.
+        :returns: ``{stage: bytes}`` mapping. Empty bytes indicate the
+            stage wrote nothing (e.g. empty input).
+        :raises CAPIError: if a requested stage isn't implemented yet
+            or the underlying ``speak()`` call fails.
+        """
+        unknown = [s for s in stages if s not in self._SUPPORTED_DUMP_STAGES]
+        if unknown:
+            raise CAPIError(
+                f"dump_pipeline: unsupported stage(s) {unknown!r}; "
+                f"currently implemented: {list(self._SUPPORTED_DUMP_STAGES)!r}"
+            )
+        with self._instance_lock:
+            return self._dump_pipeline_locked(text, stages)
+
+    def _dump_pipeline_locked(self, text: str, stages: list[str]) -> dict[str, bytes]:
+        with tempfile.TemporaryDirectory(prefix="dectalk-dump-") as dump_dir:
+            prev = os.environ.get("DECTALK_DUMP_DIR")
+            os.environ["DECTALK_DUMP_DIR"] = dump_dir
+            try:
+                # _speak_locked is normally guarded by _instance_lock,
+                # but we already hold it; bypass the public speak()
+                # wrapper to avoid a re-entrant acquire.
+                self._speak_locked(text, speaker=0, rate=None, encoding=WAVE_FORMAT_1M16)
+            finally:
+                if prev is None:
+                    os.environ.pop("DECTALK_DUMP_DIR", None)
+                else:
+                    os.environ["DECTALK_DUMP_DIR"] = prev
+            result: dict[str, bytes] = {}
+            for stage in stages:
+                dump_path = Path(dump_dir) / f"{stage}.dump"
+                result[stage] = dump_path.read_bytes() if dump_path.is_file() else b""
+            return result
+
 
 __all__ = [
     "CAPI",
