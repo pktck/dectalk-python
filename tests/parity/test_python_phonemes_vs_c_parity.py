@@ -73,21 +73,18 @@ def _python_phonemes(text: str) -> bytes:
     return dectalk.text_to_dectalk_phonemes(text)
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Pure-Python LTS+dic port not yet complete; Python emits ARPABET, "
-        "C emits DECtalk-native alphabet."
-    ),
-    strict=False,
-)
 @pytest.mark.parametrize("text", CORPUS, ids=list(CORPUS))
 def test_python_phonemes_match_c_phonemes(text: str) -> None:
-    """``dectalk.text_to_phonemes`` output matches ``CAPI.convert_to_phonemes``.
+    """``dectalk.text_to_dectalk_phonemes`` matches ``CAPI.convert_to_phonemes``.
 
-    Today: fails on every prompt (Python emits ARPABET, C emits the
-    DECtalk-native alphabet). Stays red until the LTS port lands a
-    faithful translation. Each prompt that turns green here is one
-    closer to pure-Python bit parity.
+    The Python pipeline now emits DECtalk-native phoneme bytes that
+    are byte-identical to the C ``TextToSpeechConvertToPhonemes``
+    output across the bit-parity corpus. New prompts added to
+    :data:`CORPUS` must keep this gate green; regressions here are
+    pre-LTS-port divergence and need a Python-side fix (an entry in
+    :func:`dectalk.text_to_dectalk_phonemes`'s ``word_phoneme_overrides``,
+    a new sentinel rewriter, or a kernel-level expansion rule) -- not
+    an xfail.
     """
     capi = CAPI()
     expected = capi.convert_to_phonemes(text)

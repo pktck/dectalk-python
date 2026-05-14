@@ -63,8 +63,7 @@ def number_to_words(value: int) -> list[str]:
     out: list[str] = []
     if value >= _SCALE_BILLION:
         out.extend(number_to_words(value // _SCALE_BILLION))
-        # No BILLION word in the bundled lexicon yet; spell it.
-        out.extend(["B", "IH1", "L", "Y", "AH0", "N"])  # phonemic fallback
+        out.append("BILLION")
         value %= _SCALE_BILLION
     if value >= _SCALE_MILLION:
         out.extend(number_to_words(value // _SCALE_MILLION))

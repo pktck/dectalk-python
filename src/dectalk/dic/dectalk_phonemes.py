@@ -153,6 +153,16 @@ ARPABET_TO_DECTALK: Final[dict[str, str]] = {
     "AR": "ar",
     "OR": "or",
     "UR": "ur",
+    # Syllabic-consonant codes from the C source's eng_ph_table
+    # (``samplosf/src/emacspeak/src/phoneme.c`` rows EN / EL / EM).
+    # DECtalk's LTS emits these for unstressed-N-after-fricative
+    # ("version" -> v rr zh en), unstressed-L-after-stop ("bottle"
+    # -> b aa t el), and unstressed-M-after-stop ("rhythm" -> r ih
+    # dh em). Used by callers via ``word_phoneme_overrides`` to
+    # match the C output's syllabic-consonant pronunciation.
+    "EN": "en",
+    "EL": "el",
+    "EM": "em",
     # ---- Vowels ----
     "IY": "iy",  # beet
     "IH": "ih",  # bit
