@@ -56,6 +56,10 @@ CORPUS: tuple[str, ...] = (
     "Dr. Smith said hello.",
     # Long-ish utterance.
     "the rain in spain falls mainly on the plain",
+    # Syllabic-L (US_EL) coverage: word-final L after consonant.
+    "apple table bottle",
+    "a little bottle",
+    "middle of the road",
 )
 
 

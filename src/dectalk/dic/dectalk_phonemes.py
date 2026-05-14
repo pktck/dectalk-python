@@ -315,10 +315,43 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or (phonemes[i + 2] or "").startswith("__")
                 )
             )
+            # Word-final L preceded by a consonant collapses to the
+            # syllabic-L allophone ``el`` (US_EL). DECtalk applies
+            # this whenever there's no vowel between the syllable's
+            # last stop/fricative and the L (e.g. "apple" -> AE P L
+            # -> aep + el; "little" -> L IH T L -> ll iht + el). When
+            # L is preceded by a vowel ("fall" -> F AO L) it stays
+            # ``ll``.
+            l_after_consonant_word_final = False
+            if (
+                base == "L"
+                and not stress_digit
+                and (
+                    i + 1 >= len(phonemes)
+                    or phonemes[i + 1] == "_"
+                    or not phonemes[i + 1]
+                    or (phonemes[i + 1] or "").startswith("__")
+                )
+                and out_parts
+            ):
+                # Walk back through any stress-marker emit to find
+                # the actual previous phoneme code.
+                k = len(out_parts) - 1
+                while k >= 0 and out_parts[k] in (
+                    f"{DECTALK_PRIMARY_STRESS} ",
+                    f"{DECTALK_SECONDARY_STRESS} ",
+                ):
+                    k -= 1
+                if k >= 0:
+                    prev_emit = out_parts[k].rstrip(" ")
+                    if prev_emit and prev_emit not in _VOWEL_DECTALK_CODES:
+                        l_after_consonant_word_final = True
             if base == "AH" and stress_digit == "0":
                 dt = "ix" if ah_before_final_s else "ax"
             elif base == "IH" and stress_digit == "0" and next_base == "NG":
                 dt = "ix"
+            elif l_after_consonant_word_final:
+                dt = "el"
             else:
                 dt = ARPABET_TO_DECTALK.get(base)
         # Emit the stress marker (now that we've decided which source).
