@@ -222,10 +222,35 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
     """
     from dectalk.dic.dectalk_phonemes import encode_to_dectalk  # noqa: PLC0415
 
+    # DECtalk's punctuation markers come from src/dapi/src/include/
+    # usa_phon.tab (the PERIOD/QUEST/EXCLAIM/COMMA/RELSTART entries near
+    # the bottom of usa_arpa[]). Each marker is encoded by the encoder
+    # as the literal punctuation character + trailing space. The Python
+    # tokenizer preserves the actual punct char in ``Token.text`` for
+    # pause-kind tokens; we wrap it in a ``__PUNCT__<char>`` marker
+    # the encoder recognises.
+    punct_prefix = "__PUNCT__"
+
+    def _punct_marker(ch: str) -> str:
+        # Collapse rules observed in the C source's output:
+        # - ``;`` and ``:`` -> ``,`` (RELSTART folds into COMMA emit)
+        # - ``?`` -> ``.`` (DECtalk emits the period token at the final
+        #   sentence boundary regardless of the original mark)
+        # - ``!`` and ``.`` pass through unchanged
+        if ch in (";", ":"):
+            ch = ","
+        elif ch == "?":
+            ch = "."
+        return f"{punct_prefix}{ch}"
+
     flat: list[str] = []
     for token in tokenize(text):
         if token.kind is TokenKind.WORD:
-            if flat:
+            # Only insert an inter-word break if there's no punctuation
+            # marker just before -- the C source's punctuation emit
+            # (``, `` / ``. `` / ``! `` / ``? ``) already carries its
+            # own trailing space and the next word starts directly after.
+            if flat and not flat[-1].startswith(punct_prefix):
                 flat.append("_")
             phones = lookup(token.text, lang=lang)
             if phones is None:
@@ -233,8 +258,9 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
                     raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
                 phones = lts(token.text)
             flat.extend(phones)
-        # Pause tokens are not yet mapped to DECtalk's prosodic markers
-        # (``^`` / ``(`` / ``)`` / ``, `` / ``. `` etc.) -- follow-up.
+        elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
+            ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")
+            flat.append(_punct_marker(ch))
     return encode_to_dectalk(flat)
 
 

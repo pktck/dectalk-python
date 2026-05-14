@@ -89,7 +89,7 @@ def _normalize_token(raw: str) -> Iterable[Token]:
             yield Token(TokenKind.WORD, w)
         return
 
-    word, trailing_pause = _strip_trailing_punct(raw)
+    word, trailing_pause, trailing_punct = _strip_trailing_punct(raw)
 
     currency_suffix: str | None = None
     if word.startswith("$") and word[1:].replace(",", "").isdigit():
@@ -106,21 +106,30 @@ def _normalize_token(raw: str) -> Iterable[Token]:
     if currency_suffix is not None:
         yield Token(TokenKind.WORD, currency_suffix)
     if trailing_pause is not None:
-        yield Token(trailing_pause)
+        yield Token(trailing_pause, trailing_punct)
 
 
-def _strip_trailing_punct(raw: str) -> tuple[str, TokenKind | None]:
-    """Strip trailing punctuation; return the strongest pause class seen."""
+def _strip_trailing_punct(raw: str) -> tuple[str, TokenKind | None, str]:
+    """Strip trailing punctuation; return the strongest pause class seen.
+
+    Returns a (stripped_word, pause_kind, pause_char) tuple. ``pause_char``
+    is the actual punctuation character that triggered the strongest pause
+    (``.`` / ``!`` / ``?`` for long, ``,`` / ``;`` / ``:`` for short) so
+    downstream encoders can map it to DECtalk's prosodic markers.
+    """
     word = raw
     pause: TokenKind | None = None
+    pause_char: str = ""
     while word and not word[-1].isalnum():
         last = word[-1]
         if last in _SENTENCE_PUNCT:
             pause = TokenKind.PAUSE_LONG
+            pause_char = last
         elif last in _CLAUSE_PUNCT and pause is None:
             pause = TokenKind.PAUSE_SHORT
+            pause_char = last
         word = word[:-1]
-    return word, pause
+    return word, pause, pause_char
 
 
 def _body_words(word: str) -> Iterable[str]:

@@ -203,7 +203,9 @@ _VOWEL_DECTALK_CODES: Final[frozenset[str]] = frozenset(
 )  # fmt: skip
 
 
-def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
+def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token formatting
+    phonemes: list[str], *, word_break: str = "  "
+) -> bytes:
     """Encode an ARPABET phoneme list as DECtalk's ASCII phoneme format.
 
     Faithful port of the C-source emitter in
@@ -233,6 +235,14 @@ def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
     for i, tok in enumerate(phonemes):
         if not tok or tok == "_":
             out_parts.append(word_break)
+            continue
+        # Punctuation marker -- the calling layer wraps the actual
+        # character in ``__PUNCT__<ch>`` so we can route it through
+        # the canonical 2-byte-per-symbol emit (char + trailing space).
+        if tok.startswith("__PUNCT__"):
+            ch = tok[len("__PUNCT__") :]
+            if ch:
+                out_parts.append(ch + " ")
             continue
         stress_digit = ""
         base = tok
