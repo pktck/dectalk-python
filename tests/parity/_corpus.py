@@ -63,6 +63,8 @@ CORPUS: tuple[str, ...] = (
     # Syllabic-N (US_EN) coverage: word-final N after consonant.
     "button sudden reason",
     "broken eaten",
+    # -ING reduction (AH0/IH0 -> ix before NG).
+    "morning evening running meeting",
 )
 
 

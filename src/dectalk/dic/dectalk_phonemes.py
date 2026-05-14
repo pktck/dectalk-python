@@ -348,7 +348,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     if prev_emit and prev_emit not in _VOWEL_DECTALK_CODES:
                         syllabic_after_consonant_word_final = True
             if base == "AH" and stress_digit == "0":
-                dt = "ix" if ah_before_final_s else "ax"
+                dt = "ix" if ah_before_final_s or next_base == "NG" else "ax"
             elif base == "IH" and stress_digit == "0" and next_base == "NG":
                 dt = "ix"
             elif syllabic_after_consonant_word_final and base == "L":
