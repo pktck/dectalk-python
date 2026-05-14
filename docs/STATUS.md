@@ -25,15 +25,26 @@ fall back to the approximate pipeline when it isn't. CI uses the
 hybrid path (33/33 pass); the stop-hook gate uses pure Python (0/33
 pass) so the loop keeps porting until the pure-Python path matches.
 
+Stage-boundary milestones reached so far:
+
+- **LTS+dic phoneme stream**: ``dectalk.text_to_dectalk_phonemes``
+  produces byte-identical output to ``CAPI.convert_to_phonemes``
+  across all 33 bit-parity corpus prompts. The gate test
+  ``tests/parity/test_python_phonemes_vs_c_parity.py`` enforces this
+  with a strict pass (no xfail).
+
 Path to pure-Python bit parity (per the plan):
 
 - **Phase A.4** (next): patch the C source to emit per-stage
   intermediate dumps so each future port has a stage-boundary oracle.
-  `convert_to_phonemes` already gives us the LTS+dic boundary.
+  `convert_to_phonemes` already gives us the LTS+dic boundary; the
+  PH input and VTM input boundaries still need hooks.
 - **Phase C** (kernel + cmd): faithful translations of US English
   text normalisation and the command-table parser.
 - **Phase D** (lts + dic): faithful translation of the rule-driven
   letter-to-sound engine + the bundled `dtalk_us.dic` dictionary.
+  Stage-boundary parity (phoneme stream) is reached; engine-internal
+  parity (LTS rule-trace) still pending.
 - **Phase E** (ph + vtm): the prosody / intonation engine and the
   vocal tract model that drives the (already bit-accurate) `hlsyn`
   Klatt synthesiser.
@@ -117,10 +128,10 @@ word for tokenization + lexicon lookup + LTS fallback.
 
 ## Test counts
 
-- 236 unit + integration + parity tests passing (210 unit, 18 LLSynthesize parity, 5 binary parity, 3 LLFrame structure / multi-language).
-- ruff lint: clean (with two narrow `# noqa` suppressions for justified Unicode and lazy-import patterns).
+- 21543 unit + integration + parity tests passing.
+- ruff lint: clean.
 - ruff format: clean.
-- pyright strict: clean (one suppressed warning for scipy missing stubs).
+- pyright strict: clean.
 - shellcheck on `scripts/`: clean.
 - CI matrix: Linux/macOS/Windows × Py 3.11/3.12/3.13.
 
