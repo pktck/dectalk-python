@@ -317,16 +317,19 @@ class CAPI:
 
     # Stages currently implemented by the C-side dump hooks. Update this
     # list as new patches under ``tests/parity/c_patches/`` land.
-    _SUPPORTED_DUMP_STAGES: tuple[str, ...] = ("kernel",)
+    #   - ``kernel`` -> 0002-stage-boundary-dumps.patch
+    #   - ``cmd``    -> 0003-cmd-stage-dump-hooks.patch
+    _SUPPORTED_DUMP_STAGES: tuple[str, ...] = ("kernel", "cmd")
 
     def dump_pipeline(self, text: str, stages: list[str]) -> dict[str, bytes]:
         """Return per-stage boundary dumps from the C oracle.
 
         Activates the ``DECTALK_DUMP_DIR`` side-effect hooks added by
-        ``tests/parity/c_patches/0002-stage-boundary-dumps.patch``, runs
-        a single ``speak(text)`` call to populate the dump files, then
-        reads them back. The returned mapping is keyed by stage name
-        with the raw bytes of ``<DECTALK_DUMP_DIR>/<stage>.dump``.
+        ``tests/parity/c_patches/0002-stage-boundary-dumps.patch`` (and
+        sibling patches for later stages), runs a single ``speak(text)``
+        call to populate the dump files, then reads them back. The
+        returned mapping is keyed by stage name with the raw bytes of
+        ``<DECTALK_DUMP_DIR>/<stage>.dump``.
 
         :param text: input string passed to ``speak()`` — audio output
             is discarded; we only care about the dump side effects.

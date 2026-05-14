@@ -20,10 +20,15 @@ What's patched:
   boundary dump hooks to ``src/dapi/src/api/ttsapi.c``. When
   ``DECTALK_DUMP_DIR`` is set in the environment, the library writes
   a deterministic text dump of each pipeline stage's output to
-  ``<DECTALK_DUMP_DIR>/<stage>.dump``. Currently implements the
-  ``kernel`` stage only; ``cmd``/``lts``/``ph``/``vtm`` are TODO and
-  will be added as the per-stage Python ports land. See
-  ``docs/c_audit/stage_boundaries.md`` for the boundary catalogue.
+  ``<DECTALK_DUMP_DIR>/<stage>.dump``. Implements the ``kernel``
+  stage; see ``docs/c_audit/stage_boundaries.md`` for the boundary
+  catalogue.
+- ``0003-cmd-stage-dump-hooks.patch`` — sibling of `0002` for the
+  CMD-stage exit. On the Linux/``SINGLE_THREADED`` build the CMD
+  stage calls ``lts_loop()`` directly instead of writing to the
+  ``lts_pipe``; the patch hooks ``lts_loop`` in
+  ``src/dapi/src/lts/ls_task.c`` and emits one record per call into
+  ``<DECTALK_DUMP_DIR>/cmd.dump``.
 
 Usage:
     uv run python scripts/apply_c_patches.py             # apply + rebuild
@@ -98,11 +103,18 @@ def _rebuild(src_root: Path) -> None:
         subprocess.run(["./autogen.sh"], cwd=str(src_dir), check=True)
     if not (src_dir / "Makefile").is_file():
         subprocess.run(["./configure"], cwd=str(src_dir), check=True)
-    # Touch the patched file so make picks up the change even if its mtime
-    # is older than the build artefacts.
-    patched = src_dir / "dapi" / "src" / "api" / "ttsapi.c"
-    if patched.is_file():
-        patched.touch()
+    # Touch each patched file so make picks up the change even if its
+    # mtime is older than the build artefacts. ``ls_task.c`` is
+    # ``#include``d into ``lsa_task.c`` and never compiled directly --
+    # touching the wrapper is what forces the rebuild.
+    patched_files = [
+        src_dir / "dapi" / "src" / "api" / "ttsapi.c",
+        src_dir / "dapi" / "src" / "lts" / "ls_task.c",
+        src_dir / "dapi" / "src" / "lts" / "lsa_task.c",
+    ]
+    for patched in patched_files:
+        if patched.is_file():
+            patched.touch()
     subprocess.run(["make", "-j4", "english_release"], cwd=str(src_dir), check=True)
 
 

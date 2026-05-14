@@ -1,9 +1,12 @@
 """Smoke tests for the per-stage parity-dump infrastructure.
 
 Validates the kernel-stage dump hook added by
-``tests/parity/c_patches/0002-stage-boundary-dumps.patch``. The hook is
-gated on ``DECTALK_DUMP_DIR``; :py:meth:`dectalk._capi.CAPI.dump_pipeline`
-points it at a fresh temp dir per call and reads the result back.
+``tests/parity/c_patches/0002-stage-boundary-dumps.patch`` and the
+CMD-stage hook added by
+``tests/parity/c_patches/0003-cmd-stage-dump-hooks.patch``. The hooks
+are gated on ``DECTALK_DUMP_DIR``;
+:py:meth:`dectalk._capi.CAPI.dump_pipeline` points them at a fresh temp
+dir per call and reads the result back.
 
 Skips cleanly when the C oracle (source-built libtts + shipped binary)
 is not present.
@@ -65,6 +68,30 @@ def test_kernel_dump_is_deterministic(capi: CAPI) -> None:
     a = capi.dump_pipeline("hello world", ["kernel"])["kernel"]
     b = capi.dump_pipeline("hello world", ["kernel"])["kernel"]
     assert a == b, f"kernel dumps diverged across calls: {len(a)} B vs {len(b)} B"
+
+
+def test_cmd_dump_is_non_empty(capi: CAPI) -> None:
+    """The CMD dump for ``hello world`` must contain non-trivial 16-bit tokens.
+
+    Validates the hook added by
+    ``tests/parity/c_patches/0003-cmd-stage-dump-hooks.patch``. In
+    ``SINGLE_THREADED`` builds the hook lives in ``lts_loop`` (the entry
+    point of the LTS stage) and captures each 16-bit token the CMD stage
+    pushes across the (now-elided) ``pKsd_t->lts_pipe`` boundary.
+    """
+    dumps = capi.dump_pipeline("hello world", ["cmd"])
+    assert "cmd" in dumps
+    payload = dumps["cmd"]
+    assert payload, "cmd dump was empty — patch not applied or hook misfired?"
+    # The hook writes ``cmd_write <count>`` headers between hex-word lines.
+    assert b"cmd_write" in payload
+
+
+def test_cmd_dump_is_deterministic(capi: CAPI) -> None:
+    """Two back-to-back CMD-dump calls with the same input must be identical."""
+    a = capi.dump_pipeline("hello world", ["cmd"])["cmd"]
+    b = capi.dump_pipeline("hello world", ["cmd"])["cmd"]
+    assert a == b, f"cmd dumps diverged across calls: {len(a)} B vs {len(b)} B"
 
 
 def test_unsupported_stage_raises(capi: CAPI) -> None:

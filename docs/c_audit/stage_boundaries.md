@@ -34,7 +34,7 @@ Pipe type constants (`src/dapi/src/include/pipe.h:31159-31161`):
 | Boundary | How accessed today | Notes |
 |---|---|---|
 | KERNEL exit | (new) `CAPI.dump_pipeline(text, ["kernel"])` — see `tests/parity/c_patches/0002-stage-boundary-dumps.patch` | Patch dumps the buffer handed to `write_pipe(pKsd_t->cmd_pipe, …)` to `$DECTALK_DUMP_DIR/kernel.dump` for byte-equality checks against the Python kernel port. |
-| CMD exit | TODO | Hook to add: tap `cm_util_write_pipe(pKsd_t, pKsd_t->lts_pipe, …)` (`cmd/cm_util.c`) and emit a deterministic textual record (`hex-word\n` per token). |
+| CMD exit | exposed via 0003 patch — `CAPI.dump_pipeline(text, ["cmd"])` reads `$DECTALK_DUMP_DIR/cmd.dump`, see `tests/parity/c_patches/0003-cmd-stage-dump-hooks.patch` | The Linux build is `SINGLE_THREADED`, so the CMD-stage no longer writes to `pKsd_t->lts_pipe` — instead `cm_util.c` and friends call `lts_loop()` directly with the same 16-bit token. The patch hooks `lts_loop` at function entry and emits `cmd_write 1\n<%04x>\n` per call. |
 | LTS exit | `CAPI.convert_to_phonemes(text)` (existing) — also reachable via the planned `lts.dump` once added. | The ASCII allophone string already serves as a parity oracle for `src/dectalk/lts/`. A future `lts.dump` could emit the raw 32-bit DWORD stream instead, for downstream parity on PH input. |
 | PH exit | TODO | Hook to add: tap writes to `pKsd_t->ph_pipe`. Output: per-frame VTM-parameter records (`(control, [payload])` tuples) in a canonical textual form. |
 | VTM exit | `CAPI.speak(text)` returns byte-identical WAV (existing) — `tests/parity/test_binary_wav_parity.py`. | Already covered for the byte-equality goal; a finer-grain VTM-input dump would help debug isolated PH-vs-VTM regressions. |
@@ -58,12 +58,14 @@ To keep the dumps diff-able and language-agnostic between C and Python:
 
 ## Source-anchor reference for follow-up patches
 
-For Phase A.4 expansion (patches `0003` … `0005`), the relevant
+For Phase A.4 expansion (patches `0004` … `0006`), the relevant
 write-site anchors are:
 
 - **CMD exit** — `src/dapi/src/cmd/cm_util.c` `cm_util_write_pipe`
   (centralised helper used by `cm_cmd.c`, `cm_pars.c`, `cm_copt.c`,
-  `cm_chari.c`).
+  `cm_chari.c`). On Linux/`SINGLE_THREADED` builds this helper is
+  unreachable; the CMD stage hands tokens to `lts_loop()` directly.
+  Patch `0003` therefore hooks `lts_loop` at function entry instead.
 - **LTS exit** — `src/dapi/src/lts/ls_util.c` (the same helper the
   existing `0001` patch already touches indirectly via the phoneme
   log).

@@ -1,0 +1,248 @@
+--- a/src/dapi/src/lts/ls_task.c
++++ b/src/dapi/src/lts/ls_task.c
+@@ -200,166 +200,245 @@
+  *
+  */
+  
+ #include "ls_def.h"   
+ #include "ls_prot.h"
+ #ifdef SINGLE_THREADED
+ #include "cm_def.h"
+ #endif
++
++/* ============================================================
++ * dectalk-python port: CMD-stage boundary dump hook (Phase A.4)
++ * ============================================================
++ *
++ * Sibling to the kernel-stage hook in src/dapi/src/api/ttsapi.c
++ * (see tests/parity/c_patches/0002-stage-boundary-dumps.patch).
++ * In SINGLE_THREADED builds (Linux/macOS), lts_loop() is the entry
++ * point of the LTS stage and is called once per 16-bit token by the
++ * CMD stage in lieu of writing to pKsd_t->lts_pipe. Hooking it at
++ * function entry therefore captures the CMD-stage exit boundary.
++ *
++ * File format (cmd.dump): one record per lts_loop call
++ *   cmd_write <count>
++ *   <space-separated %04x words for the chunk>
++ *
++ * count is fixed at 1 here -- lts_loop reads input[0] as the primary
++ * token. Reopened on every DECTALK_DUMP_DIR change so back-to-back
++ * Python calls (each with a fresh temp dir) see independent dumps.
++ * When the env var is unset/empty, the hook is a no-op.
++ */
++#ifdef SINGLE_THREADED
++#include <stdio.h>
++#include <stdlib.h>  /* getenv */
++#include <string.h>  /* strcmp, strncpy, strlen */
++static FILE *_dectalk_dump_fp_cmd = NULL;
++static char  _dectalk_dump_cmd_dir[1024] = {0};
++
++static void _dectalk_dump_cmd_open(void)
++{
++	const char *dir;
++	char path[1024];
++
++	dir = getenv("DECTALK_DUMP_DIR");
++	if (dir == NULL || dir[0] == '\0') {
++		if (_dectalk_dump_fp_cmd != NULL) {
++			fclose(_dectalk_dump_fp_cmd);
++			_dectalk_dump_fp_cmd = NULL;
++			_dectalk_dump_cmd_dir[0] = '\0';
++		}
++		return;
++	}
++	if (_dectalk_dump_fp_cmd != NULL && strcmp(dir, _dectalk_dump_cmd_dir) == 0)
++		return;
++	if (_dectalk_dump_fp_cmd != NULL) {
++		fclose(_dectalk_dump_fp_cmd);
++		_dectalk_dump_fp_cmd = NULL;
++	}
++	if (strlen(dir) + sizeof("/cmd.dump") >= sizeof(path))
++		return;
++	snprintf(path, sizeof(path), "%s/cmd.dump", dir);
++	_dectalk_dump_fp_cmd = fopen(path, "wb");
++	if (_dectalk_dump_fp_cmd != NULL) {
++		strncpy(_dectalk_dump_cmd_dir, dir, sizeof(_dectalk_dump_cmd_dir) - 1);
++		_dectalk_dump_cmd_dir[sizeof(_dectalk_dump_cmd_dir) - 1] = '\0';
++	}
++}
++
++static void _dectalk_dump_cmd_chunk(const unsigned short *buf, unsigned int count)
++{
++	unsigned int i;
++
++	_dectalk_dump_cmd_open();
++	if (_dectalk_dump_fp_cmd == NULL)
++		return;
++	fprintf(_dectalk_dump_fp_cmd, "cmd_write %u\n", count);
++	for (i = 0; i < count; i++) {
++		fprintf(_dectalk_dump_fp_cmd,
++		        (i + 1 < count) ? "%04x " : "%04x",
++		        (unsigned int)buf[i]);
++	}
++	fputc('\n', _dectalk_dump_fp_cmd);
++	fflush(_dectalk_dump_fp_cmd);
++}
++#endif  /* SINGLE_THREADED */
++
+ 
+ #define DbgLs1 0
+ 
+ void ls_task_parse_sentence(LPTTS_HANDLE_T phTTS);
+ 
+ 
+ /* protos */
+ extern PHONE * ls_rule_phone_alloc(PLTS_T pLts_t);
+ extern void ls_suff_print_fc(LPTTS_HANDLE_T phTTS);
+ /*#define LS1DEBUG 1*/
+ 
+ /*#define DUMP_WORD*/
+ 
+ #define KEEP_SEARCHING  0
+ #define LS_TASK_LOOP    1
+ #define SPELL_WORD      2
+ #define FINISHED_WORD   3
+ 
+ #if defined __linux__ || defined __EMSCRIPTEN__ || defined (__APPLE__)
+ #include <stdio.h>
+ #endif
+ 
+ #ifndef ARM7
+ extern char *form_class_strings[];
+ #endif
+ /* when running on DECtalk PC this parameter can't be passed to */
+ /* ls_task_main so a global is used */
+ /* GL 04/21/1997  change this for OSF build */
+ #ifdef MSDOS           
+ 	extern LPTTS_HANDLE_T phTTS;
+ #endif
+ 
+ #if defined (WIN32) && defined (PRINTFDEBUG) && defined _DEBUG
+ extern int Thread_Alive;
+ extern int in_winmain;
+ #endif
+ 
+ /* ******************************************************************
+  *  Function Name:
+  *      ls_task_main()
+  *
+  *  Description:    
+  *      the main loop of lts.   once the loop starts, it never ends.
+  *
+  *  Arguments:                                                      
+  *      none
+  *
+  *  Return Value:
+  *      none, it should never return.
+  *
+  *  Comments:
+  *      for WIN32, this function is passed a parameter 
+  *          LPTTS_HANDLE_T  phTTS	Text-to-speech handle
+  *      
+  *
+ * *****************************************************************/
+      
+ /* GL 04/21/1997  change this for OSF build */
+ #if defined (WIN32) || defined (__osf__) || defined (__linux__) || defined VXWORKS || defined _SPARC_SOLARIS_ || defined __EMSCRIPTEN__ || defined (__APPLE__)
+ void ls_task_main(LPTTS_HANDLE_T phTTS)
+ #endif
+ 
+ #ifdef ARM7
+ void ls_task_main(LPTTS_HANDLE_T phTTS)
+ #endif
+ 
+ #ifdef MSDOS
+ void far ls_task_main(void)
+ #endif
+ 
+ {
+ 	/* of special words.*/ 
+ 	PKSD_T  pKsd_t;
+ 	PLTS_T  pLts_t;
+ 	PHONE   *pp; 
+ #ifndef SINGLE_THREADED
+ 	int     done; // array_i=0;
+ 	LETTER  *llp;
+ 	LETTER  *rlp;
+ 	LETTER  *elp;
+ 	LETTER  *lp1;
+ 	LETTER	origword[NGWORD];
+ #endif
+ #if 0 // SINGLE_THREADED
+ 	PHONE   pnode[NPNODE];                  /* Phoneme pool.                */
+ 	/* MGS 6/16/97 BATS #387 Added to allow case to reach ls_task_process_word */
+ #ifdef FRENCH
+ //	char  c;       /* for current char of cword */
+ //	int   Fini=0;  /* de 0 à 4 : end of cword analysis */
+ //	int   rbphone; /* phone due to right striping */
+ //	int   sign;    /* sign if number */
+ //	int   lflag;   /* attributes of cword : LSTRIP, RSTRIP, etc */
+ //	int   speed;   /* speed when spelled */
+ //	int   TypDic;  /* dico result */
+ //	short wstate;  /* "Which" state : quoi, qui */
+ //	FLAG  contgc;  /* current word is left context for next word */
+ #endif
+ 	int namef=0; 							/* this flag seems useless */ 
+ #endif // 0 // SINGLE_THREADED
+ 	
+ 	/* printf("this is the start of lts\n"); */
+ 	
+ 		
+ 	pKsd_t = phTTS->pKernelShareData;
+ 	pLts_t = phTTS->pLTSThreadData;	
+ 	pLts_t->isnumabr=0;
+ 
+     pLts_t->pflp = 0;   
+ #ifdef MSDOS
+ 	pKsd_t->lang_curr = LANG_none; 
+ #endif
+ #ifdef SPANISH
+     pLts_t->got_quote = 0;
+ #endif  
+     memset(&(pLts_t->nitem),0,sizeof(ITEM));
+     memset(&(pLts_t->citem),0,sizeof(ITEM));
+ 	
+ 	pp = &pLts_t->pnode[0];                         		/* Pool of PHONE nodes. */
+ 	
+ 	while (pp < &pLts_t->pnode[NPNODE])         			/* free all the phonemes */
+ 	{
+ 		ls_rule_phone_free(pLts_t,pp);
+ 		++pp;
+ 	}
+ 	
+ 	pLts_t->wstate = UNK_WH;                        /* Start of sentence.   */
+ 	pLts_t->lphone = WBOUND;                        /* Out of band.         */
+ 	pLts_t->namef=0;
+ 
+ #ifdef SINGLE_THREADED
+ 	pLts_t->cur_input_pos=0;
+ 	memset(pLts_t->input_array,0,500);
+ #endif
+ 
+ #ifdef FRENCH
+ 	strcpy(pLts_t->precedent, "");
+ 	pLts_t->nitem.i_nword = 0; /* nothing in nitem */
+ #endif
+ 
+ #ifdef SINGLE_THREADED
+ }
+ 
+ #ifdef EPSON_ARM7
+ void lts_loop_2(LPTTS_HANDLE_T phTTS,unsigned short *input)
+ #else
+ void lts_loop(LPTTS_HANDLE_T phTTS,unsigned short *input)
+ #endif
+ {
+ //	PKSD_T pKsd_t = phTTS->pKernelShareData;
+ 	PLTS_T pLts_t = phTTS->pLTSThreadData;	
+ 	int temp;
+ //	int i;
++#ifdef SINGLE_THREADED
++	_dectalk_dump_cmd_chunk((const unsigned short *)input, 1);
++#endif
+ 
+ 	if ((input[0]&PFONT)==(PFASCII<<PSFONT))
+ 	{
+ 		temp=pLts_t->cur_input_pos;
+ 		pLts_t->input_array[pLts_t->cur_input_pos++]=(input[0]&PVALUE);
+ 		if ( ((char_types[pLts_t->input_array[temp]]&MARK_space) && 
