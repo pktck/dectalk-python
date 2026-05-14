@@ -1,10 +1,53 @@
 # Implementation status
 
-A live snapshot of what's shipped vs. what's still in the original
-`docs/PLAN.md`. The plan is the long-term blueprint; this file tracks
-actual progress.
+A live snapshot of what's shipped vs. what's still in the
+`/root/.claude/plans/create-a-python-port-smooth-hoare.md` plan. The
+plan is the long-term blueprint; this file tracks actual progress.
 
-## Shipped
+## Project goalpost: pure-Python bit parity
+
+The project goal is **byte-identical WAV output between
+`dectalk.to_wav(text)` (pure Python, no native dependency at runtime)
+and the shipped `say` binary**. The stop-hook gate runs
+`tests/parity/test_binary_wav_parity.py` with
+`DECTALK_DISABLE_CAPI=1` set, which forces the public API through the
+Python pipeline (`kernel` -> `cmd` -> `lts` -> `ph` -> `vtm` -> `hlsyn`)
+instead of `dectalk._capi`'s ctypes wrapper around `libtts_us.so`.
+
+Today the verifier reports **33/33 prompts diverge** under
+`DECTALK_DISABLE_CAPI=1`. The existing Python pipeline (the
+"approximate" implementation under Phases 0-6 below) was built before
+the bit-parity goal was set; it diverges from the binary at every
+stage starting with text normalisation. The `_capi` path is the
+**hybrid** state: `dectalk.speak()` and `dectalk.to_wav()` go through
+the C library for bit-identical audio when the .so is available, and
+fall back to the approximate pipeline when it isn't. CI uses the
+hybrid path (33/33 pass); the stop-hook gate uses pure Python (0/33
+pass) so the loop keeps porting until the pure-Python path matches.
+
+Path to pure-Python bit parity (per the plan):
+
+- **Phase A.4** (next): patch the C source to emit per-stage
+  intermediate dumps so each future port has a stage-boundary oracle.
+  `convert_to_phonemes` already gives us the LTS+dic boundary.
+- **Phase C** (kernel + cmd): faithful translations of US English
+  text normalisation and the command-table parser.
+- **Phase D** (lts + dic): faithful translation of the rule-driven
+  letter-to-sound engine + the bundled `dtalk_us.dic` dictionary.
+- **Phase E** (ph + vtm): the prosody / intonation engine and the
+  vocal tract model that drives the (already bit-accurate) `hlsyn`
+  Klatt synthesiser.
+- **Phase F**: rewrite the public API + remove the `_capi` scaffold.
+
+Until those phases land the Python output will keep diverging. This
+section will track the gap as phases close.
+
+## Hybrid-path state (the "approximate" port — built pre-goalpost)
+
+Everything below describes the approximate-Python pipeline that
+predates the bit-parity goalpost. It is intelligible-but-divergent
+speech, kept as the runtime fallback when ``_capi`` is unavailable.
+Phases C-F replace each layer with a faithful translation.
 
 ### Phase 0 — Scaffolding (DONE)
 - `pyproject.toml` with strict Ruff (Google docstrings) + pyright strict + pytest.
