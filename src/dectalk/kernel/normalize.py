@@ -34,9 +34,15 @@ _US_DATE_RE: Final[re.Pattern[str]] = re.compile(r"^(\d{1,2})[-/](\d{1,2})[-/](\
 # Phone number patterns. We accept several common forms and normalise to
 # digit-by-digit reading with sensible visual grouping.
 _PHONE_RES: Final[tuple[re.Pattern[str], ...]] = (
-    re.compile(r"^\+?(\d{1,3})[\s.-]?\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})$"),
-    re.compile(r"^\(?(\d{3})\)?[\s.-]?(\d{3})[\s.-]?(\d{4})$"),
-    re.compile(r"^(\d{3})[\s.-]?(\d{4})$"),
+    # Phone-number patterns require at least one visual separator
+    # (space/dot/dash/parens). A raw digit string ("1234567890") is
+    # NOT a phone number -- DECtalk's number-expansion path treats it
+    # as a multi-digit integer ("one billion two hundred..."). The
+    # pre-fix behaviour misclassified bare 10-digit strings as phones.
+    re.compile(r"^\+?(\d{1,3})[\s.-]\(?(\d{3})\)?[\s.-](\d{3})[\s.-](\d{4})$"),
+    re.compile(r"^\(?(\d{3})\)\s?(\d{3})[\s.-]?(\d{4})$"),
+    re.compile(r"^(\d{3})[\s.-](\d{3})[\s.-](\d{4})$"),
+    re.compile(r"^(\d{3})[\s.-](\d{4})$"),
 )
 
 # URL pattern (very loose — matches scheme + authority).
