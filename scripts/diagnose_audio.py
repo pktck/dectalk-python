@@ -43,21 +43,27 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import numpy as np
-from numpy.typing import NDArray
-from scipy.signal import (  # pyright: ignore[reportMissingTypeStubs,reportUnknownVariableType]
+# Allow ``from tests.parity._corpus import CORPUS`` when invoked as a script.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+import numpy as np  # noqa: E402 — module-level import order delayed by sys.path tweak above
+from numpy.typing import NDArray  # noqa: E402
+from scipy.signal import (  # noqa: E402  # pyright: ignore[reportMissingTypeStubs,reportUnknownVariableType]
     spectrogram,
 )
-from scipy.signal import (
+from scipy.signal import (  # noqa: E402
     welch as _welch_impl,
 )
 
-import dectalk
-from dectalk import _audio_compare as _sc
-from dectalk.hlsyn.llsyn import LLFrame, LLSynth
-from dectalk.hlsyn.synthesize import ll_synthesize
-from dectalk.hlsyn.vowels import default_speaker
-from dectalk.ph.phoneme_frames import get_frames
+import dectalk  # noqa: E402
+from dectalk import _audio_compare as _sc  # noqa: E402
+from dectalk.hlsyn.llsyn import LLFrame, LLSynth  # noqa: E402
+from dectalk.hlsyn.synthesize import ll_synthesize  # noqa: E402
+from dectalk.hlsyn.vowels import default_speaker  # noqa: E402
+from dectalk.ph.phoneme_frames import get_frames  # noqa: E402
+from tests.parity._corpus import CORPUS as BIT_PARITY_CORPUS  # noqa: E402
 
 SAMPLE_RATE_HZ = 11025
 
@@ -89,7 +95,13 @@ SAMPLE_RATE_HZ = 11025
 # phoneme renderings; the Phase-4 prosody alignment widened the F0
 # range substantially, which pushed some prompts down to ~11 dB on
 # this metric without any actual quality regression.
-MIN_INTER_HARMONIC_SNR_DB = 10.0
+#
+# Post bit-parity (Phase B): Python output is byte-identical to the
+# binary across the corpus, so this metric is effectively a property
+# of the shipped binary's audio. The "wait... what just happened?"
+# prompt measures 9.67 dB on both python.wav and binary.wav -- the
+# threshold below absorbs that natural floor.
+MIN_INTER_HARMONIC_SNR_DB = 9.5
 
 # Voiced-only high-band power. With Af = Ah = 0 in voiced frames the
 # > 4 kHz spectrum should be essentially silent. Pre-fix this was
@@ -769,6 +781,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Prompts to render (default: a small fixed set).",
     )
     parser.add_argument(
+        "--bit-parity-corpus",
+        action="store_true",
+        help=(
+            "Override --prompts with the full bit-parity corpus from "
+            "tests/parity/_corpus.py (the 33-prompt set the binary-WAV "
+            "test gates against)."
+        ),
+    )
+    parser.add_argument(
         "--no-fail",
         action="store_true",
         help="Always exit 0; the report is the artefact.",
@@ -793,9 +814,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if binary_dir is None:
         print("note: DECtalk binary not found — running intrinsic checks only.", file=sys.stderr)
 
-    reports = [
-        _run_prompt(text, out_dir, binary_dir, chunk_ms=args.chunk_ms) for text in args.prompts
-    ]
+    prompts: list[str] = list(BIT_PARITY_CORPUS) if args.bit_parity_corpus else list(args.prompts)
+    reports = [_run_prompt(text, out_dir, binary_dir, chunk_ms=args.chunk_ms) for text in prompts]
     audit = _measure_interpolation_audit()
     overall_pass = _write_report(reports, report_path, binary_dir, audit)
 

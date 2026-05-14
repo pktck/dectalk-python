@@ -1,7 +1,9 @@
 # Audio samples
 
-Side-by-side renderings of a fixed prompt set so a human reviewer can
-compare the Python port against the original FONIX DECtalk binary.
+Side-by-side renderings of the **bit-parity corpus** (the same 33-prompt
+set the binary-WAV parity test gates against) so a human reviewer can
+listen to the Python port output alongside the original FONIX DECtalk
+binary.
 
 Each prompt produces two WAV files at 11025 Hz mono int16:
 
@@ -11,23 +13,25 @@ Each prompt produces two WAV files at 11025 Hz mono int16:
   release at `/tmp/dectalk-binary-stable/`. The binary itself is not
   bundled here; only its outputs.
 
-Prompts (deliberately small and varied):
+The corpus is the canonical list in `tests/parity/_corpus.py` —
+`tests/parity/test_binary_wav_parity.py` asserts each prompt produces
+a **byte-identical** WAV between the two paths. As of `c68406b` every
+prompt in the corpus passes, so `<slug>.python.wav` and
+`<slug>.binary.wav` are bit-identical files (you can `cmp` them).
 
-| slug | text |
+The 33 prompts (see `tests/parity/_corpus.py` for the source of truth):
+
+| category | sample prompts |
 |---|---|
-| `hello-world` | hello world |
-| `this-is-a-test` | this is a test |
-| `the-quick-brown-fox` | the quick brown fox |
-| `computer` | computer |
-| `she-sells-sea-shells` | she sells sea shells |
-| `good-morning` | good morning |
-| `good-morning-my-friend-how-are-you-today-have-a-great-day` | good morning, my friend. how are you today? have a great day! |
-
-The last one is the multi-sentence prompt — it exercises sentence-level
-prosody on all three terminators (`.`, `?`, `!`) plus a comma inside
-the first sentence, so a reviewer can hear that each sentence resets
-its declination contour and that clause-internal commas don't break
-the prosody.
+| baseline | hello world; the quick brown fox; she sells sea shells; … |
+| numbers | the answer is 42; 3 point 14; 1234567890; … |
+| punctuation | hello! how are you?; wait... what just happened?; yes; no; maybe. |
+| inline rate | `[:rate 100] slow`; `[:rate 250] testing one two three`; `[:rate 400] fast speech` |
+| voice presets | `[:nb] betty`, `[:nh] harry`, `[:nf] frank`, `[:nd] dennis`, `[:nk] kit`, `[:nu] ursula`, `[:nr] rita`, `[:nw] wendy` |
+| spell-outs | FBI; NASA; USA; MIT |
+| phonotactics | judge thought rhythms; knight light right |
+| abbreviations | Dr. Smith said hello. |
+| long sentence | the rain in spain falls mainly on the plain |
 
 ## Prosody comparison
 
@@ -54,28 +58,35 @@ subsequent improvements have a delta to point at.
 ## Listening
 
 Open both files for a prompt in any audio player and play them
-back-to-back. Things you'll likely hear:
+back-to-back. At bit parity the two are identical — `python.wav` and
+`binary.wav` should sound the same on every prompt. `cmp` confirms it:
 
-- Voice timbre is close (same Klatt model).
-- Prosody and segmental durations differ — the binary's prosody
-  pipeline is more elaborate than ours, so words are roughly 25 %
-  longer there. The Python output sounds a bit clipped in time but
-  not choppy.
-- The Python rendering has no audible static, hum, or whistle on any
-  of these prompts. If a sample acquires one, that's a regression.
+```sh
+cmp docs/audio_samples/hello-world.python.wav docs/audio_samples/hello-world.binary.wav
+# (no output, exit 0)
+```
 
-`report.md` next to these files has the per-prompt metrics that
-`scripts/diagnose_audio.py` computes — inter-harmonic SNR,
-voiced-only high-band power (the static check), and spectrogram
-cosine similarity vs the binary.
+`report.md` next to these files has per-prompt metrics from
+`scripts/diagnose_audio.py` — inter-harmonic SNR, voiced-only high-band
+power, and DTW-aligned spectrogram cosine similarity vs the binary.
+Since the WAVs are byte-identical, `spectrogram_cosine: 1.0`,
+`mcd_chunk_mean_db: 0.0`, and `lsd_global_db: 0.0` across every prompt
+in the corpus.
 
 ## Regenerating
 
 ```sh
-uv run python scripts/diagnose_audio.py --out-dir docs/audio_samples
+uv run python scripts/diagnose_audio.py \
+    --bit-parity-corpus \
+    --out-dir docs/audio_samples
 ```
 
+The `--bit-parity-corpus` flag pulls prompts from
+`tests/parity/_corpus.py` (the same list the parity test uses) so the
+two paths stay in sync. Without that flag the script falls back to a
+small 7-prompt default corpus.
+
 The harness skips the binary leg automatically when
-`/tmp/dectalk-binary-stable/say` isn't present, so this command
-works on any machine — but binary WAVs only refresh on hosts that
-have the release installed.
+`/tmp/dectalk-binary-stable/say` isn't present, so this command works
+on any machine — but binary WAVs only refresh on hosts that have the
+release installed.

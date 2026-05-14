@@ -1,8 +1,8 @@
 {
   "chunk_ms": 500.0,
-  "n_frames_python": 65,
-  "n_frames_binary": 65,
-  "path_length": 65,
+  "n_frames_python": 32,
+  "n_frames_binary": 32,
+  "path_length": 32,
   "warp_ratio": 1.0,
   "global_mcd_db": 0.0,
   "global_lsd_db": 0.0,
@@ -12,17 +12,8 @@
     {
       "index": 0,
       "start_ms": 0.0,
-      "end_ms": 499.2,
-      "n_frames": 43,
-      "mcd_db": 0.0,
-      "lsd_db": 0.0,
-      "correlation": 1.0
-    },
-    {
-      "index": 1,
-      "start_ms": 499.2,
-      "end_ms": 754.6,
-      "n_frames": 22,
+      "end_ms": 371.5,
+      "n_frames": 32,
       "mcd_db": 0.0,
       "lsd_db": 0.0,
       "correlation": 1.0
