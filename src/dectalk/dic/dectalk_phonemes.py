@@ -230,7 +230,7 @@ def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
         Empty input yields ``b""``.
     """
     out_parts: list[str] = []
-    for tok in phonemes:
+    for i, tok in enumerate(phonemes):
         if not tok or tok == "_":
             out_parts.append(word_break)
             continue
@@ -243,11 +243,17 @@ def encode_to_dectalk(phonemes: list[str], *, word_break: str = "  ") -> bytes:
             out_parts.append(f"{DECTALK_PRIMARY_STRESS} ")
         elif stress_digit in ("2", "3"):
             out_parts.append(f"{DECTALK_SECONDARY_STRESS} ")
-        # Unstressed reduction: DECtalk emits the centralised variants
-        # for unstressed vowels (``ax`` for AH0, ``ix`` for IH0).
+        # Unstressed reduction: DECtalk emits ``ax`` (schwa) for AH0
+        # globally, and ``ix`` for IH0 in the ``-ing`` suffix context
+        # (IH0 immediately followed by NG). Standalone IH0 stays ``ih``.
+        next_base: str | None = None
+        if i + 1 < len(phonemes):
+            nxt = phonemes[i + 1]
+            if nxt and nxt != "_":
+                next_base = nxt.rstrip("0123456789")
         if base == "AH" and stress_digit == "0":
             dt = "ax"
-        elif base == "IH" and stress_digit == "0":
+        elif base == "IH" and stress_digit == "0" and next_base == "NG":
             dt = "ix"
         else:
             dt = ARPABET_TO_DECTALK.get(base)
