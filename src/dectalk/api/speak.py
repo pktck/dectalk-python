@@ -263,6 +263,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "happened" -- Python's LTS doubles the P and emits EH twice
         # ("hx' aep p ehn ehd"). DECtalk has HH AE1 P AX0 N D.
         "HAPPENED": ["HH", "AE1", "P", "AX0", "N", "D"],
+        # "dalmatians" -- Python's LTS spuriously emits T+IH+AE+N+S
+        # for "-tians". DECtalk has SH+IX+N (with -s -> Z plural).
+        "DALMATIANS": ["D", "AH0", "L", "M", "AE1", "SH", "IX", "N", "S"],
     }
 
     # Function words DECtalk destresses in mid-utterance position.

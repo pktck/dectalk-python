@@ -142,6 +142,12 @@ def is_vowel(token: str) -> bool:
 # to produce DECtalk-native phoneme strings that can be byte-compared
 # against ``CAPI.convert_to_phonemes`` output.
 ARPABET_TO_DECTALK: Final[dict[str, str]] = {
+    # ---- Centralised / r-coloured vowel codes ----
+    # DECtalk has IX as a distinct phoneme (usa_arpa[18]) for
+    # centralised unstressed I; we accept it as an explicit
+    # ARPABET-style symbol so callers can hand-craft phonemes that
+    # need the IX context (e.g. word-phoneme overrides for "dalmatians").
+    "IX": "ix",
     # ---- Vowels ----
     "IY": "iy",  # beet
     "IH": "ih",  # bit
