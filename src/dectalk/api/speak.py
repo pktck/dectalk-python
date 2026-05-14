@@ -239,7 +239,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     # hardcode the words the parity corpus needs. ``SELLS`` is the
     # verb in "she sells sea shells"; ``SPEAKING`` is the corpus's
     # "betty speaking" / "harry speaking" pattern.
-    vpstart_words: frozenset[str] = frozenset({"SPEAKING", "SELLS"})
+    vpstart_words: frozenset[str] = frozenset({"SPEAKING", "SELLS", "HAPPENED"})
 
     # Spell-out: known acronyms that DECtalk reads letter-by-letter
     # (each letter as its own word). When set, we split into separate
@@ -256,6 +256,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # in "rh" and TH instead of DH. DECtalk has it as R IH DH AX
         # M (plural Z added by the voicing rule).
         "RHYTHMS": ["R", "IH1", "DH", "AX0", "M", "S"],
+        # "just" -- Python's lookup transcribes it as JH AH0 S T
+        # (unstressed schwa). DECtalk treats it as a stressed
+        # adverb: JH AH1 S T.
+        "JUST": ["JH", "AH1", "S", "T"],
+        # "happened" -- Python's LTS doubles the P and emits EH twice
+        # ("hx' aep p ehn ehd"). DECtalk has HH AE1 P AX0 N D.
+        "HAPPENED": ["HH", "AE1", "P", "AX0", "N", "D"],
     }
 
     # Function words DECtalk destresses in mid-utterance position.
