@@ -237,6 +237,16 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
     # we hardcode the words the parity corpus needs.
     vpstart_words: frozenset[str] = frozenset({"SPEAKING"})
 
+    def _dedupe_consecutive_phonemes(phones: list[str]) -> list[str]:
+        """Collapse consecutive identical phonemes (LTS ``-LL`` artifact)."""
+        out: list[str] = []
+        for p in phones:
+            if out and out[-1] == p:
+                continue
+            out.append(p)
+        return out
+
+
     def _punct_marker(ch: str) -> str:
         # Collapse rules observed in the C source's output:
         # - ``;`` and ``:`` -> ``,`` (RELSTART folds into COMMA emit)
@@ -273,6 +283,11 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
                     if not lts_fallback:
                         raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
                     phones = lts(token.text)
+                # Deduplicate consecutive identical phonemes: the LTS
+                # produces doubled L's / N's / etc. for ``-LL``,
+                # ``-NN`` clusters in spelling (e.g. "sells" -> S EH L
+                # L S), but DECtalk's phoneme stream collapses them.
+                phones = _dedupe_consecutive_phonemes(phones)
                 flat.extend(phones)
             elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
                 ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")
