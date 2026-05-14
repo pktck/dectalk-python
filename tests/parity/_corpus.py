@@ -69,6 +69,9 @@ CORPUS: tuple[str, ...] = (
     # contains a wh- word; yes/no questions keep the ``?`` marker.
     "how?",
     "what time is it?",
+    # Function-word destressing of ``to`` (SBOUND + PPSTART + T + UH).
+    "to bed",
+    "walk to the store",
 )
 
 

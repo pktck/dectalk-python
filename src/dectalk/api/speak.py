@@ -368,6 +368,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # ``and`` -> ``^ ( aen d`` everywhere (the C source preserves
         # the AE+N+D phonemes but adds the SBOUND + PPSTART markers).
         "AND": (["^", "("], ["AE0", "N", "D"]),
+        # ``to`` -> ``^ ( t uh`` everywhere (SBOUND + PPSTART + T + UH
+        # unstressed -- the destressed-preposition reading C emits even
+        # at the very start of an utterance ("to bed" -> ``^ ( t uh
+        # b ' ehd``)).
+        "TO": (["^", "("], ["T", "UH0"]),
     }
 
     # ARPABET pronunciation of each English letter name (the same
