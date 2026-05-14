@@ -65,6 +65,10 @@ CORPUS: tuple[str, ...] = (
     "broken eaten",
     # -ING reduction (AH0/IH0 -> ix before NG).
     "morning evening running meeting",
+    # WH-question intonation: ``?`` -> ``.`` token when the sentence
+    # contains a wh- word; yes/no questions keep the ``?`` marker.
+    "how?",
+    "what time is it?",
 )
 
 

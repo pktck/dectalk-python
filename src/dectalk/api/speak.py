@@ -426,15 +426,35 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             return [*phones[:-1], "Z"]
         return phones
 
-    def _punct_marker(ch: str) -> str:
+    # DECtalk maps a trailing ``?`` to ``.`` when the sentence contains a
+    # ``wh-`` question word (information question, falling intonation);
+    # yes/no questions ("is it raining?") keep the ``?`` token (rising
+    # intonation). The set below covers the ``wh-`` family the C kernel
+    # treats specially.
+    wh_question_words: frozenset[str] = frozenset(
+        {
+            "HOW",
+            "WHAT",
+            "WHEN",
+            "WHERE",
+            "WHICH",
+            "WHO",
+            "WHOM",
+            "WHOSE",
+            "WHY",
+        }
+    )
+
+    def _punct_marker(ch: str, *, sentence_has_wh: bool) -> str:
         # Collapse rules observed in the C source's output:
         # - ``;`` and ``:`` -> ``,`` (RELSTART folds into COMMA emit)
-        # - ``?`` -> ``.`` (DECtalk emits the period token at the final
-        #   sentence boundary regardless of the original mark)
+        # - ``?`` -> ``.`` ONLY when the sentence has a ``wh-`` question
+        #   word; otherwise ``?`` passes through (DECtalk's rising-
+        #   intonation yes/no-question marker).
         # - ``!`` and ``.`` pass through unchanged
         if ch in (";", ":"):
             ch = ","
-        elif ch == "?":
+        elif ch == "?" and sentence_has_wh:
             ch = "."
         return f"{punct_prefix}{ch}"
 
@@ -562,6 +582,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             rewritten.append(tok)
             i_tok += 1
         tokens = rewritten
+        # Pre-scan for ``wh-`` question words so the ``?`` punct mapping
+        # knows which intonation contour the C kernel would pick.
+        sentence_has_wh = any(
+            t.kind is TokenKind.WORD and t.text in wh_question_words for t in tokens
+        )
         for tok_idx, token in enumerate(tokens):
             if token.kind is TokenKind.WORD:
                 # Only insert an inter-word break if there's no
@@ -619,7 +644,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 flat.extend(phones)
             elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
                 ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")
-                flat.append(_punct_marker(ch))
+                flat.append(_punct_marker(ch, sentence_has_wh=sentence_has_wh))
     return encode_to_dectalk(flat)
 
 
