@@ -203,7 +203,7 @@ _VOWEL_DECTALK_CODES: Final[frozenset[str]] = frozenset(
 )  # fmt: skip
 
 
-def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token formatting
+def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's per-token formatting
     phonemes: list[str], *, word_break: str = "  "
 ) -> bytes:
     """Encode an ARPABET phoneme list as DECtalk's ASCII phoneme format.
@@ -247,9 +247,14 @@ def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token
         if tok and tok[-1].isdigit():
             stress_digit = tok[-1]
             base = tok[:-1]
-        # AH0 (unstressed AH) is the schwa in DECtalk's alphabet --
-        # emit ``ax`` rather than ``ah``. The stressed AH1 stays ``ah``.
-        dt = "ax" if base == "AH" and stress_digit == "0" else ARPABET_TO_DECTALK.get(base)
+        # Unstressed reduction: DECtalk emits the centralised variants
+        # for unstressed vowels (``ax`` for AH0, ``ix`` for IH0).
+        if base == "AH" and stress_digit == "0":
+            dt = "ax"
+        elif base == "IH" and stress_digit == "0":
+            dt = "ix"
+        else:
+            dt = ARPABET_TO_DECTALK.get(base)
         if dt is None:
             # Unknown symbol: emit a question mark so callers can spot
             # the gap. The pure-Python pipeline shouldn't emit these
