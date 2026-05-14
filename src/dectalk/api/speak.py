@@ -246,7 +246,6 @@ def text_to_dectalk_phonemes(text: str, *, lang: str = "us", lts_fallback: bool 
             out.append(p)
         return out
 
-
     def _punct_marker(ch: str) -> str:
         # Collapse rules observed in the C source's output:
         # - ``;`` and ``:`` -> ``,`` (RELSTART folds into COMMA emit)
