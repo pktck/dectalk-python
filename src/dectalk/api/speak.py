@@ -210,7 +210,7 @@ def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) 
     return _tokens_to_phonemes(tokenize(text), lang=lang, lts_fallback=lts_fallback)
 
 
-def text_to_dectalk_phonemes(  # noqa: PLR0912 — many branches mirror C's per-token dispatch
+def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror C's per-token dispatch
     text: str, *, lang: str = "us", lts_fallback: bool = True
 ) -> bytes:
     """Convert text to DECtalk's native ASCII phoneme format (Phase-D oracle target).
@@ -284,6 +284,22 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912 — many branches mirror C's per-
             out.append(p)
         return out
 
+    # Word-final S after a voiced CONSONANT voices to Z (plural /
+    # 3rd-person -s rule). Vowel + S stays S (which is why "yes" /
+    # "kiss" / "this" don't apply).
+    voiced_cons_for_z: frozenset[str] = frozenset(
+        {"B", "D", "G", "JH", "L", "M", "N", "NG", "R", "V", "Z", "ZH", "DH"}
+    )
+
+    def _voice_final_s_after_consonant(phones: list[str]) -> list[str]:
+        """``...C S`` -> ``...C Z`` when C is a voiced consonant."""
+        if len(phones) < 2 or phones[-1] != "S":  # noqa: PLR2004 — len() < 2 means no preceding context
+            return phones
+        prev_base = phones[-2].rstrip("0123456789")
+        if prev_base in voiced_cons_for_z:
+            return [*phones[:-1], "Z"]
+        return phones
+
     def _punct_marker(ch: str) -> str:
         # Collapse rules observed in the C source's output:
         # - ``;`` and ``:`` -> ``,`` (RELSTART folds into COMMA emit)
@@ -339,6 +355,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912 — many branches mirror C's per-
                 # ``-NN`` clusters in spelling (e.g. "sells" -> S EH L
                 # L S), but DECtalk's phoneme stream collapses them.
                 phones = _dedupe_consecutive_phonemes(phones)
+                # Word-final ``-s`` after a voiced consonant voices to
+                # Z ("sells" / "dogs" / etc.).
+                phones = _voice_final_s_after_consonant(phones)
                 flat.extend(phones)
             elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
                 ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")
