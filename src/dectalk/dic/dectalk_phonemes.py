@@ -232,7 +232,11 @@ def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token
         Empty input yields ``b""``.
     """
     out_parts: list[str] = []
+    skip_next = False
     for i, tok in enumerate(phonemes):
+        if skip_next:
+            skip_next = False
+            continue
         if not tok or tok == "_":
             out_parts.append(word_break)
             continue
@@ -249,24 +253,38 @@ def encode_to_dectalk(  # noqa: PLR0912 — branches mirror C output's per-token
         if tok and tok[-1].isdigit():
             stress_digit = tok[-1]
             base = tok[:-1]
-        if stress_digit == "1":
-            out_parts.append(f"{DECTALK_PRIMARY_STRESS} ")
-        elif stress_digit in ("2", "3"):
-            out_parts.append(f"{DECTALK_SECONDARY_STRESS} ")
-        # Unstressed reduction: DECtalk emits ``ax`` (schwa) for AH0
-        # globally, and ``ix`` for IH0 in the ``-ing`` suffix context
-        # (IH0 immediately followed by NG). Standalone IH0 stays ``ih``.
+        # Look-ahead at the next ARPABET phoneme so we can collapse
+        # Y+UW into ``yu`` and apply context-sensitive vowel reductions.
         next_base: str | None = None
+        next_stress: str = ""
         if i + 1 < len(phonemes):
             nxt = phonemes[i + 1]
             if nxt and nxt != "_":
-                next_base = nxt.rstrip("0123456789")
-        if base == "AH" and stress_digit == "0":
-            dt = "ax"
-        elif base == "IH" and stress_digit == "0" and next_base == "NG":
-            dt = "ix"
+                if nxt[-1].isdigit():
+                    next_stress = nxt[-1]
+                    next_base = nxt[:-1]
+                else:
+                    next_base = nxt
+        # Y + UW collapses to the DECtalk diphthong ``yu`` (usa_arpa[16]).
+        # The stress on UW carries to the combined code; suppress the
+        # stress mark we'd have emitted from Y alone.
+        if base == "Y" and next_base == "UW":
+            stress_mark_source = next_stress
+            skip_next = True
+            dt = "yu"
         else:
-            dt = ARPABET_TO_DECTALK.get(base)
+            stress_mark_source = stress_digit
+            if base == "AH" and stress_digit == "0":
+                dt = "ax"
+            elif base == "IH" and stress_digit == "0" and next_base == "NG":
+                dt = "ix"
+            else:
+                dt = ARPABET_TO_DECTALK.get(base)
+        # Emit the stress marker (now that we've decided which source).
+        if stress_mark_source == "1":
+            out_parts.append(f"{DECTALK_PRIMARY_STRESS} ")
+        elif stress_mark_source in ("2", "3"):
+            out_parts.append(f"{DECTALK_SECONDARY_STRESS} ")
         if dt is None:
             # Unknown symbol: emit a question mark so callers can spot
             # the gap. The pure-Python pipeline shouldn't emit these
