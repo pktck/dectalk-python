@@ -163,6 +163,11 @@ ARPABET_TO_DECTALK: Final[dict[str, str]] = {
     "EN": "en",
     "EL": "el",
     "EM": "em",
+    # Light-L (US_LX) and r-tap (US_RX) allophones from the same
+    # eng_ph_table rows. Used in DECtalk's first-verbs table for
+    # ``will`` (W IH LX) and elsewhere.
+    "LX": "lx",
+    "RX": "rx",
     # ---- Vowels ----
     "IY": "iy",  # beet
     "IH": "ih",  # bit

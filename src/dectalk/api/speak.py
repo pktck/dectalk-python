@@ -354,6 +354,20 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         "__NUM_AND__": ["__PUNCT__)", "EH0", "N", "D"],
     }
 
+    # DECtalk's first-verbs hack (``ls_task.c`` verbs_table) overrides
+    # these six auxiliary / linking verbs with a fixed phoneme sequence
+    # carrying secondary stress (S2) -- but ONLY when the verb appears
+    # at the start of a sentence. Mid-sentence occurrences fall back to
+    # the lexicon's unstressed pronunciation.
+    first_verb_phones: dict[str, list[str]] = {
+        "ARE": ["AA2", "R"],
+        "HAD": ["HH", "EH2", "D"],
+        "IS": ["IH2", "Z"],
+        "WAS": ["W", "AX2", "Z"],
+        "WERE": ["W", "ER2"],
+        "WILL": ["W", "IH2", "LX"],
+    }
+
     # Function words DECtalk destresses in mid-utterance position.
     # When the word appears NOT at the start AND NOT at the end of
     # a sentence (i.e. another word follows), the C source emits
@@ -637,7 +651,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             group = [p[:-1] + "0" if p and p[-1].isdigit() else p for p in group]
                         flat.extend(group)
                     continue
-                if token.text in word_phoneme_overrides:
+                # First-verbs hack: at the start of a sentence/clause, six
+                # auxiliary verbs (are/had/is/was/were/will) get secondary
+                # stress applied through a fixed phoneme sequence.
+                is_sentence_initial = all(t.kind is not TokenKind.WORD for t in tokens[:tok_idx])
+                if is_sentence_initial and token.text in first_verb_phones:
+                    phones = list(first_verb_phones[token.text])
+                elif token.text in word_phoneme_overrides:
                     phones = list(word_phoneme_overrides[token.text])
                 else:
                     phones = lookup(token.text, lang=lang)

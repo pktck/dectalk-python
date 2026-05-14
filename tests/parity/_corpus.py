@@ -80,6 +80,11 @@ CORPUS: tuple[str, ...] = (
     "of course",
     "the horse",
     "cars and trucks",
+    # First-verb stress (``are``/``had``/``is``/``was``/``were``/``will``)
+    # at sentence start gets secondary stress; mid-sentence stays unstressed.
+    "is it raining",
+    "this is good",
+    "it was good",
 )
 
 
