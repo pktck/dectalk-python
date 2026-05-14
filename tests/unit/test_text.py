@@ -23,7 +23,7 @@ def test_sentence_punctuation_emits_long_pause() -> None:
     tokens = tokenize("hello. world")
     assert tokens == [
         Token(TokenKind.WORD, "HELLO"),
-        Token(TokenKind.PAUSE_LONG),
+        Token(TokenKind.PAUSE_LONG, "."),
         Token(TokenKind.WORD, "WORLD"),
     ]
 
@@ -32,7 +32,7 @@ def test_clause_punctuation_emits_short_pause() -> None:
     tokens = tokenize("hello, world")
     assert tokens == [
         Token(TokenKind.WORD, "HELLO"),
-        Token(TokenKind.PAUSE_SHORT),
+        Token(TokenKind.PAUSE_SHORT, ","),
         Token(TokenKind.WORD, "WORLD"),
     ]
 
@@ -41,9 +41,9 @@ def test_question_and_exclamation_are_long_pauses() -> None:
     tokens = tokenize("really? yes!")
     assert tokens == [
         Token(TokenKind.WORD, "REALLY"),
-        Token(TokenKind.PAUSE_LONG),
+        Token(TokenKind.PAUSE_LONG, "?"),
         Token(TokenKind.WORD, "YES"),
-        Token(TokenKind.PAUSE_LONG),
+        Token(TokenKind.PAUSE_LONG, "!"),
     ]
 
 
@@ -75,7 +75,7 @@ def test_pause_strength_dominated_by_strongest() -> None:
     # Trailing chars: "," then "." - sentence punct wins.
     assert tokens == [
         Token(TokenKind.WORD, "WAIT"),
-        Token(TokenKind.PAUSE_LONG),
+        Token(TokenKind.PAUSE_LONG, "."),
     ]
 
 
