@@ -184,8 +184,6 @@ _DEFERRED: dict[str, str] = {
     # Linux compilation is functionally a no-op. The Python port has no
     # shared-memory layer at all (it uses regular process memory through
     # ctypes), so no equivalent is needed.
-    "__init_shared_mem": "Linux build is an empty no-op stub; Python port uses no shared memory",
-    "__fini_shared_mem": "Linux build is an empty no-op stub; Python port uses no shared memory",
     # ----- ttsapi.c -- internal helpers. --------------------------------
     "GetBuffer": (
         "Pops a TTS_BUFFER_T off the free list; Python audio backend "
