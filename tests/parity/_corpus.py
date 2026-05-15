@@ -292,6 +292,9 @@ CORPUS: tuple[str, ...] = (
     "lighthouse",
     "old house",
     "happy birthday",
+    # More VPSTART verb prompts.
+    "i can hear you",
+    "we live here",
 )
 
 

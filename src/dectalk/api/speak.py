@@ -333,6 +333,16 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             "PUT",
             "PUTS",
             "PUTTING",
+            "HEAR",
+            "HEARS",
+            "HEARD",
+            "HEARING",
+            "USE",
+            "USES",
+            "USING",
+            "LIVE",
+            "LIVES",
+            "LIVED",
             # Dictionary-marked function words that also carry the
             # form-class flag in C's main dic (verified in isolation).
             "SO",
@@ -463,6 +473,15 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "billion" -- not in the bundled lexicon. C output is
         # ``b ' ihllyxaxn`` = B IH L Y AX N (with primary stress on IH).
         "BILLION": ["B", "IH1", "L", "Y", "AX", "N"],
+        # "live" has two C-dic pronunciations: verb (L IH1 V) and
+        # adjective (L AY1 V). The bundled lexicon only carries the
+        # adjective form; the verb form is selected by the form-class
+        # flag in the C main dic. Since the VPSTART verb list above
+        # already form-classes LIVE/LIVES as verbs, force the verb
+        # pronunciation here too. ``LIVED`` already has the right lex
+        # entry (L IH1 V D).
+        "LIVE": ["L", "IH1", "V"],
+        "LIVES": ["L", "IH1", "V", "Z"],
         # Words whose C dictionary entry carries the ``*`` MBOUND
         # prefix marker. These come from ``Dic_us_2002.txt`` and aren't
         # part of the bundled lexicon. A future dictionary port could
