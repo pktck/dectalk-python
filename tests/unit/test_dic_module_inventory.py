@@ -123,14 +123,6 @@ _DEFERRED: dict[str, str] = {
         "Build-time tool helper: reads one packed entry from the temp file "
         "into struct d_ent; runtime uses dectalk.dic to read .dic directly"
     ),
-    "print_fc": (
-        "Build-time diagnostic: prints form-class bits in symbolic form "
-        "for the human-readable dictionary listing; no runtime equivalent"
-    ),
-    "print_tf": (
-        "Build-time diagnostic: prints true/false flag bits in symbolic "
-        "form for the human-readable dictionary listing; no runtime equivalent"
-    ),
     # ---- dic_cnvt.c -- the Paradox-format dictionary converter (a
     # separate standalone tool that doesn't even appear in the Makefile;
     # never linked into anything Linux builds today).
