@@ -146,51 +146,32 @@ _DEFERRED: dict[str, str] = {
     # port reimplements this synchronously via dectalk.cmd.commands.parse
     # plus the per-command handlers; the raw loop bodies don't translate.
     # ------------------------------------------------------------------
-    "cm_pars_loop": "Inter-thread loop body; Python uses synchronous commands.parse",
-    "cm_pars_proc_char": "Per-character pipe-driven dispatcher; Python parser handles directly",
-    "cm_pars_getseq": "Reads ESC sequences from the CMD pipe; Python parser reads bytes directly",
-    "OutputCharacter": "Writes single byte to the per-handle log pipe; Python has no log pipe",
     # ------------------------------------------------------------------
     # Top-level CMD thread entry. On Linux this is
     # OP_THREAD_ROUTINE(cmd_main, ...) -- a pthread main. The Python
     # port runs synchronously, so there is no equivalent thread main.
     # ------------------------------------------------------------------
-    "cmd_main": "pthread main for the CMD task; Python port is single-threaded",
     # ------------------------------------------------------------------
     # cm_cmd.c command-table dispatch internals. The Python parser
     # dispatches on command names directly through commands.parse, so
     # the build_param / do_command / match_comm / error_comm helpers
     # aren't needed.
     # ------------------------------------------------------------------
-    "cm_cmd_build_param": "Builds C param array from the pipe; Python passes args via Segment",
-    "cm_cmd_do_command": "Dispatches via function-pointer table; Python uses direct calls",
-    "cm_cmd_match_comm": "Linear search through command_table; Python uses a dict keyed by name",
-    "cm_cmd_error_comm": "Handler when a command fails to parse; Python raises ValueError",
     # ------------------------------------------------------------------
     # cm_copt.c command handlers that have no Python port yet. Most of
     # these are stubs or no-ops in Python's synchronous text path; some
     # depend on inter-thread sync primitives we don't model.
     # ------------------------------------------------------------------
-    "cm_cmd_code_page": "Sets pKsd_t->code_page; Python uses Unicode, no code-page model",
-    "cm_cmd_samples_per_frame": "Sets VTM sample-per-frame divisor; Python uses fixed 11025 Hz",
-    "cm_cmd_version": "[:version] writes version string to the pipe; Python exposes __version__",
-    "cm_cmd_volume": "[:volume] routes through StereoVolumeControl; Python audio bypasses",
-    "cm_cmd_vs": "[:vs] reads compact voice descriptor; deferred along with cm_cmd_loadv",
     # ------------------------------------------------------------------
     # cm_copt.c support helpers (log file management). Static functions
     # whose only callers are [:log] / [:debug]; deferred along with them.
     # ------------------------------------------------------------------
-    "OpenLogFile": "Static helper opening pKsd_t->log; deferred along with cm_cmd_log",
-    "CloseLogFile": "Static helper closing pKsd_t->log; deferred along with cm_cmd_log",
-    "OpenDbgLogFile": "Static helper opening dbglog.txt; deferred along with cm_cmd_debug",
-    "CloseDbgLogFile": "Static helper closing dbglog.txt; deferred along with cm_cmd_debug",
     # ------------------------------------------------------------------
     # cm_phon.c uncertain-phoneme replay machinery. The Python phoneme
     # input path doesn't model the C source's hold buffer / replay
     # queue (which exists to retry IPA-style ARPA pairs after a
     # vowel-cluster ambiguity is resolved).
     # ------------------------------------------------------------------
-    "cm_phon_param_check": "Parses [:phoneme] params; Python handles via cm_cmd_phoneme directly",
     # ------------------------------------------------------------------
     # cm_text.c clause splitter and inline index helpers. The Python
     # port uses dectalk.parser.text_get_word for word extraction; the C
@@ -201,33 +182,22 @@ _DEFERRED: dict[str, str] = {
         "Per-character clause-boundary state machine over the CMD pipe; "
         "Python uses _capi for actual segmentation, the shim only captures the output shape"
     ),
-    "par_copy_index_cm_text": "Static inline duplicate of par_copy_index used inside cm_text only",
-    "par_copy_index_list_cm_text": "Static inline duplicate of par_copy_index_list used in cm_text",
-    "par_is_index_set_cm_text": "Static inline duplicate of par_is_index_set used in cm_text",
     # ------------------------------------------------------------------
     # cm_util.c pipe / typing helpers. These all write to the
     # inter-thread ph_pipe / lts_pipe / vtm_pipe -- Python is
     # synchronous so there is no equivalent.
     # ------------------------------------------------------------------
-    "cm_util_initialize": "Initialises pCmd_t->cm array; Python uses static module data",
-    "cm_util_flush_init": "Resets the pipe-flush state; Python has no flush state",
-    "cm_util_type_out": "Writes ASCII typing chars onto the PH pipe; Python typing path differs",
     # ------------------------------------------------------------------
     # cmd_wav.c WAV-output handler. The Python port's WAV output runs
     # via dectalk._capi.CAPI and bypasses the C-level [:wave] code,
     # which threads bytes through the kernel pipe and PH layer.
     # ------------------------------------------------------------------
-    "wave_file_open": "Static helper to cm_cmd_play; deferred along with it",
     # ------------------------------------------------------------------
     # par_dict.c dictionary lookup engine. The Python port uses the
     # parsed dtalk_us.dic binary directly (dectalk.dic.lookup); the
     # look / find_word / dlook / udlook functions exist mainly to glue
     # the parser's input window onto that dictionary -- not needed yet.
     # ------------------------------------------------------------------
-    "par_dict_lookup": "Top-level dict-lookup entry; Python uses dectalk.dic directly",
-    "par_dict_find_word": "Bisects against the system dictionary; Python uses dectalk.dic",
-    "par_dict_ufind_word": "Bisects against the user dictionary; Python user-dict differs",
-    "par_dict_dlook": "Looks up a single word against system dict; Python uses dectalk.dic",
     # ------------------------------------------------------------------
     # par_pars1.c (textually included into par_pars.c) -- the wide
     # rule-table parser machinery. The Python port plans to call into
