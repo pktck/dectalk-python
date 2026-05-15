@@ -265,19 +265,9 @@ _DEFERRED: dict[str, str] = {
         "Public entry; opens a WAV file for the engine to stream into. "
         "Python's ``to_wav`` writes the whole file atomically"
     ),
-    "TextToSpeechPause": (
-        "Public entry; pauses the worker thread. Python pipeline is synchronous -- nothing to pause"
-    ),
     "TextToSpeechReset": (
         "Public entry; flushes the worker queues. Python pipeline is "
         "synchronous so there's nothing to reset between calls"
-    ),
-    "TextToSpeechResume": (
-        "Public entry; resumes the paused worker. Python pipeline is "
-        "synchronous, no pause/resume state"
-    ),
-    "TextToSpeechReturnBuffer": (
-        "Public entry; recycles a host-supplied buffer. Python doesn't expose host-supplied buffers"
     ),
     "TextToSpeechSelectLang": (
         "Public entry; switches the active language for a handle. Python "
@@ -321,10 +311,6 @@ _DEFERRED: dict[str, str] = {
     "TextToSpeechStartupExFonix": (
         "Public entry; FONIX licensee ``StartupEx``. Python port "
         "relies on libtts_us.so's bundled license"
-    ),
-    "TextToSpeechSync": (
-        "Public entry; blocks until the worker drains. The synchronous "
-        "Python pipeline already returns only when fully drained"
     ),
     "TextToSpeechTuning": (
         "Public entry; enables / extracts VTM tuning data. Python "

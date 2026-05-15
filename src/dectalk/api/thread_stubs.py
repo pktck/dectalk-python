@@ -165,6 +165,30 @@ def TextToSpeechAddBuffer(*args: object, **kwargs: object) -> int:  # noqa: N802
     return _MMSYSERR_NOERROR
 
 
+def TextToSpeechPause(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; synchronous pipeline has nothing to pause."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechResume(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; nothing was paused to resume."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechReturnBuffer(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; no host-supplied buffer surface to recycle."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechSync(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; speak / to_wav return only when fully drained."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
 __all__ = [
     "DeleteTextToSpeechObjects",
     "DrainPipes",
@@ -186,6 +210,10 @@ __all__ = [
     "TextToSpeechCloseSapi5Output",
     "TextToSpeechCloseWaveOutFile",
     "TextToSpeechErrorHandler",
+    "TextToSpeechPause",
+    "TextToSpeechResume",
+    "TextToSpeechReturnBuffer",
+    "TextToSpeechSync",
     "TextToSpeechThreadMain",
     "WaitForEmptyPipes",
     "WaitForLtsFlush",
