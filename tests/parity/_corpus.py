@@ -223,6 +223,10 @@ CORPUS: tuple[str, ...] = (
     "two cats and three dogs",
     # Multi-syllabic AH0+Z (always) -> IX; monosyllabic (was) -> AX.
     "always",
+    # Multi-syllabic AH0+K / IH0+K word-final -> IX (the -IC suffix).
+    "music",
+    "classic",
+    "panic",
 )
 
 

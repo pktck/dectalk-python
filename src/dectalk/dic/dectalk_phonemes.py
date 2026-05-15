@@ -445,6 +445,17 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 and _word_break_at(i + 3)
             )
 
+            # Multi-syllabic AH0 + word-final K reads as IX (the
+            # standard ``-ic`` suffix: ``music`` -> ``m ' yuz ixk``,
+            # ``classic`` -> ``k ll' aes ixk``).
+            ah_before_final_k = (
+                base == "AH"
+                and stress_digit == "0"
+                and next_base == "K"
+                and _word_break_at(i + 2)
+                and _word_is_multi_syllabic(i)
+            )
+
             # ``-it`` morphological pattern (``visit``, ``limit``, ``edit``):
             # multi-syllabic AH0 + word-final T -> IX + T. Only fires when
             # the stressed vowel in the same word is a short monophthong
@@ -613,13 +624,20 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or ah_before_ful
                     or ah_before_final_t
                     or ah_before_final_z
+                    or ah_before_final_k
                 ):
                     dt = "ix"
                 elif _word_is_multi_syllabic(i) or next_is_fricative or next_is_word_end:
                     dt = "ax"
                 else:
                     dt = "ah"
-            elif base == "IH" and stress_digit == "0" and next_base == "NG":
+            elif (base == "IH" and stress_digit == "0" and next_base == "NG") or (
+                base == "IH"
+                and stress_digit == "0"
+                and next_base == "K"
+                and _word_break_at(i + 2)
+                and _word_is_multi_syllabic(i)
+            ):
                 dt = "ix"
             elif syllabic_after_consonant_word_final and base == "L":
                 dt = "el"
