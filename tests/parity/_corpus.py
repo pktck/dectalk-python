@@ -125384,6 +125384,22 @@ CORPUS: tuple[str, ...] = (
     "if you go they leave",
     "if you go we wait",
     "if you go we will see",
+    # Broad-net batch 73: ``X is the N`` (truth/way/etc.), ``come back X``, ``X had a N``.
+    "call me back later",
+    "come back later",
+    "come back soon",
+    "come back tomorrow",
+    "now is the time",
+    "that is the point",
+    "that is the truth",
+    "this is the answer",
+    "this is the place",
+    "this is the time",
+    "this is the way",
+    "wait for me here",
+    "wait for me later",
+    "wait for me there",
+    "we had a meeting",
 )
 
 
