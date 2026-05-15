@@ -781,6 +781,17 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         stem_phones = lookup(stem + "E", lang=lang) or lookup(stem, lang=lang)
                         if stem_phones is not None:
                             phones = [*stem_phones, "ER0"]
+                    # ``-ing`` gerund / present-participle suffix: strip
+                    # and append ``IX + NG`` (the standard ``-ing`` form).
+                    if (
+                        phones is None and token.text.endswith("ING") and len(token.text) > 4  # noqa: PLR2004
+                    ):
+                        ing_stem = token.text[:-3]
+                        stem_phones = lookup(ing_stem + "E", lang=lang) or lookup(
+                            ing_stem, lang=lang
+                        )
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "IX", "NG"]
                     # ``-ed`` past-tense suffix: strip and apply the
                     # voicing+epenthesis rule:
                     #   stem ends in T / D   -> append IX + D

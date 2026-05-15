@@ -101,6 +101,11 @@ CORPUS: tuple[str, ...] = (
     "needed",
     "loved",
     "liked",
+    # ``-ing`` gerund / present-participle suffix: stem stripping + IX NG.
+    "walking",
+    "talking",
+    "jumping",
+    "running",
 )
 
 
