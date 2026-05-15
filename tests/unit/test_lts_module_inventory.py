@@ -38,7 +38,12 @@ _C_DIR = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src
 _PY_DIR = Path(__file__).resolve().parents[2] / "src" / "dectalk" / "lts"
 
 _C_FILES: list[Path] = [
-    _C_DIR / "allorules.c",
+    # ``allorules.c`` is intentionally absent: the file is not in
+    # ``LTS_SRC`` in ``src/dapi/src/lts/Makefile`` and is also not
+    # included by any compiled translation unit, so its German-only
+    # BACHUS helpers don't ship in libtts_us.so on Linux. Including
+    # it here would force 23 entries onto the _DEFERRED allow-list
+    # for code that isn't actually built.
     _C_DIR / "l_us_ad1.c",
     _C_DIR / "l_us_pr1.c",
     _C_DIR / "l_us_ru1.c",
@@ -93,21 +98,6 @@ _DEFERRED: dict[str, str] = {
     # transitively included by any compiled file. The whole file is
     # Linux-inactive for libtts_us.so. Each function is deferred with the
     # same root cause -- a future German port can land them one by one.
-    "is_bachus_phoneme": "allorules.c not compiled on Linux (German-only BACHUS allphonic rules)",
-    "bachus_phoneme_features": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "has_the_feature": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "does_not_have_the_feature": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "is_a_vowel": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "is_morpheme_boundary": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "is_stress_marker": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "correct_unstressed_longvowels": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "find_prev_phoneme": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "find_next_phonemes": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "left_number_of_Cs": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "is_double_consonant": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "right_number_of_Cs": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "vowel_duration_stupid": "allorules.c not compiled on Linux (German-only BACHUS)",
-    "process_rule": "allorules.c not compiled on Linux (German-only BACHUS)",
     # l_us_ad1.c -- adjustment pass. ls_adju_cluster has a Python port;
     # ls_adju_allo2 is the big sweep that calls the (ported) helpers
     # ls_adju_del_phone / ls_adju_ins_phone but isn't itself a function
