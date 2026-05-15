@@ -133674,6 +133674,26 @@ CORPUS: tuple[str, ...] = (
     "we went to the church",
     "we went to the library",
     "we went to the school",
+    # Broad-net batch 110: ``the kids/people are V-ing``, ``why are X here``.
+    "he went home with his friends",
+    "i went home with my friends",
+    "she went home with her friends",
+    "the boys are running",
+    "the cats are sleeping",
+    "the dogs are running",
+    "the kids are eating",
+    "the kids are playing",
+    "the kids are running",
+    "the kids are sleeping",
+    "the kids are waiting",
+    "the people are leaving",
+    "the people are talking",
+    "the people are waiting",
+    "the people are watching",
+    "they went home with their friends",
+    "we went home with our friends",
+    "why are we here",
+    "why is it here",
 )
 
 
