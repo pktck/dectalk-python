@@ -399,6 +399,20 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             "TRANSLATE",
             "UNDERSTAND",
             "WEAR",
+            # ``-IFY`` verbs (notify / satisfy / justify -- form-classed
+            # as verbs in the C main dic).
+            "NOTIFY",
+            "NOTIFIED",
+            "NOTIFIES",
+            "NOTIFYING",
+            "SATISFY",
+            "SATISFIED",
+            "SATISFIES",
+            "SATISFYING",
+            "JUSTIFY",
+            "JUSTIFIED",
+            "JUSTIFIES",
+            "JUSTIFYING",
             # Dictionary-marked function words that also carry the
             # form-class flag in C's main dic (verified in isolation).
             "SO",
@@ -1205,6 +1219,22 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         stem_phones = lookup(less_stem, lang=lang)
                         if stem_phones is not None:
                             phones = [*stem_phones, "L", "IX", "S"]
+                    # ``-ify`` verb-forming suffix: strip and append
+                    # ``IX + F + AY`` (``modify`` -> ``m ' aad ixf ay``).
+                    # Most common -ify verbs aren't in the bundled lex;
+                    # the LTS would mis-render the suffix as ``IH0 F
+                    # IY0`` (wrong final vowel). The stem-strip path
+                    # forces the C-faithful suffix and uses LTS for
+                    # the stem.
+                    if (
+                        phones is None and token.text.endswith("IFY") and len(token.text) > 3  # noqa: PLR2004
+                    ):
+                        ify_stem = token.text[:-3]
+                        stem_phones = lookup(ify_stem, lang=lang)
+                        if stem_phones is None and lts_fallback:
+                            stem_phones = _dedupe_consecutive_phonemes(lts(ify_stem))
+                        if stem_phones:
+                            phones = [*stem_phones, "IX", "F", "AY"]
                     # ``-ment`` noun-forming suffix: strip and append
                     # ``M + AX + N + T`` (``payment`` -> ``p ' eym axn t``).
                     # When the stem isn't in the lexicon, run the LTS
