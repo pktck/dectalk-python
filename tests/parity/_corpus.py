@@ -125742,6 +125742,23 @@ CORPUS: tuple[str, ...] = (
     "the sheep sleep",
     "the sheep walk",
     "the snake sings",
+    # Broad-net batch 81: ``i can't believe X``, ``i'm not sure X``.
+    "i am not sure how to do it",
+    "i am not sure if it works",
+    "i am not sure if we can",
+    "i am not sure what to say",
+    "i am not sure where he is",
+    "i am not sure where it is",
+    "i am not sure why he came",
+    "i am not sure why she left",
+    "i'm not sure how to do it",
+    "i'm not sure if it works",
+    "i'm not sure if we can",
+    "i'm not sure what to say",
+    "i'm not sure where he is",
+    "i'm not sure where it is",
+    "i'm not sure why he came",
+    "i'm not sure why she left",
 )
 
 
