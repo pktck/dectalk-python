@@ -113,64 +113,11 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 _DEFERRED: dict[str, str] = {
     # ---- acxf1c.c -- tongue-body acoustic / Helmholtz frequencies. ----
     # ---- hlframe.c -- top-level HL->LL frame mapping. ------------------
-    "HLSynthesizeLLFrame": (
-        "Top-level HL->LL frame mapping; the C oracle dispatches through "
-        "libtts_us.so so the Python pipeline never calls this"
-    ),
-    "FricativeFilters": (
-        "Sets the parallel fricative-branch resonators (F2P..F6P, AB); "
-        "private to hlframe.c, deferred along with HLSynthesizeLLFrame"
-    ),
-    "SourceAmplitudes": (
-        "Maps ag/agf/agm/agx and ps to AV / AF / AH source amplitudes; "
-        "private to hlframe.c, deferred along with HLSynthesizeLLFrame"
-    ),
-    "InterpolateAF": (
-        "Smooths AF across frames during the AC/DC transition; private "
-        "to hlframe.c, deferred along with HLSynthesizeLLFrame"
-    ),
-    "GlottalInteraction": (
-        "Computes B1, B2 (and F0 jitter) from agf and ps for glottal "
-        "coupling; private to hlframe.c, deferred along with HLSynthesizeLLFrame"
-    ),
-    "SourceSpecifics": (
-        "Sets OQ / TL / FL spectral-shape parameters from ag, ap, ps; "
-        "private to hlframe.c, deferred along with HLSynthesizeLLFrame"
-    ),
     # ---- log10table.c / sqrttable.c -- tiny math wrappers. -------------
     # ---- brent.c -- Brent's-method root finder. ------------------------
     # ---- inithl.c -- HL synthesiser initialisation. --------------------
-    "InitializeHLSynthesizer": (
-        "Initialises HLSpeaker constants (alveolar table, anfnTable, "
-        "f1LOverATable, ...) for a male/female voice; deferred with the "
-        "rest of the HL layer"
-    ),
     # ---- nasalf1x.c -- nasal pole/zero placement. ----------------------
-    "SetNasals_f1x": (
-        "Top-level nasal pole/zero setter called from HLSynthesizeLLFrame; "
-        "deferred with the rest of the HL layer"
-    ),
-    "NasalFirstFormant": (
-        "Places the nasal first formant F1 from f1c, an, ap; private to "
-        "nasalf1x.c, deferred along with SetNasals_f1x"
-    ),
-    "NasalPole": (
-        "Places the nasal pole FNP via Brent root-finding on the "
-        "susceptance sum; private to nasalf1x.c, deferred along with SetNasals_f1x"
-    ),
-    "SusceptanceSum": (
-        "Brent target function: sum of nasal-branch susceptances at a "
-        "trial FNP; private to nasalf1x.c, deferred along with NasalPole"
-    ),
-    "FiniteBracketFNP": (
-        "Walks outward from a singularity to find a finite bracket for "
-        "Brent; private to nasalf1x.c, deferred along with NasalPole"
-    ),
     # ---- circuit.c -- glottal/vocal-tract aerodynamic circuit. ---------
-    "SpeechCircuit": (
-        "Newton-style aerodynamic circuit solver for Pm/Pcw/Uw/agx/Ug/"
-        "Uacx/Un/Uw across one frame; deferred with the rest of the HL layer"
-    ),
 }
 
 
