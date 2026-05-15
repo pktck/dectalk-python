@@ -162,6 +162,9 @@ CORPUS: tuple[str, ...] = (
     # N -> NG velar assimilation before K / G (``pink`` -> ``p ' ihnxk``).
     "pink",
     "tank",
+    # -ness with LTS-fallback stem (firm / odd not in lexicon).
+    "firmness",
+    "oddness",
 )
 
 

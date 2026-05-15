@@ -810,8 +810,19 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         stem_phones = lookup(ness_stem, lang=lang)
                         if stem_phones is None and ness_stem.endswith("I"):
                             stem_phones = lookup(ness_stem[:-1] + "Y", lang=lang)
+                        # If the stem isn't in the lexicon, fall back to
+                        # LTS for the stem so words like ``firmness`` /
+                        # ``oddness`` still get the IX-bearing suffix
+                        # rather than the LTS engine's ``ehs`` default.
+                        if stem_phones is None and lts_fallback:
+                            stem_phones = lts(ness_stem)
                         if stem_phones is not None:
-                            phones = [*stem_phones, "N", "IX", "S"]
+                            phones = [
+                                *_dedupe_consecutive_phonemes(stem_phones),
+                                "N",
+                                "IX",
+                                "S",
+                            ]
                     # ``-ful`` adjective suffix: strip and append F + L
                     # (``helpful`` -> ``hx' ehllp f el``). Encoder's
                     # word-final syllabic-L rule handles the EL.
