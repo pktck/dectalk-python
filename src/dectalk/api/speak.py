@@ -1153,6 +1153,12 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             phones = [*stem_phones, "L", "IX", "S"]
                     # ``-ment`` noun-forming suffix: strip and append
                     # ``M + AX + N + T`` (``payment`` -> ``p ' eym axn t``).
+                    # When the stem isn't in the lexicon, run the LTS
+                    # over it so we still pick up the C-faithful AX+N+T
+                    # tail for ``fragment`` / ``garment`` / ``ornament``
+                    # rather than falling through to LTS for the whole
+                    # word (which mis-renders the ``-ment`` suffix as
+                    # ``M EH0 N T``).
                     if (
                         phones is None and token.text.endswith("MENT") and len(token.text) > 4  # noqa: PLR2004
                     ):
@@ -1162,6 +1168,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         )
                         if stem_phones is not None:
                             phones = [*stem_phones, "M", "AX", "N", "T"]
+                        elif lts_fallback:
+                            stem_lts = _dedupe_consecutive_phonemes(lts(ment_stem))
+                            if stem_lts:
+                                phones = [*stem_lts, "M", "AX", "N", "T"]
                     # ``-est`` superlative suffix: strip and append
                     # ``IX + S + T`` (``oldest`` -> ``' owlld ixs t``).
                     # Try plain stem, silent-e stem, and (for words
