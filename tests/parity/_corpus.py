@@ -2883,6 +2883,108 @@ CORPUS: tuple[str, ...] = (
     "i will leave",
     # Longer sentence.
     "love is in the air",
+    # Imperative + object pronoun phrases.
+    "open it",
+    "write it",
+    "say it",
+    "show it",
+    "throw it",
+    "catch it",
+    "hit it",
+    # ``i feel + adjective`` mood phrases.
+    "i feel cold",
+    "i feel hot",
+    "i feel sick",
+    # More single-word adjectives / nouns.
+    "kind",
+    "wise",
+    "stupid",
+    "lazy",
+    "loud",
+    "office",
+    "kitchen",
+    "bathroom",
+    # ``more / less than`` comparisons.
+    "more than that",
+    "less than this",
+    # ``i am X that`` complement clauses.
+    "i am happy that",
+    "we are sad that",
+    # Possessive (apostrophe-less) noun phrases.
+    "the boys book",
+    "the girls bag",
+    # Reflexive ``by myself`` family.
+    "by myself",
+    "by yourself",
+    "by himself",
+    "by herself",
+    # Auxiliary chain ``have/had been``.
+    "have been here",
+    "had been there",
+    # Misc WH-phrases.
+    "how come",
+    "what for",
+    # ``the day/air is X`` weather.
+    "the day is sunny",
+    "the day is cloudy",
+    "the air is cold",
+    # Tech / object noun-pairs.
+    "computer mouse",
+    "computer screen",
+    "computer keyboard",
+    "board game",
+    "card game",
+    # ``X by X`` idiomatic.
+    "step by step",
+    "day by day",
+    "year after year",
+    # ``this/that is the X`` superlatives.
+    "this is the best",
+    "that is the worst",
+    "this is the same",
+    "that is different",
+    # ``in spite of`` etc.
+    "in spite of",
+    # Verb + at/for + pronoun.
+    "smile at me",
+    "smile for me",
+    "wave at me",
+    # Polite request phrases.
+    "may i please",
+    "could i please",
+    "would you mind if",
+    # ``-ing + a + noun`` phrases.
+    "watching a movie",
+    "reading a book",
+    # ``what is X`` queries.
+    "what is left",
+    "what is next",
+    "where to end",
+    # Possessive predicate ``this is mine``.
+    "this is mine",
+    "this is yours",
+    "this is ours",
+    # Comparison ``the same as``.
+    "the same as",
+    # ``by myself i X``.
+    "by myself i can",
+    "by myself i will",
+    # ``tea time`` / ``coffee break``.
+    "tea time",
+    "coffee break",
+    # Multi-room phrases.
+    "dining room",
+    "living room",
+    "guest room",
+    # Proper-name + ``and`` pairs.
+    "bob and mary",
+    "mary and bob",
+    # Time-of-day phrases.
+    "early in the morning",
+    "late at night",
+    # Storyteller openings.
+    "long long ago",
+    "once upon a time",
     # Round 11 corpus expansion: SVO sentences, math facts, travel,
     # cooking, weather, sports, family relations, multi-word
     # noun/adjective phrases, partitive ``of`` phrases,
