@@ -3,6 +3,12 @@ name: CI
 on:
   push:
     branches: [main, dev, "claude/**"]
+    # Skip CI on corpus-only / STATUS-only churn — these don't change any
+    # runtime code, so the matrix is wasted effort. PRs and meaningful
+    # commits (touching anything else) still trigger the full pipeline.
+    paths-ignore:
+      - "tests/parity/_corpus.py"
+      - "docs/STATUS.md"
   pull_request:
     branches: [main, dev]
 
