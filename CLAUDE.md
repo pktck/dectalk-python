@@ -3,6 +3,13 @@
 Project-specific operating instructions for Claude Code sessions on this
 repository. Read this at the start of every session.
 
+**See also**:
+- `docs/PLAN.md` — strategic plan for the C→Python port (phases 0-6).
+- `docs/PLAN-CI-STRATEGY.md` — workflow infrastructure rationale.
+- `docs/PORTING.md` — per-task playbook for translator agents.
+- `docs/TASKS.md` — current open port targets (auto-generated from
+  `NotImplementedError` shims).
+
 ## CI watch (mandatory after every push)
 
 **After every `git push`, subscribe to the branch's PR via
@@ -36,18 +43,29 @@ the run's commit SHA, not by acting on the webhook.
 
 ## CI throttling — do not saturate Actions
 
-The matrix is 10 jobs per push (lint × 3 OSes × 3 Pythons + shellcheck +
-c-oracle + report). Pushing dozens of commits in succession queues
-hundreds of jobs and overwhelms GitHub Actions.
+CI is two-tier (see `docs/PLAN-CI-STRATEGY.md` §1):
 
-- `tests/parity/_corpus.py` and `docs/STATUS.md` are in
-  `.github/workflows/ci.yml` `paths-ignore` — corpus-only and
-  STATUS-only commits do **not** trigger CI. **Keep them there.**
-- The workflow has `concurrency: cancel-in-progress: true`, so any new
-  push to the same branch cancels still-queued runs on the prior commit
-  — but only for runs that already had the concurrency rule applied.
-- Even with both gates, do not push 50+ commits in a turn. Batch corpus
-  growth into one commit per turn, not one per category.
+- **Pushes to `claude/**` branches** trigger `ci-fast.yml` only — one
+  ubuntu+Py3.11 job running ruff + ruff-format + pyright + pytest
+  (excluding `c_oracle`/`slow`) + shellcheck. ~2-3 min total.
+- **Pushes to `main`/`dev` and pull requests** trigger `ci.yml`: split
+  into `lint`, 9-way `test-matrix` (3 OSes × 3 Py), `shellcheck`,
+  `c-oracle-tests` (with prebuilt-tarball fetch), and
+  `report-ci-status` (PR-only sticky comment).
+- **`build-c-oracle.yml`** runs only when
+  `scripts/setup_c_oracle.sh`, `scripts/apply_c_patches.py`, or
+  `tests/parity/c_patches/**` change. It publishes a prebuilt oracle
+  tarball as a GitHub Release so subsequent CI runs (and local agents)
+  download instead of rebuilding.
+
+Path-ignore lists in both workflows already cover doc-only changes
+(`docs/PLAN.md`, `docs/STATUS.md`, `docs/PLAN-CI-STRATEGY.md`,
+`docs/PORTING.md`, `docs/TASKS.md`, `README.md`,
+`tests/parity/_corpus.py`). **Keep them there.**
+
+Both workflows have `concurrency: cancel-in-progress: true`. Even with
+that, don't push 50+ commits in a turn — batch related changes into
+one commit per push.
 
 If the queue still ends up flooded (e.g. a logic bug triggered the full
 matrix per push), cancel via the REST API — `GH_TOKEN` is set in the
@@ -69,37 +87,68 @@ done
 
 ## Parallelization
 
-Three lanes are useful:
+Fan out **as wide as is practical**. The bottlenecks are orchestrator
+review bandwidth and Claude API quota — not shared filesystem state.
+The infrastructure that makes this safe:
 
-1. **Background `Agent` subagents** for self-contained, long-running
-   tasks (corpus generation rounds, multi-file inventory passes).
-   Launch with `run_in_background: true`. Each agent has its own
-   context, so isolate them by giving precise file paths and the
-   exact append/commit code in the prompt — never just "expand the
-   corpus". Cap concurrency at ~2 to avoid resource thrash on the
-   single C oracle.
-2. **Inline `Bash` batches** in the main thread for short
-   (~30 s) generators run between agent launches. The main thread's
-   context is the only place that sees latest disk state, so do all
-   file edits, commits, and pushes here — not inside agents.
+- **Per-agent C-oracle isolation.** Each agent should `eval
+  "$(scripts/agent_oracle_env.sh)"` before invoking
+  `scripts/setup_c_oracle.sh`. This emits unique
+  `DECTALK_SRC=/tmp/dectalk-src-<slug>` and
+  `DECTALK_BIN=/tmp/dectalk-binary-stable-<slug>` paths so concurrent
+  agents don't trample each other's source tree or build artefacts.
+  With the prebuilt-tarball fast path, per-agent setup is ~5 s.
+- **Worktree isolation for write paths.** Spawn translator agents
+  with `Agent(..., isolation: "worktree")` so each gets an isolated
+  checkout. The orchestrator merges completed worktrees serially.
+- **Task queue.** `docs/TASKS.md` lists every Python module that
+  still raises `NotImplementedError`. Agents claim a row by setting
+  the `Owner` column; orchestrator never double-dispatches.
+  Regenerate with `uv run python scripts/refresh_tasks.py`.
+- **Porting playbook.** `docs/PORTING.md` is the self-contained
+  per-task brief. Translator agent prompts cite it instead of
+  redescribing the recipe inline.
+- **Parity-test scaffolder.** `scripts/scaffold_parity_test.py`
+  generates the C-source re-parsing boilerplate so agents focus on
+  body assertions rather than extractor plumbing.
+
+The three execution lanes inside the orchestrator session are
+unchanged:
+
+1. **Background `Agent` subagents** (`run_in_background: true`) for
+   self-contained translation tasks. Give precise file paths and the
+   exact acceptance criteria from `docs/PORTING.md`.
+2. **Inline `Bash` batches** in the main thread for short generators
+   between agent launches. The main thread sees latest disk state, so
+   do all file edits, commits, and pushes here — not inside agents.
 3. **Read/Grep/Edit operations** in parallel within a single tool-use
    block when independent. Sequencing them wastes round-trips.
 
 Anti-pattern: pushing a commit per inline batch. Accumulate several
-batches' worth of corpus into one commit and push once per turn.
+batches' worth of changes into one commit and push once per turn.
 
 ## Build and test gates
 
-Always run `scripts/dev_check.sh` (ruff + pyright + pytest + shellcheck)
-before pushing. CI re-runs the same checks plus the C-oracle build
-(`scripts/setup_c_oracle.sh`) which clones dectalk source, applies our
-patches, builds `libtts_us.so`, and runs the full test suite with
-`DECTALK_SRC` / `DECTALK_BIN` set.
+`scripts/dev_check.sh` has three modes:
+
+- **No args** — full local quality gate: `ruff check`, `ruff format`,
+  `pyright`, `pytest -n auto`, `shellcheck`. Pre-push verification.
+- **`--changed`** — fast pre-push: `ruff` + `pyright` on `.py` files
+  changed vs `origin/dev`, plus `pytest -n auto -m "not c_oracle and
+  not slow"`. Runs in <10 s for small diffs.
+- **`--smoke`** — tight inner loop: `ruff` + `pytest --lf` (last
+  failed only). <5 s when green.
+
+CI runs the same checks plus `c-oracle-tests`. The C-oracle build
+fetches a prebuilt tarball from GitHub Releases (built by
+`build-c-oracle.yml`) and only re-builds from source when the
+patches/script change. `setup_c_oracle.sh` does the fetch
+automatically, so local runs and CI use the same fast path.
 
 ## C-to-Python port context
 
-See `/root/.claude/plans/create-a-python-port-smooth-hoare.md` for the
-authoritative plan. Key invariants:
+See `docs/PLAN.md` for the authoritative strategic plan and
+`docs/PORTING.md` for the per-task recipe. Key invariants:
 
 - The synthesizer back-end (`src/dectalk/hlsyn/`) is bit-accurate already.
 - `dectalk.speak()` and `dectalk.to_wav()` route through

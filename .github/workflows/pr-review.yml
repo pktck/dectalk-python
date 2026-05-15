@@ -1,0 +1,129 @@
+name: PR auto-review
+
+# Posts a sticky review comment on every PR with grep-level diagnostics:
+# new TODO/FIXME, new `# type: ignore`, _DEFERRED allow-list changes,
+# and a quick check that any new src/dectalk/<x>.py has a sibling parity
+# test. Not a substitute for human review — narrows what reviewers (or
+# /review skill invocations) have to inspect by hand.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main, dev]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Grep-level review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect diff facts
+        id: facts
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/pr-review
+          # Files changed.
+          git diff --name-only --diff-filter=ACM "${BASE_SHA}" "${HEAD_SHA}" \
+            > /tmp/pr-review/files.txt
+          # Added lines only (strip leading + and the diff header).
+          git diff "${BASE_SHA}" "${HEAD_SHA}" -- '*.py' '*.sh' '*.toml' '*.yml' '*.yaml' \
+            | awk '/^\+\+\+/ {next} /^\+/ {print substr($0, 2)}' \
+            > /tmp/pr-review/added.txt
+          # Counts of newly added concerns.
+          todo_count=$(grep -cE '\b(TODO|FIXME|XXX|HACK)\b' /tmp/pr-review/added.txt || true)
+          ignore_count=$(grep -cE '# (type|pyright): ignore' /tmp/pr-review/added.txt || true)
+          deferred_changed=$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" \
+                            -- 'tests/unit/test_*_module_inventory.py' | wc -l)
+          # New src/dectalk modules missing parity sibling.
+          missing_parity=""
+          while IFS= read -r f; do
+            case "$f" in
+              src/dectalk/*.py)
+                stem=$(basename "$f" .py)
+                if ! grep -q "${stem}" /tmp/pr-review/files.txt | grep -q "tests/"; then
+                  expected="tests/unit/test_${stem}_*.py"
+                  # Search the repo for any matching test file.
+                  if ! compgen -G "${expected}" >/dev/null 2>&1; then
+                    missing_parity="${missing_parity}- \`$f\`"$'\n'
+                  fi
+                fi
+                ;;
+            esac
+          done < /tmp/pr-review/files.txt
+          {
+            echo "todo_count=${todo_count}"
+            echo "ignore_count=${ignore_count}"
+            echo "deferred_changed=${deferred_changed}"
+            echo "missing_parity<<MISSING_EOF"
+            printf '%s' "${missing_parity}"
+            echo
+            echo "MISSING_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post review comment
+        uses: actions/github-script@v7
+        env:
+          TODO_COUNT: ${{ steps.facts.outputs.todo_count }}
+          IGNORE_COUNT: ${{ steps.facts.outputs.ignore_count }}
+          DEFERRED_CHANGED: ${{ steps.facts.outputs.deferred_changed }}
+          MISSING_PARITY: ${{ steps.facts.outputs.missing_parity }}
+        with:
+          script: |
+            const env = process.env;
+            const marker = '<!-- pr-auto-review -->';
+            const todoCount = parseInt(env.TODO_COUNT || '0', 10);
+            const ignoreCount = parseInt(env.IGNORE_COUNT || '0', 10);
+            const deferredChanged = parseInt(env.DEFERRED_CHANGED || '0', 10);
+            const missing = (env.MISSING_PARITY || '').trim();
+
+            const flags = [];
+            if (todoCount > 0) flags.push(`- ${todoCount} new TODO/FIXME/XXX/HACK comment(s) added`);
+            if (ignoreCount > 0) flags.push(`- ${ignoreCount} new \`# type: ignore\` / \`# pyright: ignore\` directive(s)`);
+            if (deferredChanged > 0) flags.push(`- \`_DEFERRED\` allow-list file(s) modified — verify Python symbol now exists`);
+            if (missing) flags.push(`- New \`src/dectalk\` module(s) without a sibling parity test:\n${missing}`);
+
+            const sections = [marker, '## Auto-review summary'];
+            if (flags.length === 0) {
+              sections.push('', ':white_check_mark: No grep-level concerns. Run `/review` if you want a deeper read.');
+            } else {
+              sections.push('', 'Heads-up for human/orchestrator review:', '', ...flags);
+              sections.push('', '_This is grep-level only. Run `/review` for a substantive read._');
+            }
+            const body = sections.join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
