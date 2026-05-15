@@ -3153,6 +3153,77 @@ CORPUS: tuple[str, ...] = (
     # ``tell me about`` / ``teach me how``.
     "tell me about",
     "teach me how",
+    # 3rd-person singular present (-s suffix).
+    "she sings",
+    "he sings",
+    "she dances",
+    "he dances",
+    "she plays",
+    "he plays",
+    "she works",
+    "he works",
+    "she runs",
+    "he runs",
+    "she walks",
+    "he walks",
+    # Negative quantifier + noun.
+    "no rain",
+    "no snow",
+    "no sun",
+    "no food",
+    "no water",
+    "no money",
+    # Number + noun (more).
+    "five eggs",
+    "six eggs",
+    "ten eggs",
+    "ten cats",
+    # ``we can X`` modal phrases.
+    "we can run",
+    "we can jump",
+    # Progressive aspect.
+    "she is dancing",
+    "he is singing",
+    "they are running",
+    "we are reading",
+    "i am studying",
+    # Imperative + ``me``.
+    "watch me",
+    "help me",
+    "tell me",
+    "show me",
+    "follow me",
+    # ``we/they are here / were there``.
+    "we are here",
+    "they are here",
+    "i was there",
+    "we were there",
+    "they were there",
+    # ``i/we made X``.
+    "i made coffee",
+    "i made dinner",
+    "i made lunch",
+    "we made plans",
+    "we made friends",
+    # Idiomatic ``X or Y``.
+    "thick or thin",
+    "do or die",
+    # ``the X`` (positional).
+    "the end",
+    "the middle",
+    # ``X it again``.
+    "say it again",
+    "do it again",
+    "try it again",
+    # Reflexive ``i V myself``.
+    "i washed myself",
+    "i hurt myself",
+    # ``the day is bright``.
+    "the day is bright",
+    # ``is it color``.
+    "is it red",
+    "is it blue",
+    "is it green",
     # Round 11 corpus expansion: SVO sentences, math facts, travel,
     # cooking, weather, sports, family relations, multi-word
     # noun/adjective phrases, partitive ``of`` phrases,
