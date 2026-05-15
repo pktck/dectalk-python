@@ -117,7 +117,30 @@ def test_ph_dump_is_deterministic(capi: CAPI) -> None:
     assert a == b, f"ph dumps diverged across calls: {len(a)} B vs {len(b)} B"
 
 
+def test_vtm_dump_is_non_empty(capi: CAPI) -> None:
+    """The VTM dump for ``hello world`` must contain non-trivial 16-bit tokens.
+
+    Validates the hook added by
+    ``tests/parity/c_patches/0005-vtm-stage-dump-hooks.patch``. In
+    ``SINGLE_THREADED`` builds the hook lives in ``vtm_loop`` (the entry
+    point of the VTM stage) and captures each 16-bit token the PH stage
+    pushes across the (now-elided) ``pKsd_t->vtm_pipe`` boundary.
+    """
+    dumps = capi.dump_pipeline("hello world", ["vtm"])
+    assert "vtm" in dumps
+    payload = dumps["vtm"]
+    assert payload, "vtm dump was empty -- patch not applied or hook misfired?"
+    assert b"vtm_write" in payload
+
+
+def test_vtm_dump_is_deterministic(capi: CAPI) -> None:
+    """Two back-to-back VTM-dump calls with the same input must be identical."""
+    a = capi.dump_pipeline("hello world", ["vtm"])["vtm"]
+    b = capi.dump_pipeline("hello world", ["vtm"])["vtm"]
+    assert a == b, f"vtm dumps diverged across calls: {len(a)} B vs {len(b)} B"
+
+
 def test_unsupported_stage_raises(capi: CAPI) -> None:
     """Asking for a stage we haven't implemented yet is a CAPIError."""
     with pytest.raises(CAPIError):
-        capi.dump_pipeline("hello", ["vtm"])
+        capi.dump_pipeline("hello", ["hlsyn"])

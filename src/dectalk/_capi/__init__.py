@@ -341,7 +341,8 @@ class CAPI:
     #   - ``kernel`` -> 0002-stage-boundary-dumps.patch
     #   - ``cmd``    -> 0003-cmd-stage-dump-hooks.patch
     #   - ``ph``     -> 0004-ph-stage-dump-hooks.patch
-    _SUPPORTED_DUMP_STAGES: tuple[str, ...] = ("kernel", "cmd", "ph")
+    #   - ``vtm``    -> 0005-vtm-stage-dump-hooks.patch
+    _SUPPORTED_DUMP_STAGES: tuple[str, ...] = ("kernel", "cmd", "ph", "vtm")
 
     def dump_pipeline(self, text: str, stages: list[str]) -> dict[str, bytes]:
         """Return per-stage boundary dumps from the C oracle.
