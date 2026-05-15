@@ -159,6 +159,9 @@ CORPUS: tuple[str, ...] = (
     "private",
     # Post-stress AH0+N+T after R -> IX (``parent`` -> ``p ' eyr ixn t``).
     "parent",
+    # N -> NG velar assimilation before K / G (``pink`` -> ``p ' ihnxk``).
+    "pink",
+    "tank",
 )
 
 

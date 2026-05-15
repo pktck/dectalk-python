@@ -589,6 +589,10 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 dt = "el"
             elif syllabic_after_consonant_word_final and base == "N":
                 dt = "en"
+            # N -> NG before K / G (velar assimilation): ``pink`` ->
+            # ``p ' ihnxk``, ``bank`` -> ``b ' aenxk``.
+            elif base == "N" and not stress_digit and next_base in ("K", "G"):
+                dt = "nx"
             else:
                 dt = ARPABET_TO_DECTALK.get(base)
         # Emit the stress marker (now that we've decided which source).
