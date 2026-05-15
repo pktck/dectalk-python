@@ -116,15 +116,7 @@ _DEFERRED: dict[str, str] = {
         "vtm.vtm_main.vtm_main_tick respectively; the Python pipeline runs "
         "inline on the main thread so each tick is a no-op"
     ),
-    "WaitForAudioSampleToPlay": (
-        "Blocks the sync thread until PA_GetPosition crosses a sample "
-        "boundary; deferred along with the rest of the audio sync layer"
-    ),
     # ---- vtmiont.c -- the VTM output thread and pipe machinery. -------
-    "OutputData": (
-        "Pushes a buffer of synthesised samples onto the audio handle; "
-        "the Python audio backend uses a different output path"
-    ),
     # ---- playtone.c -- DTMF / sine-pair tone injection. ---------------
 }
 
