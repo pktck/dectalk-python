@@ -29,7 +29,7 @@ Stage-boundary milestones reached so far:
 
 - **LTS+dic phoneme stream**: ``dectalk.text_to_dectalk_phonemes``
   produces byte-identical output to ``CAPI.convert_to_phonemes``
-  across **50000+ bit-parity corpus prompts** spanning sentence-initial
+  across **66000+ bit-parity corpus prompts** spanning sentence-initial
   stress, function-word destressing (a/and/to/for), plural / -s /
   -ed / -ing / -ness / -ful / -less / -ment / -er / -est / -ly /
   -ive / -tion / -sion / -ify stem stripping with Y->I alternation
