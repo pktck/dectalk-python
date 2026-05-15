@@ -280,6 +280,11 @@ CORPUS: tuple[str, ...] = (
     "judge's",
     "fox's",
     "horse's",
+    # -ORY / -ERY / -ARY: ER0+IY0 reads as ``rriy`` syllabic-R.
+    "factory",
+    "history",
+    "mystery",
+    "battery",
 )
 
 
