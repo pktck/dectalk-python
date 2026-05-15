@@ -475,15 +475,25 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     k -= 1
                 if k >= 0:
                     prev_emit_base = out_parts[k].rstrip(" ")
+            n_then_word_end = (
+                i + 2 >= len(phonemes)
+                or phonemes[i + 2] == "_"
+                or (phonemes[i + 2] or "").startswith("__")
+                or (
+                    i + 2 < len(phonemes)
+                    and phonemes[i + 2].rstrip("0123456789") == "T"
+                    and (
+                        i + 3 >= len(phonemes)
+                        or phonemes[i + 3] == "_"
+                        or (phonemes[i + 3] or "").startswith("__")
+                    )
+                )
+            )
             ah_before_final_n = (
                 base == "AH"
                 and stress_digit == "0"
                 and next_base == "N"
-                and (
-                    i + 2 >= len(phonemes)
-                    or phonemes[i + 2] == "_"
-                    or (phonemes[i + 2] or "").startswith("__")
-                )
+                and n_then_word_end
                 and prev_emit_base in ("sh", "zh", "ch", "jh", "r")
             )
             # AH0 + F + L word-final reads as IX + F + EL (the ``-iful``

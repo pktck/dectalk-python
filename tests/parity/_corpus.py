@@ -157,6 +157,8 @@ CORPUS: tuple[str, ...] = (
     "visit",
     "limit",
     "private",
+    # Post-stress AH0+N+T after R -> IX (``parent`` -> ``p ' eyr ixn t``).
+    "parent",
 )
 
 
