@@ -566,7 +566,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             )
             t_then_word_end = (
                 i + 1 < len(phonemes)
-                and phonemes[i + 1].rstrip("0123456789") == "T"
+                and phonemes[i + 1].rstrip("0123456789") in ("T", "D")
                 and (
                     i + 2 >= len(phonemes)
                     or phonemes[i + 2] == "_"

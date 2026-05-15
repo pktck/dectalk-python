@@ -213,6 +213,9 @@ CORPUS: tuple[str, ...] = (
     "pension",
     "mansion",
     "tension",
+    # Syllabic-N before word-final D (``thousand`` -> ``th' awz end``).
+    "thousand",
+    "second",
 )
 
 
