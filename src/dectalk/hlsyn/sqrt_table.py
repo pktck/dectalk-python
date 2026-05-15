@@ -508,4 +508,11 @@ def dt_f_sqrt(input_value: float) -> float:
     return SQRTTABLE[pos]
 
 
-__all__ = ["SQRTTABLE", "dt_f_sqrt"]
+# Aliases under the original C-source names for inventory tests.
+DT_f_sqrt = dt_f_sqrt
+
+__all__ = [
+    "SQRTTABLE",
+    "DT_f_sqrt",
+    "dt_f_sqrt",
+]

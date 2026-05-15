@@ -130,4 +130,10 @@ def tongue_acx_f1c(frame: HLFrame, speaker: HLSpeaker, state: HLState) -> None:
     set_acx_loc(frame, state)
 
 
-__all__ = ["tongue_acx_f1c"]
+# Aliases under the original C-source names for inventory tests.
+Tongue_acx_f1c = tongue_acx_f1c
+
+__all__ = [
+    "Tongue_acx_f1c",
+    "tongue_acx_f1c",
+]

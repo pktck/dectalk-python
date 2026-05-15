@@ -90,4 +90,10 @@ def pm_root_function(pm: float, args: PmRootFunctionArgs) -> float:
     return uw - (args.A * pm - args.B)
 
 
-__all__ = ["pm_root_function"]
+# Aliases under the original C-source names for inventory tests.
+PmRootFunction = pm_root_function
+
+__all__ = [
+    "PmRootFunction",
+    "pm_root_function",
+]

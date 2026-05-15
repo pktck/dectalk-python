@@ -57,8 +57,6 @@ _DEFERRED: dict[str, str] = {
     "ModifyVolume": "static helper to StereoVolumeControl; deferred along with it",
     # Pythonic-rename camelCase->snake_case. Python ports live in
     # volume_table.py as encode_dectalk_volume / decode_dectalk_volume.
-    "EncodeDectalkVolume": "ported as kernel.volume_table.encode_dectalk_volume (PEP8 rename)",
-    "DecodeDectalkVolume": "ported as kernel.volume_table.decode_dectalk_volume (PEP8 rename)",
 }
 
 

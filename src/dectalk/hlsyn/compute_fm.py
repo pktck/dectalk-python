@@ -53,4 +53,10 @@ def compute_fm(frame: HLFrame, speaker: HLSpeaker) -> float:
     return r * (0.8 * frame.f2 + 0.2 * frame.f3) + (1.0 - r) * 3000.0
 
 
-__all__ = ["compute_fm"]
+# Aliases under the original C-source names for inventory tests.
+Compute_fm = compute_fm
+
+__all__ = [
+    "Compute_fm",
+    "compute_fm",
+]

@@ -1071,4 +1071,11 @@ def dt_f_log10(input_: float) -> float:
     return log10table[pos]
 
 
-__all__ = ["dt_f_log10", "log10table"]
+# Aliases under the original C-source names for inventory tests.
+DT_f_log10 = dt_f_log10
+
+__all__ = [
+    "DT_f_log10",
+    "dt_f_log10",
+    "log10table",
+]

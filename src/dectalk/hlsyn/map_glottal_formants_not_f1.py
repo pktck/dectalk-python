@@ -110,4 +110,6 @@ def map_glottal_formants_not_f1(
     llframe.NF5 = int(speaker.F5)
 
 
-__all__ = ["map_glottal_formants_not_f1"]
+MapGlottalFormantsNotF1 = map_glottal_formants_not_f1
+
+__all__ = ["MapGlottalFormantsNotF1", "map_glottal_formants_not_f1"]

@@ -64,3 +64,9 @@ def unused_ll_parameters(llframe: LLFrameN) -> None:
     llframe.NATV = 0
 
     llframe.NB6 = 1000
+
+
+# Alias under the original C-source name for inventory tests.
+UnusedLLParameters = unused_ll_parameters
+
+__all__ = ["UnusedLLParameters", "unused_ll_parameters"]

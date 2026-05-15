@@ -94,6 +94,15 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 # in Python.
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
+    # ---- vtmiont.c -- VTM-stage dump hook (Phase A.4). -----------------
+    "_dectalk_dump_vtm_chunk": (
+        "C-side dump-hook helper added by 0005-vtm-stage-dump-hooks.patch; "
+        "writes one record per vtm_loop call to <DECTALK_DUMP_DIR>/vtm.dump"
+    ),
+    "_dectalk_dump_vtm_open": (
+        "C-side dump-hook helper added by 0005-vtm-stage-dump-hooks.patch; "
+        "lazily opens vtm.dump on first call"
+    ),
     # ---- vtm3.c -- the speech waveform generator (Klatt synthesiser). --
     "speech_waveform_generator": (
         "Inner Klatt waveform loop; the bit-accurate synth lives in "
@@ -128,8 +137,6 @@ _DEFERRED: dict[str, str] = {
         "pipeline has no host-callback surface yet"
     ),
     # ---- playtone.c -- DTMF / sine-pair tone injection. ---------------
-    "PlayTones": "ported as vtm.play_tones.play_tones (PEP8 rename)",
-    "Tone": "ported as vtm.tone.tone (PEP8 rename)",
 }
 
 

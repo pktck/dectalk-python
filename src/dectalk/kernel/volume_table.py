@@ -201,9 +201,15 @@ def decode_dectalk_volume(volume: int) -> int:
     return mid
 
 
+# Aliases under the original C-source names for inventory tests.
+EncodeDectalkVolume = encode_dectalk_volume
+DecodeDectalkVolume = decode_dectalk_volume
+
 __all__ = [
     "MAX_VOLUME",
     "VOLUME_TABLE",
+    "DecodeDectalkVolume",
+    "EncodeDectalkVolume",
     "decode_dectalk_volume",
     "encode_dectalk_volume",
 ]

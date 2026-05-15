@@ -193,4 +193,13 @@ def brent(  # noqa: PLR0912, PLR0915 — mirror C control flow.
     return x2 + 1 if x1 < x2 else x2 - 1
 
 
-__all__ = ["brent", "brent_bracket"]
+# Aliases under the original C-source names for inventory tests.
+Brent = brent
+BrentBracket = brent_bracket
+
+__all__ = [
+    "Brent",
+    "BrentBracket",
+    "brent",
+    "brent_bracket",
+]

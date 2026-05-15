@@ -89,4 +89,10 @@ def set_acx_loc(frame: HLFrame, state: HLState) -> None:
         state.loc = lips_blade_place
 
 
-__all__ = ["set_acx_loc"]
+# Aliases under the original C-source names for inventory tests.
+Set_acx_loc = set_acx_loc
+
+__all__ = [
+    "Set_acx_loc",
+    "set_acx_loc",
+]

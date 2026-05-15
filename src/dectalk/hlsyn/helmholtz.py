@@ -124,4 +124,16 @@ def helmholtz_constriction(
     ) * temp
 
 
-__all__ = ["helmholtz_constriction", "helmholtz_frequency"]
+# Aliases under the original C-source names so the module-inventory
+# tests can detect the port without keeping the symbol on the
+# ``_DEFERRED`` allow-list. The active implementation lives under
+# the PEP8-snake_case names above.
+HelmholtzFrequency = helmholtz_frequency
+HelmholtzConstriction = helmholtz_constriction
+
+__all__ = [
+    "HelmholtzConstriction",
+    "HelmholtzFrequency",
+    "helmholtz_constriction",
+    "helmholtz_frequency",
+]

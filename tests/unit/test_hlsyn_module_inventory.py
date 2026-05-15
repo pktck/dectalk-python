@@ -112,19 +112,10 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
     # ---- acxf1c.c -- tongue-body acoustic / Helmholtz frequencies. ----
-    "HelmholtzFrequency": "ported as hlsyn.helmholtz.helmholtz_frequency (PEP8 rename)",
-    "HelmholtzConstriction": "ported as hlsyn.helmholtz.helmholtz_constriction (PEP8 rename)",
-    "Compute_acl": "ported as hlsyn.compute_ac.compute_acl (PEP8 rename)",
-    "Compute_acd": "ported as hlsyn.compute_ac.compute_acd (PEP8 rename)",
-    "Set_acx_loc": "ported as hlsyn.set_acx_loc.set_acx_loc (PEP8 rename)",
-    "Tongue_acx_f1c": "ported as hlsyn.tongue_acx_f1c.tongue_acx_f1c (PEP8 rename)",
     # ---- hlframe.c -- top-level HL->LL frame mapping. ------------------
     "HLSynthesizeLLFrame": (
         "Top-level HL->LL frame mapping; the C oracle dispatches through "
         "libtts_us.so so the Python pipeline never calls this"
-    ),
-    "MapGlottalFormantsNotF1": (
-        "ported as hlsyn.map_glottal_formants_not_f1.map_glottal_formants_not_f1 (PEP8 rename)"
     ),
     "FricativeFilters": (
         "Sets the parallel fricative-branch resonators (F2P..F6P, AB); "
@@ -146,15 +137,8 @@ _DEFERRED: dict[str, str] = {
         "Sets OQ / TL / FL spectral-shape parameters from ag, ap, ps; "
         "private to hlframe.c, deferred along with HLSynthesizeLLFrame"
     ),
-    "UnusedLLParameters": (
-        "ported as hlsyn.unused_ll_parameters.unused_ll_parameters (PEP8 rename)"
-    ),
     # ---- log10table.c / sqrttable.c -- tiny math wrappers. -------------
-    "DT_f_log10": "ported as hlsyn.log10_table.dt_f_log10 (PEP8 rename)",
-    "DT_f_sqrt": "ported as hlsyn.sqrt_table.dt_f_sqrt (PEP8 rename)",
     # ---- brent.c -- Brent's-method root finder. ------------------------
-    "Brent": "ported as hlsyn.brent.brent (PEP8 rename)",
-    "BrentBracket": "ported as hlsyn.brent.brent_bracket (PEP8 rename)",
     # ---- inithl.c -- HL synthesiser initialisation. --------------------
     "InitializeHLSynthesizer": (
         "Initialises HLSpeaker constants (alveolar table, anfnTable, "
@@ -166,8 +150,6 @@ _DEFERRED: dict[str, str] = {
         "Top-level nasal pole/zero setter called from HLSynthesizeLLFrame; "
         "deferred with the rest of the HL layer"
     ),
-    "NasalZero": "ported as hlsyn.nasal_zero.nasal_zero (PEP8 rename)",
-    "Compute_fm": "ported as hlsyn.compute_fm.compute_fm (PEP8 rename)",
     "NasalFirstFormant": (
         "Places the nasal first formant F1 from f1c, an, ap; private to "
         "nasalf1x.c, deferred along with SetNasals_f1x"
@@ -184,14 +166,11 @@ _DEFERRED: dict[str, str] = {
         "Walks outward from a singularity to find a finite bracket for "
         "Brent; private to nasalf1x.c, deferred along with NasalPole"
     ),
-    "InterpolateTable": "ported as hlsyn.interpolate.interpolate_table (PEP8 rename)",
-    "LinearInterpolate": "ported as hlsyn.interpolate.linear_interpolate (PEP8 rename)",
     # ---- circuit.c -- glottal/vocal-tract aerodynamic circuit. ---------
     "SpeechCircuit": (
         "Newton-style aerodynamic circuit solver for Pm/Pcw/Uw/agx/Ug/"
         "Uacx/Un/Uw across one frame; deferred with the rest of the HL layer"
     ),
-    "PmRootFunction": "ported as hlsyn.pm_root_function.pm_root_function (PEP8 rename)",
 }
 
 

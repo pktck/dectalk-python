@@ -133,4 +133,13 @@ def compute_acd(frame: HLFrame, speaker: HLSpeaker) -> float:
     return acd
 
 
-__all__ = ["compute_acd", "compute_acl"]
+# Aliases under the original C-source names for inventory tests.
+Compute_acl = compute_acl
+Compute_acd = compute_acd
+
+__all__ = [
+    "Compute_acd",
+    "Compute_acl",
+    "compute_acd",
+    "compute_acl",
+]

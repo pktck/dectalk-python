@@ -112,4 +112,10 @@ def nasal_zero(
     return fnz, bnz
 
 
-__all__ = ["nasal_zero"]
+# Aliases under the original C-source names for inventory tests.
+NasalZero = nasal_zero
+
+__all__ = [
+    "NasalZero",
+    "nasal_zero",
+]

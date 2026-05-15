@@ -449,11 +449,15 @@ def render_tone_burst(
     return collected
 
 
+# Aliases under the original C-source names for inventory tests.
+PlayTones = play_tones
+
 __all__ = [
     "MAX_TONE_BLOCK",
     "RISE_TIME",
     "TONE_SYMBOL",
     "TWO_PI_EQUIVALENT",
+    "PlayTones",
     "play_tones",
     "render_tone_burst",
 ]

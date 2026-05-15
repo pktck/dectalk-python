@@ -113,4 +113,13 @@ def interpolate_table(
     return table[-1][1]
 
 
-__all__ = ["interpolate_table", "linear_interpolate"]
+# Aliases under the original C-source names for inventory tests.
+InterpolateTable = interpolate_table
+LinearInterpolate = linear_interpolate
+
+__all__ = [
+    "InterpolateTable",
+    "LinearInterpolate",
+    "interpolate_table",
+    "linear_interpolate",
+]

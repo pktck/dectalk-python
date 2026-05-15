@@ -91,4 +91,11 @@ def tone_exact(phase_increment: float, phase: float) -> tuple[float, float]:
     return sample, new_phase
 
 
-__all__ = ["tone", "tone_exact"]
+# Aliases under the original C-source names for inventory tests.
+Tone = tone
+
+__all__ = [
+    "Tone",
+    "tone",
+    "tone_exact",
+]
