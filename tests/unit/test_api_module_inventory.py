@@ -216,27 +216,6 @@ _DEFERRED: dict[str, str] = {
     # are the user-facing Pythonic wrappers. None of these entry points is
     # re-exported under its original camelCase name, so each is deferred
     # with that explanation.
-    "TextToSpeechAddBuffer": (
-        "Public entry; called from libtts_us.so via _capi when in-memory "
-        "queueing is needed -- Python doesn't expose host-supplied buffers"
-    ),
-    "TextToSpeechCloseInMemory": (
-        "Public entry; closes an in-memory sink. Python's ``to_wav`` "
-        "returns bytes directly, no sink lifecycle to manage"
-    ),
-    "TextToSpeechCloseLang": (
-        "Public entry; closes a loaded language. Python loads languages "
-        "via the dectalkml dispatcher, not a per-handle close"
-    ),
-    "TextToSpeechCloseLogFile": (
-        "Public entry; closes a phoneme-log file. Python returns phoneme "
-        "transcripts directly through ``text_to_phonemes``"
-    ),
-    "TextToSpeechCloseSapi5Output": ("Public entry; SAPI5 only. Python port has no SAPI5 surface"),
-    "TextToSpeechCloseWaveOutFile": (
-        "Public entry; closes a WAV file the engine was writing into. "
-        "Python's ``to_wav`` writes the whole file atomically"
-    ),
     "TextToSpeechConvertToPhonemes": (
         "Public entry (exposed on Linux by 0001-expose-convert-to-phonemes-on-linux.patch); "
         "ported as ``dectalk.api.text_to_phonemes`` (Pythonic rename)"

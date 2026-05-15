@@ -124,6 +124,47 @@ def WaitForLtsFlush(*args: object, **kwargs: object) -> int:  # noqa: N802
     return _MMSYSERR_NOERROR
 
 
+# Close-style public-API stubs. The Python port surfaces audio/text
+# results inline (no explicit close lifecycle), so each of these is a
+# no-op that returns MMSYSERR_NOERROR.
+
+
+def TextToSpeechCloseInMemory(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; ``to_wav`` returns bytes inline, no sink to close."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechCloseLang(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; languages aren't per-handle resources."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechCloseLogFile(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; phoneme logs return via ``text_to_phonemes``."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechCloseSapi5Output(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; no SAPI5 surface in the Python port."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechCloseWaveOutFile(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; WAV writer closes its own file."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechAddBuffer(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; no in-memory buffer chain to extend."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
 __all__ = [
     "DeleteTextToSpeechObjects",
     "DrainPipes",
@@ -138,6 +179,12 @@ __all__ = [
     "ReturnRemainingBuffers",
     "SendBuffer",
     "StartDecTalkSystemThread",
+    "TextToSpeechAddBuffer",
+    "TextToSpeechCloseInMemory",
+    "TextToSpeechCloseLang",
+    "TextToSpeechCloseLogFile",
+    "TextToSpeechCloseSapi5Output",
+    "TextToSpeechCloseWaveOutFile",
     "TextToSpeechErrorHandler",
     "TextToSpeechThreadMain",
     "WaitForEmptyPipes",
