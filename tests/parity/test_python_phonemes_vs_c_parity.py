@@ -77,15 +77,15 @@ def _python_phonemes(text: str) -> bytes:
 # descriptors after a few thousand parametrised cases (libtts dlopens its
 # own resources without closing). One process-level handle keeps the FD
 # count flat regardless of corpus size.
-_CAPI: CAPI | None = None
+_capi_handle: CAPI | None = None
 
 
 def _get_capi() -> CAPI:
     """Return the lazily-initialised module-scoped CAPI handle."""
-    global _CAPI  # noqa: PLW0603
-    if _CAPI is None:
-        _CAPI = CAPI()
-    return _CAPI
+    global _capi_handle  # noqa: PLW0603
+    if _capi_handle is None:
+        _capi_handle = CAPI()
+    return _capi_handle
 
 
 @pytest.mark.parametrize("text", CORPUS, ids=list(CORPUS))
