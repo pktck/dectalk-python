@@ -48129,6 +48129,23 @@ CORPUS: tuple[str, ...] = (
     "you contain",
     "you contrast",
     "you include",
+    # Broad-net batch 14: 4-syllable nouns, adj+noun, 5-word, modal.
+    "a beautiful moment",
+    "a beautiful place",
+    "a beautiful story",
+    "a wonderful day",
+    "a wonderful moment",
+    "a wonderful place",
+    "a wonderful story",
+    "i may need help later",
+    "she might need a ride",
+    "the birds flew through the air",
+    "the cats slept on the bed",
+    "the dogs ran in the yard",
+    "the fish swam in the lake",
+    "they will do it soon",
+    "we should do it tomorrow",
+    "you must do it now",
 )
 
 
