@@ -146,6 +146,11 @@ CORPUS: tuple[str, ...] = (
     "couldn't",
     # AH0 + F + L word-final (the ``-iful`` connector): AH0 -> IX.
     "beautiful",
+    # -OUS suffix: AH0+S -> AX after M/V/F/etc. obstruents; -> IX after
+    # L/N/R sonorants.
+    "famous",
+    "nervous",
+    "jealous",
 )
 
 

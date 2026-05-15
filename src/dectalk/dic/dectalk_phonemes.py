@@ -387,20 +387,50 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                         return True
                 return False
 
+            # The IX context for AH0+S word-final fires when the
+            # immediately preceding emitted phoneme is a sonorant
+            # (L / N / R / a vowel) -- ``dennis`` (N+AH0+S), ``jealous``
+            # (L+AH0+S), ``biggest`` (G+AH0+S+T -- where the G is
+            # preceded by a vowel). It does NOT fire after M, V, F or
+            # other obstruents (``famous`` / ``nervous`` stay AX).
+            ah_before_final_s_prev_emit: str = ""
+            if out_parts:
+                k_pe = len(out_parts) - 1
+                while k_pe >= 0 and out_parts[k_pe] in (
+                    f"{DECTALK_PRIMARY_STRESS} ",
+                    f"{DECTALK_SECONDARY_STRESS} ",
+                ):
+                    k_pe -= 1
+                if k_pe >= 0:
+                    ah_before_final_s_prev_emit = out_parts[k_pe].rstrip(" ")
+            prev_is_sonorant = (
+                ah_before_final_s_prev_emit
+                in (
+                    "ll",
+                    "n",
+                    "r",
+                    "ng",
+                    "el",
+                    "en",
+                )
+                or ah_before_final_s_prev_emit in _VOWEL_DECTALK_CODES
+            )
+            ah_before_final_st = (
+                base == "AH"
+                and stress_digit == "0"
+                and next_base == "S"
+                and i + 2 < len(phonemes)
+                and phonemes[i + 2].rstrip("0123456789") == "T"
+                and _word_break_at(i + 3)
+            )
             ah_before_final_s = (
                 base == "AH"
                 and stress_digit == "0"
                 and next_base == "S"
-                and (
-                    _word_break_at(i + 2)
-                    or (
-                        i + 2 < len(phonemes)
-                        and phonemes[i + 2].rstrip("0123456789") == "T"
-                        and _word_break_at(i + 3)
-                    )
-                )
+                and _word_break_at(i + 2)
                 and _has_prior_vowel_in_word(i)
-            )
+                and prev_is_sonorant
+            ) or ah_before_final_st
             # AH0 + word-final N preceded by a palatal/post-alveolar
             # affricate / fricative (SH / ZH / CH / JH) or R reads as
             # IX (the -tion / -tian / -ren morphology -- ``nation``,
