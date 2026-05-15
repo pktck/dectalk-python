@@ -569,11 +569,31 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 and phonemes[i + 1].rstrip("0123456789") == "N"
                 and _word_break_at(i + 2)
             )
+            # The AH0+N+T rule isn't fully derivable from immediate
+            # context -- C treats ``distant`` / ``constant`` / ``talent``
+            # / ``vacant`` as IX, but ``instant`` / ``infant`` /
+            # ``vibrant`` / ``document`` as AX. The dictionary's
+            # form-class flag distinguishes these. We approximate by
+            # firing IX only when the preceding emit is a sonorant or
+            # sibilant (matching parent/silent/patient/distant); plain
+            # stops/fricatives without that prefix stay AX.
+            # n_t_word_final fires for ``-ent``/``-ant`` after sonorant/
+            # sibilant prev (distant, silent, patient, parent, constant,
+            # talent). T also passes via this path for ``distant`` /
+            # ``constant`` but it would over-fire for ``instant`` /
+            # ``infant`` -- those go to AX. We accept the gap because
+            # the dictionary's form-class flag isn't derivable from
+            # immediate context. n_alone_word_final uses the narrower
+            # set (no T) so ``cotton`` stays AX.
             ah_before_final_n = (
                 base == "AH"
                 and stress_digit == "0"
                 and (
-                    n_t_word_final
+                    (
+                        n_t_word_final
+                        and prev_emit_base
+                        in ("sh", "zh", "ch", "jh", "r", "b", "z", "s", "ll", "t", "k")
+                    )
                     or (
                         n_alone_word_final
                         and prev_emit_base in ("sh", "zh", "ch", "jh", "r", "b", "z", "s")

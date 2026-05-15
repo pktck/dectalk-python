@@ -272,6 +272,14 @@ CORPUS: tuple[str, ...] = (
     "wanted to know",
     "told the truth",
     "thinking about",
+    # -ENT / -ANT words: T+AH0+N+T / K+AH0+N+T / L+AH0+N+T -> IX.
+    "constant",
+    "talent",
+    "vacant",
+    # Possessive 's after sibilant -> IX+Z (judge's, fox's, horse's).
+    "judge's",
+    "fox's",
+    "horse's",
 )
 
 

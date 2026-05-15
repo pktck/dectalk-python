@@ -917,8 +917,17 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     ):
                         base = token.text[:-2]
                         base_phones = lookup(base, lang=lang)
+                        if base_phones is None and lts_fallback:
+                            base_phones = _dedupe_consecutive_phonemes(lts(base))
                         if base_phones is not None:
-                            phones = [*base_phones, "S"]
+                            # Sibilant-final stems take an epenthetic
+                            # IX+Z (``judge's`` -> ``jh ahjh ixz``,
+                            # ``fox's`` -> ``f aak s ixz``).
+                            last_base = base_phones[-1].rstrip("0123456789")
+                            if last_base in {"S", "Z", "SH", "ZH", "CH", "JH"}:
+                                phones = [*base_phones, "IX", "Z"]
+                            else:
+                                phones = [*base_phones, "S"]
                             stem_stripped = True
                     # Plural / 3rd-person -s stem stripping: if the word
                     # isn't in the lexicon but its singular form is, use
