@@ -195,6 +195,9 @@ CORPUS: tuple[str, ...] = (
     "fixes",
     "fishes",
     "watches",
+    # M-in-cluster + AH0+S -> IX (``christmas`` -- SM cluster, IX).
+    # M-after-vowel + AH0+S -> AX (``famous`` -- EY+M, AX).
+    "christmas",
 )
 
 

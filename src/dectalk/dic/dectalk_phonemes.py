@@ -394,6 +394,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             # preceded by a vowel). It does NOT fire after M, V, F or
             # other obstruents (``famous`` / ``nervous`` stay AX).
             ah_before_final_s_prev_emit: str = ""
+            ah_before_final_s_prev2_emit: str = ""
             if out_parts:
                 k_pe = len(out_parts) - 1
                 while k_pe >= 0 and out_parts[k_pe] in (
@@ -403,6 +404,23 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     k_pe -= 1
                 if k_pe >= 0:
                     ah_before_final_s_prev_emit = out_parts[k_pe].rstrip(" ")
+                k_pe2 = k_pe - 1
+                while k_pe2 >= 0 and out_parts[k_pe2] in (
+                    f"{DECTALK_PRIMARY_STRESS} ",
+                    f"{DECTALK_SECONDARY_STRESS} ",
+                ):
+                    k_pe2 -= 1
+                if k_pe2 >= 0:
+                    ah_before_final_s_prev2_emit = out_parts[k_pe2].rstrip(" ")
+            # ``M`` is treated as a sonorant for the IX-trigger only
+            # when it's itself preceded by another consonant (a cluster
+            # context like ``christmas`` -> SM+AH0+S). After a vowel
+            # the AH0 stays AX (``famous`` -> EY+M+AH0+S).
+            m_in_cluster = (
+                ah_before_final_s_prev_emit == "m"
+                and ah_before_final_s_prev2_emit
+                and ah_before_final_s_prev2_emit not in _VOWEL_DECTALK_CODES
+            )
             prev_is_sonorant = (
                 ah_before_final_s_prev_emit
                 in (
@@ -410,10 +428,13 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     "n",
                     "r",
                     "ng",
+                    "nx",
                     "el",
                     "en",
+                    "em",
                 )
                 or ah_before_final_s_prev_emit in _VOWEL_DECTALK_CODES
+                or m_in_cluster
             )
             ah_before_final_st = (
                 base == "AH"
