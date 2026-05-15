@@ -127,6 +127,24 @@ unchanged:
 Anti-pattern: pushing a commit per inline batch. Accumulate several
 batches' worth of changes into one commit and push once per turn.
 
+## Branch protection
+
+`main` and `dev` are protected. Direct push is allowed (admin can
+override) but the GitHub REST API enforces:
+
+- Required status checks (strict mode — head must be up to date with
+  base before merge): `Lint + type-check + audio diagnostic (Ubuntu,
+  Py 3.11)`, `Pytest (ubuntu-latest, Py 3.11)`, `Shellcheck`,
+  `Tests with C library (Ubuntu, Py 3.11)`.
+- Force-push disabled.
+- Branch deletion disabled.
+- Linear history required (no merge commits).
+
+Working branches (`claude/**`) are unaffected and can be force-pushed,
+rebased, etc. PR merges into `main`/`dev` go through the
+ci-full pipeline. To adjust the protection use the REST API with
+`GH_TOKEN` (see `docs/PLAN-CI-STRATEGY.md` §12 for the curl call).
+
 ## Build and test gates
 
 `scripts/dev_check.sh` has three modes:
