@@ -178,6 +178,14 @@ CORPUS: tuple[str, ...] = (
     "forty-two",
     "twenty-one",
     "self-taught",
+    # Teen words: ``*`` MBOUND marker before T+IY+N. Literal forms use
+    # secondary stress on IY; digit-expanded forms use primary stress.
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "eighteen",
+    "15",
+    "18",
 )
 
 

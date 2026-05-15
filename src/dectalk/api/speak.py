@@ -270,10 +270,36 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # (AO + R). Digit-expanded ``40`` / ``42`` uses the OR
         # r-coloured single vowel and so gets its own sentinel.
         "__NUM_FORTY__": ["F", "OR1", "T", "IY0"],
-        # "fourteen" -- digit-expansion path. DECtalk emits the OR
-        # r-coloured vowel + ``*`` MBOUND marker + primary stress on
-        # both syllables (``f ' or* t ' iyn``).
-        "FOURTEEN": ["F", "OR1", "__PUNCT__*", "T", "IY1", "N"],
+        # Teen-word overrides: DECtalk inserts the ``*`` MBOUND marker
+        # before the ``T IY N`` second-half of these compound numbers.
+        # Literal forms keep the lexicon's stress pattern (secondary on
+        # IY); digit-expanded forms (``__NUM_FOURTEEN__`` and friends)
+        # use primary stress on IY plus the OR r-coloured vowel where
+        # relevant (handled in ``_digit_expand`` below).
+        "FOURTEEN": ["F", "OW1", "R", "__PUNCT__*", "T", "IY2", "N"],
+        "FIFTEEN": ["F", "IH1", "F", "__PUNCT__*", "T", "IY2", "N"],
+        "SIXTEEN": ["S", "IH1", "K", "S", "__PUNCT__*", "T", "IY2", "N"],
+        "SEVENTEEN": ["S", "EH1", "V", "AH0", "N", "__PUNCT__*", "T", "IY2", "N"],
+        "EIGHTEEN": ["EY1", "__PUNCT__*", "T", "IY2", "N"],
+        "NINETEEN": ["N", "AY1", "N", "__PUNCT__*", "T", "IY2", "N"],
+        # Digit-expanded teen sentinels: ``*`` MBOUND + primary stress
+        # on both syllables (``f ' or* t ' iyn``).
+        "__NUM_FOURTEEN__": ["F", "OR1", "__PUNCT__*", "T", "IY1", "N"],
+        "__NUM_FIFTEEN__": ["F", "IH1", "F", "__PUNCT__*", "T", "IY1", "N"],
+        "__NUM_SIXTEEN__": ["S", "IH1", "K", "S", "__PUNCT__*", "T", "IY1", "N"],
+        "__NUM_SEVENTEEN__": [
+            "S",
+            "EH1",
+            "V",
+            "AH0",
+            "N",
+            "__PUNCT__*",
+            "T",
+            "IY1",
+            "N",
+        ],
+        "__NUM_EIGHTEEN__": ["EY1", "__PUNCT__*", "T", "IY1", "N"],
+        "__NUM_NINETEEN__": ["N", "AY1", "N", "__PUNCT__*", "T", "IY1", "N"],
         # Title-abbreviation sentinels (see ``title_abbrevs`` below).
         # ``Dr.`` reads as ``d aak t rr`` (unstressed AA + K + T + ER)
         # -- subtly different from the spelled-out word "doctor" which
@@ -580,6 +606,14 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # to the exact phoneme stream the DECtalk C kernel emits for
         # digit-expansion contexts.
         def _digit_expand(value: int) -> list[Token]:
+            teens = {
+                "FOURTEEN": "__NUM_FOURTEEN__",
+                "FIFTEEN": "__NUM_FIFTEEN__",
+                "SIXTEEN": "__NUM_SIXTEEN__",
+                "SEVENTEEN": "__NUM_SEVENTEEN__",
+                "EIGHTEEN": "__NUM_EIGHTEEN__",
+                "NINETEEN": "__NUM_NINETEEN__",
+            }
             words = number_to_words(value)
             out: list[Token] = []
             for i_w, w in enumerate(words):
@@ -588,6 +622,8 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     out.append(Token(TokenKind.WORD, "__NUM_FOUR__"))
                 elif w == "FORTY":
                     out.append(Token(TokenKind.WORD, "__NUM_FORTY__"))
+                elif w in teens:
+                    out.append(Token(TokenKind.WORD, teens[w]))
                 elif w == "THOUSAND":
                     out.append(Token(TokenKind.WORD, "__NUM_THOUSAND__"))
                     if next_w is not None:
