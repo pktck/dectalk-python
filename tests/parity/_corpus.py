@@ -285,6 +285,13 @@ CORPUS: tuple[str, ...] = (
     "history",
     "mystery",
     "battery",
+    # MBOUND ``*`` from per-entry dictionary marker (compound morphology).
+    "house",
+    "birthday",
+    "notebook",
+    "lighthouse",
+    "old house",
+    "happy birthday",
 )
 
 

@@ -463,6 +463,15 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "billion" -- not in the bundled lexicon. C output is
         # ``b ' ihllyxaxn`` = B IH L Y AX N (with primary stress on IH).
         "BILLION": ["B", "IH1", "L", "Y", "AX", "N"],
+        # Words whose C dictionary entry carries the ``*`` MBOUND
+        # prefix marker. These come from ``Dic_us_2002.txt`` and aren't
+        # part of the bundled lexicon. A future dictionary port could
+        # subsume these into a separate marker table; for now we list
+        # the common ones the corpus exercises.
+        "HOUSE": ["__PUNCT__*", "HH", "AW1", "S"],
+        "BIRTHDAY": ["B", "ER1", "TH", "__PUNCT__*", "D", "EY2"],
+        "NOTEBOOK": ["N", "OW1", "T", "__PUNCT__*", "B", "UH2", "K"],
+        "LIGHTHOUSE": ["L", "AY1", "T", "__PUNCT__*", "HH", "AW2", "S"],
         # ``eleven`` lex stores AH0 L EH1 V AH0 N; C reads the
         # post-stress AH0 (between V and final N) as IX.
         "ELEVEN": ["AH0", "L", "EH1", "V", "IX", "N"],
