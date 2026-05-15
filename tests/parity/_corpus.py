@@ -216,6 +216,11 @@ CORPUS: tuple[str, ...] = (
     # Syllabic-N before word-final D (``thousand`` -> ``th' awz end``).
     "thousand",
     "second",
+    # More multi-word phrasal coverage.
+    "a good idea",
+    "three small dogs",
+    "open the windows",
+    "two cats and three dogs",
 )
 
 
