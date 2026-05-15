@@ -995,16 +995,25 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     flat.extend(custom_phones)
                     continue
                 if token.text in spell_out_words:
-                    # Spell out letter-by-letter. Middle letters get
-                    # de-stressed (stress digit 0) to match the C
-                    # source's "first and last only" stress pattern
-                    # (e.g. "FBI" -> ``' ehf   b iy  ' ay``).
+                    # Spell out letter-by-letter. The default C path
+                    # keeps every letter primary-stressed; the only
+                    # exception is the small set of acronyms whose
+                    # main-dic entry hard-codes a destressed middle
+                    # letter (FBI is the canonical example -- C dic
+                    # has ``Ef bi 'A`` with no stress mark on ``bi``).
+                    # The ``destress_middle_letter_acronyms`` set
+                    # opts those into the legacy "first and last
+                    # only" pattern.
+                    destress_middle_letter_acronyms: frozenset[str] = frozenset({"FBI"})
                     letters = list(token.text)
                     for i_letter, letter in enumerate(letters):
                         if i_letter > 0:
                             flat.append("_")
                         group = list(letter_names.get(letter, [letter]))
-                        if 0 < i_letter < len(letters) - 1:
+                        if (
+                            0 < i_letter < len(letters) - 1
+                            and token.text in destress_middle_letter_acronyms
+                        ):
                             group = [p[:-1] + "0" if p and p[-1].isdigit() else p for p in group]
                         flat.extend(group)
                     continue
