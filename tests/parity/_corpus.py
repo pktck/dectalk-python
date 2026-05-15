@@ -58401,6 +58401,28 @@ CORPUS: tuple[str, ...] = (
     "it's a great day",
     "it's a long story",
     "it's a nice day",
+    # Broad-net batch 26: gave to / passives / adverb-final / existentials.
+    "i did it well",
+    "the book was bought",
+    "the book was found",
+    "the book was given",
+    "the book was lost",
+    "the gift was bought",
+    "the gift was found",
+    "the gift was given",
+    "the gift was lost",
+    "the letter was bought",
+    "the letter was found",
+    "the letter was given",
+    "the letter was lost",
+    "there are many people",
+    "there is no money",
+    "there is no time",
+    "there was no money",
+    "there was no time",
+    "there were many people",
+    "they spoke softly",
+    "we ate quickly",
 )
 
 
