@@ -112,6 +112,10 @@ CORPUS: tuple[str, ...] = (
     "it's",
     "what's",
     "there's",
+    # ``-ness`` noun-forming suffix: stem + ``N IX S``.
+    "darkness",
+    "sadness",
+    "happiness",
 )
 
 

@@ -793,6 +793,19 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         stem_phones = lookup(stem + "E", lang=lang) or lookup(stem, lang=lang)
                         if stem_phones is not None:
                             phones = [*stem_phones, "ER0"]
+                    # ``-ness`` noun-forming suffix: strip and append
+                    # ``N + IX + S`` (``darkness`` -> ``d ' aar k n ixs``).
+                    # Also tries the Y->I morphological alternation:
+                    # ``happiness`` -> stem ``HAPPI`` -> retry ``HAPPY``.
+                    if (
+                        phones is None and token.text.endswith("NESS") and len(token.text) > 4  # noqa: PLR2004
+                    ):
+                        ness_stem = token.text[:-4]
+                        stem_phones = lookup(ness_stem, lang=lang)
+                        if stem_phones is None and ness_stem.endswith("I"):
+                            stem_phones = lookup(ness_stem[:-1] + "Y", lang=lang)
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "N", "IX", "S"]
                     # ``-ing`` gerund / present-participle suffix: strip
                     # and append ``IX + NG`` (the standard ``-ing`` form).
                     if (
