@@ -91,6 +91,9 @@ CORPUS: tuple[str, ...] = (
     "three reasons",
     "five days",
     "two trees",
+    # ``-er`` agentive / comparative suffix: stem stripping.
+    "later",
+    "faster",
 )
 
 

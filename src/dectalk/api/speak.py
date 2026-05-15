@@ -768,6 +768,19 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             stem_phones = _apply_pre_inflection_syllabic(stem_phones)
                             phones = [*stem_phones, "S"]
                             stem_stripped = True
+                    # ``-er`` agentive / comparative suffix: strip and
+                    # look up the bare stem, then append ER0. Handles
+                    # ``LATER`` (LATE+R), ``FASTER`` (FAST+ER), etc.
+                    if (
+                        phones is None
+                        and token.text.endswith("ER")
+                        and len(token.text) > 3  # noqa: PLR2004
+                        and not token.text.endswith(("EER", "IER"))
+                    ):
+                        stem = token.text[:-2]
+                        stem_phones = lookup(stem + "E", lang=lang) or lookup(stem, lang=lang)
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "ER0"]
                     if phones is None:
                         if not lts_fallback:
                             raise UnknownWordError(
