@@ -165,6 +165,14 @@ CORPUS: tuple[str, ...] = (
     # -ness with LTS-fallback stem (firm / odd not in lexicon).
     "firmness",
     "oddness",
+    # Longer phrasal corpus -- exercises mid-sentence first-verb destressing,
+    # function-word reductions, and inflectional morphology together.
+    "a good day",
+    "three nice gifts",
+    "the cat is happy",
+    "the dogs ran",
+    "you are welcome",
+    "an apple tree",
 )
 
 
