@@ -3070,6 +3070,89 @@ CORPUS: tuple[str, ...] = (
     "give me a hand",
     "row your boat",
     "twinkle twinkle",
+    # Day-of-week + holiday greetings.
+    "happy monday",
+    "happy tuesday",
+    "happy friday",
+    "merry christmas",
+    "happy easter",
+    # Hedge / opinion phrases.
+    "in my opinion",
+    "if you ask me",
+    "as far as i know",
+    "as a matter of fact",
+    # ``X what / else``.
+    "now what",
+    "so what",
+    "what else",
+    "who else",
+    # Strong adverbs.
+    "definitely yes",
+    # Conditional clauses.
+    "if all goes well",
+    "if it works",
+    # ``make a / take a / have a`` light verb constructions.
+    "make a list",
+    "take a break",
+    "have a seat",
+    # Cohortative ``let me X``.
+    "let me see",
+    "let me try",
+    "let me think",
+    "let me know",
+    # Occupation nouns.
+    "lawyer",
+    "nurse",
+    "manager",
+    "officer",
+    "soldier",
+    # Address phrases.
+    "my dear friend",
+    "dear sir",
+    # Money amounts.
+    "five dollars",
+    "ten dollars",
+    "twenty cents",
+    "five cents",
+    # Distance.
+    "five miles",
+    "ten miles",
+    "one mile",
+    # Time-amount phrases.
+    "an hour",
+    "two hours later",
+    # ``thats X`` (no apostrophe variant).
+    "thats mine",
+    "thats yours",
+    "thats his",
+    # ``I/we/they am/are moving``.
+    "i am moving",
+    "we are moving",
+    "they are moving",
+    # ``i am eating X``.
+    "i am eating lunch",
+    "i am eating dinner",
+    # ``lots of X``.
+    "lots of fun",
+    "lots of love",
+    "lots of luck",
+    # ``X is/was fun``.
+    "this is fun",
+    "that is fun",
+    "that was fun",
+    "this was fun",
+    # Subject nouns.
+    "math",
+    "english",
+    "art",
+    # ``i am brave``.
+    "i am brave",
+    # ``the best / worst ever``.
+    "the best ever",
+    "the worst ever",
+    # ``tell me about`` / ``teach me how``.
+    "tell me about",
+    "teach me how",
     # Round 11 corpus expansion: SVO sentences, math facts, travel,
     # cooking, weather, sports, family relations, multi-word
     # noun/adjective phrases, partitive ``of`` phrases,
