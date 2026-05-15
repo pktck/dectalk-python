@@ -2734,6 +2734,69 @@ CORPUS: tuple[str, ...] = (
     "old book",
     "new book",
     "big book",
+    # Future / past-habitual constructions.
+    "i am going to go",
+    "we are going to see",
+    "they are going to come",
+    "i'm going to bed",
+    "we're going home",
+    "i used to go",
+    "we used to go",
+    "they used to live",
+    # Common verb + noun phrases.
+    "win the game",
+    "lose the bet",
+    "make a friend",
+    "find the answer",
+    "lose the keys",
+    "find the keys",
+    "the song i sang",
+    # Polite request phrases.
+    "could you tell me",
+    "could you show me",
+    "could you give me",
+    "would you mind",
+    "would you like to",
+    # Existential ``there + be``.
+    "there is a dog",
+    "there are dogs",
+    "there was a cat",
+    "there were boys",
+    # Habituals + temporal.
+    "we go every day",
+    "we go on monday",
+    # Ditransitive imperatives.
+    "give me the book",
+    "tell me the truth",
+    # ``what a`` / ``such a`` exclamatives.
+    "such a nice day",
+    "what a day",
+    "what a nice",
+    # Directional prepositional phrases.
+    "to the store",
+    "to the park",
+    "to the moon",
+    # Verb + gerund.
+    "stop running",
+    "start walking",
+    "keep going",
+    "stop talking",
+    # Imperative + manner adverb.
+    "go quickly",
+    "go slowly",
+    "come closer",
+    # Possessive + linking verb.
+    "my friend is",
+    "your dog is",
+    "his cat is",
+    # Coordinated yes/no.
+    "yes or no",
+    # ``X for you`` predicate.
+    "good for you",
+    "bad for you",
+    "right for you",
+    # Two-modifier noun phrases.
+    "a good little book",
     # Round 11 corpus expansion: SVO sentences, math facts, travel,
     # cooking, weather, sports, family relations, multi-word
     # noun/adjective phrases, partitive ``of`` phrases,
