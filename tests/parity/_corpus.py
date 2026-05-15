@@ -221,6 +221,8 @@ CORPUS: tuple[str, ...] = (
     "three small dogs",
     "open the windows",
     "two cats and three dogs",
+    # Multi-syllabic AH0+Z (always) -> IX; monosyllabic (was) -> AX.
+    "always",
 )
 
 

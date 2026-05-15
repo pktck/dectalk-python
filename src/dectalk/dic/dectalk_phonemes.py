@@ -477,16 +477,16 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 and _has_prior_vowel_in_word(i)
                 and _stressed_short_vowel_in_word(i)
             )
-            # Sibilant-final plurals: AH0 + word-final Z after a
-            # sibilant (S / Z / SH / ZH / CH / JH) reads as IX + Z
-            # -- the epenthesis the C source emits in ``fixes`` ->
-            # ``f ' ihk s ixz``.
+            # Multi-syllabic AH0 + word-final Z reads as IX -- the C
+            # source treats this position as the inflected-form schwa
+            # (``fixes`` -> ``f ' ihk s ixz``; ``always`` -> ``` aow ixz``).
+            # Monosyllabic ``was`` (W AH0 Z) keeps AX.
             ah_before_final_z = (
                 base == "AH"
                 and stress_digit == "0"
                 and next_base == "Z"
                 and _word_break_at(i + 2)
-                and ah_before_final_s_prev_emit in ("s", "z", "sh", "zh", "ch", "jh")
+                and _word_is_multi_syllabic(i)
             )
             ah_before_final_s = (
                 base == "AH"
