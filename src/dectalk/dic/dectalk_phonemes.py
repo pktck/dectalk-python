@@ -308,17 +308,28 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             dt = "yu"
         else:
             stress_mark_source = stress_digit
-            # Detect "word-final S after this position": pattern
-            # ``AH0 S _`` or ``AH0 S <end>`` (Python's transcription of
-            # the C-source's IH0 -> IX context for words like "dennis").
+
+            # Detect "word-final S/ST after this position": pattern
+            # ``AH0 S _``, ``AH0 S T _``, or ``AH0 S <end>`` (Python's
+            # transcription of the C-source's IH0 -> IX context for
+            # words like ``dennis`` and the ``-est`` superlative).
+            def _word_break_at(idx: int) -> bool:
+                if idx >= len(phonemes):
+                    return True
+                ph = phonemes[idx]
+                return not ph or ph == "_" or ph.startswith("__")
+
             ah_before_final_s = (
                 base == "AH"
                 and stress_digit == "0"
                 and next_base == "S"
                 and (
-                    i + 2 >= len(phonemes)
-                    or phonemes[i + 2] == "_"
-                    or (phonemes[i + 2] or "").startswith("__")
+                    _word_break_at(i + 2)
+                    or (
+                        i + 2 < len(phonemes)
+                        and phonemes[i + 2].rstrip("0123456789") == "T"
+                        and _word_break_at(i + 3)
+                    )
                 )
             )
             # AH0 + word-final N preceded by a palatal/post-alveolar

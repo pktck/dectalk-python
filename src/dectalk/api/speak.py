@@ -836,6 +836,26 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         )
                         if stem_phones is not None:
                             phones = [*stem_phones, "M", "AX", "N", "T"]
+                    # ``-est`` superlative suffix: strip and append
+                    # ``IX + S + T`` (``oldest`` -> ``' owlld ixs t``).
+                    # Try plain stem, silent-e stem, and (for words
+                    # like ``biggest`` -> ``BIG``) single-consonant
+                    # stem after collapsing a doubled final consonant.
+                    if (
+                        phones is None and token.text.endswith("EST") and len(token.text) > 4  # noqa: PLR2004
+                    ):
+                        est_stem = token.text[:-3]
+                        stem_phones = lookup(est_stem, lang=lang) or lookup(
+                            est_stem + "E", lang=lang
+                        )
+                        if (
+                            stem_phones is None
+                            and len(est_stem) >= 2  # noqa: PLR2004
+                            and est_stem[-1] == est_stem[-2]
+                        ):
+                            stem_phones = lookup(est_stem[:-1], lang=lang)
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "IX", "S", "T"]
                     # ``-ing`` gerund / present-participle suffix: strip
                     # and append ``IX + NG`` (the standard ``-ing`` form).
                     if (

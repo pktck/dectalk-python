@@ -127,6 +127,11 @@ CORPUS: tuple[str, ...] = (
     # ``-tion`` / ``-sion`` (AH0+N -> IX+N after SH/ZH/CH/JH/R).
     "nation",
     "mission",
+    # ``-est`` superlative suffix.
+    "smallest",
+    "oldest",
+    "fastest",
+    "biggest",
 )
 
 
