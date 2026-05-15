@@ -206,10 +206,6 @@ _DEFERRED: dict[str, str] = {
         "Spins until the worker thread drains the text queue; not "
         "needed in the synchronous Python path"
     ),
-    "FixMemoryLockup": (
-        "Forces a pthread_yield() / sleep when allocations stall; "
-        "Python relies on the CPython allocator and the GIL instead"
-    ),
     "WaitForEmptyPipes": (
         "Blocks until the LTS/PH/VTM pipes drain; the synchronous "
         "Python pipeline finishes a segment before returning"
@@ -222,10 +218,6 @@ _DEFERRED: dict[str, str] = {
         "Audio-device callback that hands buffers back to the play "
         "queue; the Python audio backend bypasses this with its own "
         "sounddevice / wave writer"
-    ),
-    "PumpModeMessage": (
-        "Dispatches TTS_MODE_T-change messages on the worker thread; "
-        "the synchronous Python path applies mode changes directly"
     ),
     "PutIndexMarkInBuffer": (
         "Stages an index-mark token in the current output buffer; "
