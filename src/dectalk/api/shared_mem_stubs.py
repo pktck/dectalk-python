@@ -14,11 +14,11 @@ counts them as ported.
 from __future__ import annotations
 
 
-def __init_shared_mem() -> None:  # noqa: N807 — mirror C ELF constructor name
+def __init_shared_mem() -> None:
     """ELF .init_array stub; no-op in the Python port."""
 
 
-def __fini_shared_mem() -> None:  # noqa: N807 — mirror C ELF destructor name
+def __fini_shared_mem() -> None:
     """ELF .fini_array stub; no-op in the Python port."""
 
 
