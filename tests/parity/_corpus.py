@@ -151,6 +151,12 @@ CORPUS: tuple[str, ...] = (
     "famous",
     "nervous",
     "jealous",
+    # ``-it`` suffix: AH0+T word-final -> IX+T when the stressed vowel is
+    # a short monophthong (visit / limit / edit / audit). Diphthong-stressed
+    # private / climate keep AX+T.
+    "visit",
+    "limit",
+    "private",
 )
 
 

@@ -423,6 +423,36 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 and phonemes[i + 2].rstrip("0123456789") == "T"
                 and _word_break_at(i + 3)
             )
+
+            # ``-it`` morphological pattern (``visit``, ``limit``, ``edit``):
+            # multi-syllabic AH0 + word-final T -> IX + T. Only fires when
+            # the stressed vowel in the same word is a short monophthong
+            # (IH / EH / AE / AH / AO / UH); diphthong-stressed words
+            # like ``private`` (AY) / ``climate`` (AY) keep AX.
+            def _stressed_short_vowel_in_word(idx: int) -> bool:
+                short_vowels = {"AE", "AH", "AO", "EH", "IH", "UH"}
+                for j in range(idx - 1, -1, -1):
+                    ph_j = phonemes[j]
+                    if not ph_j or ph_j == "_" or ph_j.startswith("__"):
+                        break
+                    if ph_j and ph_j[-1].isdigit() and ph_j[-1] in "12":
+                        return ph_j[:-1] in short_vowels
+                for j in range(idx + 1, len(phonemes)):
+                    ph_j = phonemes[j]
+                    if not ph_j or ph_j == "_" or ph_j.startswith("__"):
+                        break
+                    if ph_j and ph_j[-1].isdigit() and ph_j[-1] in "12":
+                        return ph_j[:-1] in short_vowels
+                return False
+
+            ah_before_final_t = (
+                base == "AH"
+                and stress_digit == "0"
+                and next_base == "T"
+                and _word_break_at(i + 2)
+                and _has_prior_vowel_in_word(i)
+                and _stressed_short_vowel_in_word(i)
+            )
             ah_before_final_s = (
                 base == "AH"
                 and stress_digit == "0"
@@ -531,7 +561,13 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or not phonemes[i + 1]
                     or (phonemes[i + 1] or "").startswith("__")
                 )
-                if ah_before_final_s or next_base == "NG" or ah_before_final_n or ah_before_ful:
+                if (
+                    ah_before_final_s
+                    or next_base == "NG"
+                    or ah_before_final_n
+                    or ah_before_ful
+                    or ah_before_final_t
+                ):
                     dt = "ix"
                 elif _word_is_multi_syllabic(i) or next_is_fricative or next_is_word_end:
                     dt = "ax"
