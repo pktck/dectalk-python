@@ -51621,7 +51621,8 @@ CORPUS: tuple[str, ...] = (
     "wash the dishes",
     "water the plants",
     "we should stay",
-    # Broad-net batch 18: ``i used to X``, ``X is going to Y``, ``X is about to Y``, ``i need to V``, WH-Qs.
+    # Broad-net batch 18: ``i used to X``, ``X is going/about to Y``,
+    # ``i need to V``, WH-Qs.
     "he is about to begin",
     "he is about to leave",
     "he is about to start",
