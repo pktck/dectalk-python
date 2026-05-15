@@ -29,9 +29,16 @@ Stage-boundary milestones reached so far:
 
 - **LTS+dic phoneme stream**: ``dectalk.text_to_dectalk_phonemes``
   produces byte-identical output to ``CAPI.convert_to_phonemes``
-  across all 33 bit-parity corpus prompts. The gate test
-  ``tests/parity/test_python_phonemes_vs_c_parity.py`` enforces this
-  with a strict pass (no xfail).
+  across **93+ bit-parity corpus prompts** spanning sentence-initial
+  stress, function-word destressing, plural / -s / -ed / -ing /
+  -ness / -ful / -less / -ment / -er / -est stem stripping with
+  Y->I alternation, n't contractions, syllabic-L/N rules, AH0
+  reduction with prior-vowel gating, -tion AH0->IX, dotted-decimal
+  expansion, BILLION/MILLION/THOUSAND digit-expansion, WH-question
+  intonation, title abbreviations, and the first-verbs stress
+  hack. The gate test
+  ``tests/parity/test_python_phonemes_vs_c_parity.py`` enforces
+  this with strict passes (no xfail).
 
 Path to pure-Python bit parity (per the plan):
 
