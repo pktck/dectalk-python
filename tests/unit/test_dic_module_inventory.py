@@ -131,10 +131,6 @@ _DEFERRED: dict[str, str] = {
         "Build-time diagnostic: prints true/false flag bits in symbolic "
         "form for the human-readable dictionary listing; no runtime equivalent"
     ),
-    "quote_string": (
-        "Build-time helper: escapes a raw string for inclusion in the "
-        "human-readable dictionary listing; no runtime equivalent"
-    ),
     # ---- dic_cnvt.c -- the Paradox-format dictionary converter (a
     # separate standalone tool that doesn't even appear in the Makefile;
     # never linked into anything Linux builds today).
