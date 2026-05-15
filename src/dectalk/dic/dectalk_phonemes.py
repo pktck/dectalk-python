@@ -461,11 +461,18 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             # - AX after R or L cluster (``hundred axd``, ``salad axd``)
             # - AX after a vowel (``period iyaxd`` -- the AH0 is right
             #   after IY, no consonant between -- keeps AX schwa)
+            # Also fires for AH0+D+Z word-final (the plural ``methods``
+            # -> ``m ' ehthixd z``).
+            d_then_word_end = _word_break_at(i + 2) or (
+                i + 2 < len(phonemes)
+                and phonemes[i + 2].rstrip("0123456789") == "Z"
+                and _word_break_at(i + 3)
+            )
             ah_before_final_d = (
                 base == "AH"
                 and stress_digit == "0"
                 and next_base == "D"
-                and _word_break_at(i + 2)
+                and d_then_word_end
                 and _word_is_multi_syllabic(i)
                 and ah_before_final_s_prev_emit not in ("r", "ll", "ir", "ar", "or", "ur", "rr")
                 and ah_before_final_s_prev_emit not in _VOWEL_DECTALK_CODES

@@ -229,8 +229,9 @@ CORPUS: tuple[str, ...] = (
     "panic",
     # Multi-syllabic AH0+D word-final -> IX (-ID suffix), gated to
     # exclude liquid clusters (``hundred axd``) and vowel prev
-    # (``period iyaxd``).
+    # (``period iyaxd``). Also fires for the plural ``methods``.
     "method",
+    "methods",
 )
 
 
