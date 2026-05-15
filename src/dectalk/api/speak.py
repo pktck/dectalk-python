@@ -910,6 +910,20 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             stem_phones = _dedupe_consecutive_phonemes(lts(tion_stem))
                         if stem_phones is not None:
                             phones = [*stem_phones, "SH", "AH0", "N"]
+                    # ``-ive`` adjective suffix: strip and append
+                    # ``AH0 + V``. The encoder's AH0+V word-final rule
+                    # reduces AH0 to IX (``active`` -> stem ACT +
+                    # ``AH0 V`` -> ``' aek t ixv``). LTS for ``IVE`` end
+                    # gives a wrong AY0 vowel, so this short-circuits.
+                    if (
+                        phones is None and token.text.endswith("IVE") and len(token.text) > 4  # noqa: PLR2004
+                    ):
+                        ive_stem = token.text[:-3]
+                        stem_phones = lookup(ive_stem, lang=lang)
+                        if stem_phones is None and lts_fallback:
+                            stem_phones = _dedupe_consecutive_phonemes(lts(ive_stem))
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "AH0", "V"]
                     # ``-ly`` adverb suffix: strip and append ``L + IY0``
                     # (``friendly`` -> ``FRIEND`` + ``L + IY`` ->
                     # ``f r ' ehn d lliy``). Consonant-final stems only;

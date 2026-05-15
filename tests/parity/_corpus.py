@@ -232,6 +232,18 @@ CORPUS: tuple[str, ...] = (
     # (``period iyaxd``). Also fires for the plural ``methods``.
     "method",
     "methods",
+    # AH0+V (-ive) / AH0+SH (-ish) / AH0+P (-up) / AH0+F (-iff) /
+    # IH0 variants of same.
+    "active",
+    "passive",
+    "creative",
+    "finish",
+    "radish",
+    "syrup",
+    "gossip",
+    "mastiff",
+    "cousin",
+    "robin",
 )
 
 

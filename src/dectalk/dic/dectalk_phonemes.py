@@ -562,7 +562,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 and stress_digit == "0"
                 and next_base == "N"
                 and n_then_word_end
-                and prev_emit_base in ("sh", "zh", "ch", "jh", "r")
+                and prev_emit_base in ("sh", "zh", "ch", "jh", "r", "b", "z", "s")
             )
             # AH0 + F + L word-final reads as IX + F + EL (the ``-iful``
             # connector in ``beautiful``).
@@ -577,6 +577,48 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or phonemes[i + 3] == "_"
                     or (phonemes[i + 3] or "").startswith("__")
                 )
+            )
+            # AH0 + word-final V (multi-syllabic) reads as IX (the
+            # ``-ive`` suffix: ``active`` -> ``' aek t ixv``, ``native``
+            # -> ``n ' eyt ixv``).
+            ah_before_final_v = (
+                base == "AH"
+                and stress_digit == "0"
+                and next_base == "V"
+                and _word_break_at(i + 2)
+                and _word_is_multi_syllabic(i)
+            )
+            # AH0 + word-final SH (multi-syllabic) reads as IX (the
+            # ``-ish`` suffix: ``finish`` -> ``f ' ihn ixsh``).
+            ah_before_final_sh = (
+                base in ("AH", "IH")
+                and stress_digit == "0"
+                and next_base == "SH"
+                and _word_break_at(i + 2)
+                and _word_is_multi_syllabic(i)
+            )
+            # AH0 + word-final P after coronal-sonorant prev emit reads
+            # as IX (``syrup`` / ``gossip`` / ``turnip`` / ``tulip``).
+            # After L (``gallop`` / ``develop``) stays AX -- gated out
+            # because the C source's rule depends on the L's syllable
+            # boundary which we can't easily detect here.
+            ah_before_final_p = (
+                base in ("AH", "IH")
+                and stress_digit == "0"
+                and next_base == "P"
+                and _word_break_at(i + 2)
+                and _word_is_multi_syllabic(i)
+                and ah_before_final_s_prev_emit in ("r", "s", "n", "t")
+            )
+            # AH0 + word-final F after coronal-sonorant prev emit reads
+            # as IX (``sheriff`` / ``mastiff`` / ``midriff``).
+            ah_before_final_f = (
+                base in ("AH", "IH")
+                and stress_digit == "0"
+                and next_base == "F"
+                and _word_break_at(i + 2)
+                and _word_is_multi_syllabic(i)
+                and ah_before_final_s_prev_emit in ("r", "s", "n", "t", "ll")
             )
             # Word-final L / N preceded by a consonant collapses to
             # the syllabic-L / syllabic-N allophone (``el`` / ``en``,
@@ -648,18 +690,26 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or ah_before_final_z
                     or ah_before_final_k
                     or ah_before_final_d
+                    or ah_before_final_v
+                    or ah_before_final_sh
+                    or ah_before_final_p
+                    or ah_before_final_f
                 ):
                     dt = "ix"
                 elif _word_is_multi_syllabic(i) or next_is_fricative or next_is_word_end:
                     dt = "ax"
                 else:
                     dt = "ah"
-            elif (base == "IH" and stress_digit == "0" and next_base == "NG") or (
+            elif (
                 base == "IH"
                 and stress_digit == "0"
-                and next_base == "K"
-                and _word_break_at(i + 2)
-                and _word_is_multi_syllabic(i)
+                and (
+                    next_base == "NG"
+                    or (next_base == "K" and _word_break_at(i + 2) and _word_is_multi_syllabic(i))
+                    or ah_before_final_sh
+                    or ah_before_final_p
+                    or ah_before_final_f
+                )
             ):
                 dt = "ix"
             elif syllabic_after_consonant_word_final and base == "L":
