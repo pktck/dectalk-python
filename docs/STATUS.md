@@ -29,24 +29,30 @@ Stage-boundary milestones reached so far:
 
 - **LTS+dic phoneme stream**: ``dectalk.text_to_dectalk_phonemes``
   produces byte-identical output to ``CAPI.convert_to_phonemes``
-  across **195+ bit-parity corpus prompts** spanning sentence-initial
+  across **2400+ bit-parity corpus prompts** spanning sentence-initial
   stress, function-word destressing (a/and/to/for), plural / -s /
   -ed / -ing / -ness / -ful / -less / -ment / -er / -est / -ly /
-  -ive / -tion / -sion stem stripping with Y->I alternation,
+  -ive / -tion / -sion / -ify stem stripping with Y->I alternation
+  and LTS-fallback for stems missing from the bundled lex,
   n't contractions, syllabic-L/N rules (incl. word-final-T/-D
   context), AH0 reduction with sonorant/sibilant context-gates for
-  word-final S/T/N/K/Z/D/V/SH/P/F contexts, IH0 reduction before
-  NG and K, AH0+N+T -> IX after sonorant/sibilant prev, -ent/-ant
-  / -iful / -ous / -tion morphology, M-in-cluster sonorant for
-  AH0+S, dotted-decimal and digit-string expansion with
-  C-faithful commas / AND / OR-vowel for digit-only forms,
+  word-final S/T/N/K/Z/D/V/SH/P/F contexts plus the -fy / -sify
+  suffix family (AH0+F/AH0+S+F before stressed AY -> IX),
+  IH0 reduction before NG and K, AH0+N+T -> IX after sonorant/
+  sibilant prev (with vowel+R vs cluster+R discrimination),
+  -ent/-ant / -iful / -ous / -tion morphology, M-in-cluster
+  sonorant for AH0+S, dotted-decimal and digit-string expansion
+  with C-faithful commas / AND / OR-vowel for digit-only forms,
   sibilant-final plural IX+Z epenthesis, possessive 's IX+Z
   variant, hyphenated # marker, teen MBOUND ``*`` markers, title
   abbreviation overrides, WH-question intonation, first-verbs
-  sentence-initial S2 stress, curated VPSTART verb list of ~85
-  pure verbs, and dynamic spell-out via ``ls_spel_say_it``. The
-  gate test ``tests/parity/test_python_phonemes_vs_c_parity.py``
-  enforces this with strict passes (no xfail).
+  sentence-initial S2 stress, curated VPSTART verb list of ~200
+  pure verbs (including -ate / -ize / -ify families), default
+  spell-out path (every letter primary-stressed) with FBI-style
+  destressed-middle exceptions, and dynamic spell-out via
+  ``ls_spel_say_it``. The gate test
+  ``tests/parity/test_python_phonemes_vs_c_parity.py`` enforces
+  this with strict passes (no xfail).
 
 Path to pure-Python bit parity (per the plan):
 
