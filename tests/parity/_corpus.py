@@ -209,6 +209,10 @@ CORPUS: tuple[str, ...] = (
     "eleven",
     "thirteen",
     "13",
+    # -tion / -sion suffix: stem-strip + SH + AH0 + N.
+    "pension",
+    "mansion",
+    "tension",
 )
 
 

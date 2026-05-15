@@ -877,6 +877,21 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         stem_phones = lookup(stem + "E", lang=lang) or lookup(stem, lang=lang)
                         if stem_phones is not None:
                             phones = [*stem_phones, "ER0"]
+                    # ``-tion`` / ``-sion`` noun suffix: strip and append
+                    # ``SH + AH0 + N`` (AH0 -> IX by the encoder's
+                    # post-SH rule). Catches PENSION / MANSION / TENSION
+                    # and many others not in the lexicon.
+                    if (
+                        phones is None
+                        and (token.text.endswith("TION") or token.text.endswith("SION"))
+                        and len(token.text) > 4  # noqa: PLR2004
+                    ):
+                        tion_stem = token.text[:-4]
+                        stem_phones = lookup(tion_stem, lang=lang)
+                        if stem_phones is None and lts_fallback:
+                            stem_phones = _dedupe_consecutive_phonemes(lts(tion_stem))
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "SH", "AH0", "N"]
                     # ``-ly`` adverb suffix: strip and append ``L + IY0``
                     # (``friendly`` -> ``FRIEND`` + ``L + IY`` ->
                     # ``f r ' ehn d lliy``). Consonant-final stems only;
