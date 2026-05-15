@@ -60,4 +60,4 @@ def test_print_tf(val: int, expected: str) -> None:
 
 def test_form_class_strings_has_32_entries() -> None:
     """Mirrors the C source's fixed-size 32-entry array."""
-    assert len(form_class_strings) == 32  # noqa: PLR2004
+    assert len(form_class_strings) == 32

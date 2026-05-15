@@ -88,6 +88,6 @@ __all__ = [
     "PC_SAMPLE_RATE",
     "PROPER_NAME_PRONUNCIATION",
     "TTS_ASCII",
-    "TextToSpeechGetCaps",
     "WENDY",
+    "TextToSpeechGetCaps",
 ]

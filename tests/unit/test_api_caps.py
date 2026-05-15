@@ -9,8 +9,8 @@ from dectalk.api.caps import (
     PC_SAMPLE_RATE,
     PROPER_NAME_PRONUNCIATION,
     TTS_ASCII,
-    TextToSpeechGetCaps,
     WENDY,
+    TextToSpeechGetCaps,
 )
 from dectalk.api.language import TTS_AMERICAN_ENGLISH
 
@@ -36,14 +36,14 @@ def test_populates_caps_dataclass() -> None:
     assert caps.dw_number_of_predefined_speakers == WENDY + 1
     assert caps.dw_character_set == TTS_ASCII
     # Version = DTALK_MAJ_VERSION*100 + DTALK_MIN_VERSION = 5*100 + 0 = 500
-    assert caps.version == 500  # noqa: PLR2004
+    assert caps.version == 500
 
 
 def test_constants_match_c_source() -> None:
     """Sanity check the mirrored values match coop.h / cm_defs.h / ttsapi.h."""
-    assert PC_SAMPLE_RATE == 11025  # noqa: PLR2004
-    assert MIN_SPEAKING_RATE == 75  # noqa: PLR2004
-    assert MAX_SPEAKING_RATE == 600  # noqa: PLR2004
-    assert WENDY == 8  # noqa: PLR2004
+    assert PC_SAMPLE_RATE == 11025
+    assert MIN_SPEAKING_RATE == 75
+    assert MAX_SPEAKING_RATE == 600
+    assert WENDY == 8
     assert PROPER_NAME_PRONUNCIATION == 0x00000001
     assert TTS_ASCII == 0

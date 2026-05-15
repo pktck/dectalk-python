@@ -16,7 +16,7 @@ from __future__ import annotations
 
 
 def quote_string(s: bytes) -> bytes:
-    """Wrap ``s`` in matching quote delimiters.
+    r"""Wrap ``s`` in matching quote delimiters.
 
     Faithful translation of the C body. Picks single quotes when the
     input starts with a double quote, otherwise double quotes.

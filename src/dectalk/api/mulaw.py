@@ -34,7 +34,8 @@ _EXPONENT_LUT: tuple[int, ...] = (
     *([6] * 64),
     *([7] * 128),
 )
-assert len(_EXPONENT_LUT) == 256, "exponent LUT must mirror the 256-entry C source"
+_EXPONENT_LUT_SIZE: int = 256
+assert len(_EXPONENT_LUT) == _EXPONENT_LUT_SIZE, "exponent LUT must mirror the 256-entry C source"
 
 
 def LinearToMuLaw(wSample: int) -> int:  # noqa: N802, N803
@@ -55,17 +56,14 @@ def LinearToMuLaw(wSample: int) -> int:  # noqa: N802, N803
     # C: wSign = (wSample >> 8) & 0x80
     # Python's negative-number ``>>`` differs from C; mask to 16 bits.
     sign = (wSample >> 8) & 0x80
-    if sign != 0:
-        wSample = -wSample
+    sample = -wSample if sign != 0 else wSample
     # Clip the magnitude.
-    if wSample > MULAW_CLIP_LEVEL:
-        wSample = MULAW_CLIP_LEVEL
+    sample = min(sample, MULAW_CLIP_LEVEL)
     # Convert from 16-bit linear to mu-law.
-    wSample += MULAW_BIAS
-    exponent = _EXPONENT_LUT[(wSample >> 7) & 0xFF]
-    mantissa = (wSample >> (exponent + 3)) & 0x0F
-    mu_law_byte = (~(sign | (exponent << 4) | mantissa)) & 0xFF
-    return mu_law_byte
+    sample += MULAW_BIAS
+    exponent = _EXPONENT_LUT[(sample >> 7) & 0xFF]
+    mantissa = (sample >> (exponent + 3)) & 0x0F
+    return (~(sign | (exponent << 4) | mantissa)) & 0xFF
 
 
-__all__ = ["LinearToMuLaw", "MULAW_BIAS", "MULAW_CLIP_LEVEL"]
+__all__ = ["MULAW_BIAS", "MULAW_CLIP_LEVEL", "LinearToMuLaw"]

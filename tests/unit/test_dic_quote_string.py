@@ -17,9 +17,9 @@ from dectalk.dic.quote_string import quote_string
     ("inp", "expected"),
     [
         (b"hello", b'"hello"'),
-        (b'"already-quoted"', b'\'"already-quoted"\''),
+        (b'"already-quoted"', b"'\"already-quoted\"'"),
         (b"", b'""'),
-        (b"'singles inside'", b'"\'singles inside\'"'),
+        (b"'singles inside'", b"\"'singles inside'\""),
         (b"a", b'"a"'),
     ],
 )
@@ -30,7 +30,7 @@ def test_quote_string_wraps_correctly(inp: bytes, expected: bytes) -> None:
 
 def test_quote_string_picks_single_quote_when_starts_with_double() -> None:
     """Faithful selection rule: ``str[0] == '"'`` -> single quotes."""
-    assert quote_string(b'"x') == b'\'"x\''
+    assert quote_string(b'"x') == b"'\"x'"
 
 
 def test_quote_string_picks_double_quote_otherwise() -> None:

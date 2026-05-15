@@ -19,7 +19,7 @@ def test_returns_zero_on_a_fresh_handle() -> None:
 
 
 def test_returns_handle_value() -> None:
-    assert TextToSpeechGetLastError(_StubHandle(LastError=5)) == 5  # noqa: PLR2004
+    assert TextToSpeechGetLastError(_StubHandle(LastError=5)) == 5
 
 
 def test_returns_arbitrary_unsigned() -> None:

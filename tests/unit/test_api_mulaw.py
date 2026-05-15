@@ -7,21 +7,17 @@ few mid-range values, and the clip behaviour at +/- MULAW_CLIP_LEVEL.
 
 from __future__ import annotations
 
-from dectalk.api.mulaw import LinearToMuLaw, MULAW_BIAS, MULAW_CLIP_LEVEL
+from dectalk.api.mulaw import MULAW_BIAS, MULAW_CLIP_LEVEL, LinearToMuLaw
 
 
 def _c_reference(w_sample: int) -> int:
     """Re-implement the C body inline; used as a golden oracle."""
     # Static C LUT (same as the production module).
-    lut = (
-        [0] * 2 + [1] * 2 + [2] * 4 + [3] * 8 + [4] * 16
-        + [5] * 32 + [6] * 64 + [7] * 128
-    )
+    lut = [0] * 2 + [1] * 2 + [2] * 4 + [3] * 8 + [4] * 16 + [5] * 32 + [6] * 64 + [7] * 128
     sign = (w_sample >> 8) & 0x80
     if sign != 0:
         w_sample = -w_sample
-    if w_sample > MULAW_CLIP_LEVEL:
-        w_sample = MULAW_CLIP_LEVEL
+    w_sample = min(w_sample, MULAW_CLIP_LEVEL)
     w_sample = w_sample + MULAW_BIAS
     exponent = lut[(w_sample >> 7) & 0xFF]
     mantissa = (w_sample >> (exponent + 3)) & 0x0F
