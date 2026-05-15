@@ -227,6 +227,10 @@ CORPUS: tuple[str, ...] = (
     "music",
     "classic",
     "panic",
+    # Multi-syllabic AH0+D word-final -> IX (-ID suffix), gated to
+    # exclude liquid clusters (``hundred axd``) and vowel prev
+    # (``period iyaxd``).
+    "method",
 )
 
 

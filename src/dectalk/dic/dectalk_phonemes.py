@@ -455,6 +455,21 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 and _word_break_at(i + 2)
                 and _word_is_multi_syllabic(i)
             )
+            # Multi-syllabic AH0 + word-final D reads as IX (the ``-id``
+            # ending: ``method`` -> ``m ' ehthixd``, ``solid`` -> ``s
+            # ' aallixd``). Exceptions:
+            # - AX after R or L cluster (``hundred axd``, ``salad axd``)
+            # - AX after a vowel (``period iyaxd`` -- the AH0 is right
+            #   after IY, no consonant between -- keeps AX schwa)
+            ah_before_final_d = (
+                base == "AH"
+                and stress_digit == "0"
+                and next_base == "D"
+                and _word_break_at(i + 2)
+                and _word_is_multi_syllabic(i)
+                and ah_before_final_s_prev_emit not in ("r", "ll", "ir", "ar", "or", "ur", "rr")
+                and ah_before_final_s_prev_emit not in _VOWEL_DECTALK_CODES
+            )
 
             # ``-it`` morphological pattern (``visit``, ``limit``, ``edit``):
             # multi-syllabic AH0 + word-final T -> IX + T. Only fires when
@@ -625,6 +640,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or ah_before_final_t
                     or ah_before_final_z
                     or ah_before_final_k
+                    or ah_before_final_d
                 ):
                     dt = "ix"
                 elif _word_is_multi_syllabic(i) or next_is_fricative or next_is_word_end:
