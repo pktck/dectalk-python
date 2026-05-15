@@ -131989,6 +131989,21 @@ CORPUS: tuple[str, ...] = (
     "the students were smart",
     "the students were tired",
     "this was a test",
+    # Broad-net batch 92: idioms, greetings, thanks.
+    "at any rate",
+    "at that point",
+    "at this point",
+    "in any case",
+    "in that case",
+    "in this case",
+    "in your case",
+    "of course yes",
+    "on a whim",
+    "on the way",
+    "thanks a million",
+    "thanks so very much",
+    "to be safe",
+    "to be sure",
 )
 
 
