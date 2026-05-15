@@ -202,31 +202,6 @@ _DEFERRED: dict[str, str] = {
         "OP_THREAD_ROUTINE worker pumping the text queue; Python port "
         "is single-threaded and dispatches synchronously through _capi"
     ),
-    "PutIndexMarkInBuffer": (
-        "Stages an index-mark token in the current output buffer; "
-        "Python emits marks through ``IndexMarkEvent`` callbacks"
-    ),
-    "PutPhonemeInBuffer": (
-        "Stages a phoneme token in the current output buffer; Python "
-        "exposes phoneme transcripts via ``text_to_phonemes``"
-    ),
-    "QueueToMemory": (
-        "Splits a synthesised buffer between in-memory consumers; "
-        "Python's ``to_wav`` returns the whole buffer as bytes"
-    ),
-    "Report_TTS_Status": (
-        "Posts a status-change message to the host (WM_DECTALKMESSAGE "
-        "on Windows, callback on Linux); Python uses regular Python "
-        "exceptions and return values"
-    ),
-    "ReturnRemainingBuffers": (
-        "Drains the in-flight buffer queue back to the host; Python "
-        "audio backend has no host-owned buffer queue"
-    ),
-    "SendBuffer": (
-        "Hands a filled buffer to the audio device or in-memory sink; "
-        "Python writes to bytes / sounddevice directly"
-    ),
     "DrainPipes": (
         "Forces an LTS/PH/VTM pipe drain at shutdown; Python pipeline "
         "is synchronous so there's nothing left to drain"

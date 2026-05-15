@@ -52,10 +52,52 @@ def PlayAudioCallbackRoutine(*args: object, **kwargs: object) -> int:  # noqa: N
     return _MMSYSERR_NOERROR
 
 
+def PutIndexMarkInBuffer(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; index marks fire via callbacks, not buffer tokens."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def PutPhonemeInBuffer(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; phonemes flow via the synchronous pipeline."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def QueueToMemory(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; ``to_wav`` writes WAVs directly, no buffer pool."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def Report_TTS_Status(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; speak() returns synchronously, no status to report."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def ReturnRemainingBuffers(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; no buffer-pool reservoir to refill."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def SendBuffer(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; no async buffer dispatch -- bytes returned inline."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
 __all__ = [
     "FixMemoryLockup",
     "PlayAudioCallbackRoutine",
     "PumpModeMessage",
+    "PutIndexMarkInBuffer",
+    "PutPhonemeInBuffer",
+    "QueueToMemory",
+    "Report_TTS_Status",
+    "ReturnRemainingBuffers",
+    "SendBuffer",
     "StartDecTalkSystemThread",
     "WaitForEmptyPipes",
     "WaitForTextQueuingToComplete",
