@@ -74,9 +74,22 @@ _C_ORACLE: dict[str, bytes] = {}
 
 
 def _build_oracle() -> dict[str, bytes]:
-    """Compute ``convert_to_phonemes`` for every CORPUS entry once."""
+    """Compute ``convert_to_phonemes`` for every CORPUS entry once.
+
+    The C library accumulates a tiny amount of cross-call state that
+    can cause flaky differences once you've made thousands of calls
+    against a single handle. Cycling the handle every 1000 calls
+    keeps the state fresh without blowing past the FD ceiling
+    (each Startup leaks a handful of FDs; 30 cycles fits easily).
+    """
+    chunk = 1000
     capi = CAPI()
-    return {text: capi.convert_to_phonemes(text) for text in CORPUS}
+    result: dict[str, bytes] = {}
+    for i, text in enumerate(CORPUS):
+        if i > 0 and i % chunk == 0:
+            capi = CAPI()
+        result[text] = capi.convert_to_phonemes(text)
+    return result
 
 
 def _get_oracle(text: str) -> bytes:
