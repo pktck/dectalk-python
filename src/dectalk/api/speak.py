@@ -881,9 +881,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     if (
                         phones is None and token.text.endswith("ED") and len(token.text) > 2  # noqa: PLR2004
                     ):
-                        # Try with and without the silent ``-e`` re-attached.
+                        # Try with and without the silent ``-e`` re-attached,
+                        # then fall back to the Y -> I alternation
+                        # (``married`` -> ``marry``).
                         ed_stem = token.text[:-2]
                         stem_phones = lookup(ed_stem + "E", lang=lang) or lookup(ed_stem, lang=lang)
+                        if stem_phones is None and ed_stem.endswith("I"):
+                            stem_phones = lookup(ed_stem[:-1] + "Y", lang=lang)
                         if stem_phones is not None:
                             last_base = stem_phones[-1].rstrip("0123456789")
                             if last_base in ("T", "D"):

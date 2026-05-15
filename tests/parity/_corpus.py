@@ -136,6 +136,9 @@ CORPUS: tuple[str, ...] = (
     "cities",
     "babies",
     "cherries",
+    # Y -> I in -ed past tense (``studied`` -> ``study``).
+    "studied",
+    "tried",
 )
 
 
