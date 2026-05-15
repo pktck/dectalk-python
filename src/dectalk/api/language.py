@@ -1,9 +1,14 @@
-"""``TextToSpeechGetLanguage`` -- public API language-readback function.
+"""Public API language get/set functions.
 
-Translated from ``src/dapi/src/api/ttsapi.c`` lines 7196-7209. The C
-source returns ``TTS_AMERICAN_ENGLISH`` (the language ID for US English)
-for any valid handle. Python's port hard-codes the same since the
-runtime only supports US English today.
+Translated from ``src/dapi/src/api/ttsapi.c``:
+
+- :func:`TextToSpeechGetLanguage` (lines 7196-7209) -- always
+  returns ``TTS_AMERICAN_ENGLISH`` for any valid handle.
+- :func:`TextToSpeechSetLanguage` (lines 7246-7260) -- accepts only
+  ``TTS_AMERICAN_ENGLISH``, returns ``MMSYSERR_INVALPARAM`` otherwise.
+
+The Python runtime only ships US English today, so both functions
+mirror the C source's narrow language-validation behavior.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ TTS_AMERICAN_ENGLISH: int = 0x0409  # MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_U
 # MMSYSERR codes (mirrored from Windows multimedia constants used by the C API).
 _MMSYSERR_NOERROR: int = 0
 _MMSYSERR_INVALHANDLE: int = 5
+_MMSYSERR_INVALPARAM: int = 11
 
 
 def TextToSpeechGetLanguage(  # noqa: N802 — mirror C entry-point name
@@ -51,4 +57,40 @@ def TextToSpeechGetLanguage(  # noqa: N802 — mirror C entry-point name
     return _MMSYSERR_NOERROR
 
 
-__all__ = ["TTS_AMERICAN_ENGLISH", "TextToSpeechGetLanguage"]
+def TextToSpeechSetLanguage(  # noqa: N802 — mirror C entry-point name
+    phTTS: object,  # noqa: N803 — mirror C argument name
+    Language: int,  # noqa: N803 — mirror C argument name
+) -> int:
+    """Set the language on ``phTTS``; only ``TTS_AMERICAN_ENGLISH`` accepted.
+
+    Faithful translation of the C body:
+
+    .. code-block:: c
+
+        if ( IsBadWritePtr( phTTS, sizeof(phTTS)))
+            return( MMSYSERR_INVALHANDLE );
+        if ( Language != TTS_AMERICAN_ENGLISH )
+            return( MMSYSERR_INVALPARAM );
+        return( MMSYSERR_NOERROR );
+
+    Args:
+        phTTS: TTS handle. ``None`` returns ``MMSYSERR_INVALHANDLE``.
+        Language: Language ID; must be ``TTS_AMERICAN_ENGLISH``.
+
+    Returns:
+        ``MMSYSERR_NOERROR`` on success, ``MMSYSERR_INVALHANDLE`` for a
+        ``None`` handle, ``MMSYSERR_INVALPARAM`` for any non-US-English
+        language.
+    """
+    if phTTS is None:
+        return _MMSYSERR_INVALHANDLE
+    if Language != TTS_AMERICAN_ENGLISH:
+        return _MMSYSERR_INVALPARAM
+    return _MMSYSERR_NOERROR
+
+
+__all__ = [
+    "TTS_AMERICAN_ENGLISH",
+    "TextToSpeechGetLanguage",
+    "TextToSpeechSetLanguage",
+]

@@ -392,9 +392,6 @@ _DEFERRED: dict[str, str] = {
         "Public entry; switches the active language for a handle. Python "
         "passes ``lang=`` per call instead of mutating handle state"
     ),
-    "TextToSpeechSetLanguage": (
-        "Public entry; sets the language code on a handle. Python passes ``lang=`` per call instead"
-    ),
     "TextToSpeechSetRate": (
         "Public entry; sets the speaking rate. Python callers pass "
         "``rate=...`` to ``speak`` / ``to_wav`` directly"
