@@ -767,6 +767,12 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             stem_phones = lookup(stem, lang=lang) or lookup(stem[:-1], lang=lang)
                         else:
                             stem_phones = lookup(stem, lang=lang)
+                        # ``cities`` -> ``citie`` (lookup fails) -> ``city``
+                        # via the Y -> I orthographic alternation.
+                        if stem_phones is None and len(stem) > 1 and stem.endswith("IE"):
+                            stem_phones = lookup(stem[:-2] + "Y", lang=lang)
+                        elif stem_phones is None and len(stem) > 1 and stem.endswith("I"):
+                            stem_phones = lookup(stem[:-1] + "Y", lang=lang)
                         if stem_phones is not None:
                             # When the stem ends in a sonorant (L/N)
                             # preceded by a stop ("SECOND" -> S EH K N D

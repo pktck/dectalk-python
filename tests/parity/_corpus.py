@@ -132,6 +132,10 @@ CORPUS: tuple[str, ...] = (
     "oldest",
     "fastest",
     "biggest",
+    # Y -> I morphological alternation in plurals (``cities`` -> ``city``).
+    "cities",
+    "babies",
+    "cherries",
 )
 
 
