@@ -8,14 +8,11 @@ pure-Python LTS+dic implementation matches this output byte-for-byte
 across the bit-parity corpus, the LTS phase of the port is complete
 and we move on to PH/VTM.
 
-Today the Python pipeline emits ARPABET-style phonemes (``HH AH0 L OW1
-W ER1 L D``) while the C source emits DECtalk's native alphabet (``hxax
-ll' ow w ' rrlld``). The test fails on every prompt until the LTS port
-emits the DECtalk-native alphabet AND its rule outputs match the C's
-byte-for-byte.
-
-The stop-hook does NOT gate on this file -- it gates on the full
-audio parity test. But this is a useful intermediate goalpost.
+To keep the parametrised pytest run under the OS file-descriptor
+ceiling (the C library leaks a few FDs per ``TextToSpeechStartup``
+/ ``Shutdown`` cycle), the C oracle is computed once at session
+start and cached in :data:`_C_ORACLE`. Subsequent test invocations
+look up the cached bytes instead of re-querying the C library.
 """
 
 from __future__ import annotations
@@ -64,13 +61,29 @@ def _python_phonemes(text: str) -> bytes:
     ``encode_to_dectalk`` (the ARPABET -> DECtalk 2-letter encoder),
     so the result can be byte-compared against the C source's
     ``convert_to_phonemes`` output.
-
-    Today the encoded byte string diverges on every prompt (different
-    LTS rules, different schwa/stress placement, missing trailing
-    spaces, no phrase/clause markers); each prompt that turns green
-    here closes the gap by one corner.
     """
     return dectalk.text_to_dectalk_phonemes(text)
+
+
+# Bulk-precompute the C oracle once per session. Each
+# ``convert_to_phonemes`` call goes through ``TextToSpeechStartup``
+# / ``TextToSpeechShutdown``; doing it 3000+ times during the
+# parametrised test run exhausts the 4096-FD ulimit. Caching the
+# results up-front decouples corpus size from FD usage.
+_C_ORACLE: dict[str, bytes] = {}
+
+
+def _build_oracle() -> dict[str, bytes]:
+    """Compute ``convert_to_phonemes`` for every CORPUS entry once."""
+    capi = CAPI()
+    return {text: capi.convert_to_phonemes(text) for text in CORPUS}
+
+
+def _get_oracle(text: str) -> bytes:
+    """Return the cached C output for ``text`` (populating the cache lazily)."""
+    if not _C_ORACLE:
+        _C_ORACLE.update(_build_oracle())
+    return _C_ORACLE[text]
 
 
 @pytest.mark.parametrize("text", CORPUS, ids=list(CORPUS))
@@ -86,8 +99,7 @@ def test_python_phonemes_match_c_phonemes(text: str) -> None:
     a new sentinel rewriter, or a kernel-level expansion rule) -- not
     an xfail.
     """
-    capi = CAPI()
-    expected = capi.convert_to_phonemes(text)
+    expected = _get_oracle(text)
     actual = _python_phonemes(text)
     assert actual == expected, (
         f"phoneme mismatch for {text!r}:\n"
