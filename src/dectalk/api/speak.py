@@ -239,7 +239,99 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     # hardcode the words the parity corpus needs. ``SELLS`` is the
     # verb in "she sells sea shells"; ``SPEAKING`` is the corpus's
     # "betty speaking" / "harry speaking" pattern.
-    vpstart_words: frozenset[str] = frozenset({"SPEAKING", "SELLS", "HAPPENED", "SAID"})
+    # Curated list of "pure verbs" that always get the VPSTART ``)``
+    # marker in C output. Based on the agent's investigation of
+    # ``Dic_us_2002.txt`` form-class flags (bit 18 set, bit 12 clear)
+    # plus per-utterance verification. The full dictionary has hundreds
+    # of such entries; this curated subset covers the high-frequency
+    # cases the corpus exercises. New entries should be added only when
+    # they pass the lexical verification.
+    vpstart_words: frozenset[str] = frozenset(
+        {
+            # Curated set of pure verb entries; each verified against
+            # the C oracle as producing the ``)`` marker in isolation.
+            # Past tenses / past participles that don't get the marker
+            # (gone, ate, eaten, spoke, spoken, thought, known, took,
+            # wrote, written, sold) are deliberately omitted -- their
+            # dictionary form-class differs.
+            "SEE",
+            "SEES",
+            "SEEING",
+            "SAW",
+            "SEEN",
+            "GO",
+            "GOES",
+            "GOING",
+            "WENT",
+            "COME",
+            "COMES",
+            "COMING",
+            "CAME",
+            "EAT",
+            "EATS",
+            "EATING",
+            "SAY",
+            "SAYS",
+            "SAYING",
+            "SAID",
+            "TELL",
+            "TELLS",
+            "TELLING",
+            "TOLD",
+            "SPEAK",
+            "SPEAKS",
+            "SPEAKING",
+            "THINK",
+            "THINKS",
+            "THINKING",
+            "KNOW",
+            "KNOWS",
+            "KNOWING",
+            "KNEW",
+            "WANT",
+            "WANTS",
+            "WANTED",
+            "WANTING",
+            "ASK",
+            "ASKS",
+            "ASKED",
+            "ASKING",
+            "MAKE",
+            "MAKES",
+            "MAKING",
+            "TAKE",
+            "TAKES",
+            "TAKING",
+            "TAKEN",
+            "READ",
+            "READS",
+            "READING",
+            "WRITE",
+            "WRITES",
+            "WRITING",
+            "SELL",
+            "SELLS",
+            "SELLING",
+            "BAKE",
+            "BAKES",
+            "BAKED",
+            "BAKING",
+            "HAPPEN",
+            "HAPPENS",
+            "HAPPENED",
+            "HAPPENING",
+            "THANK",
+            "THANKS",
+            "THANKED",
+            "THANKING",
+            "LOSE",
+            "LOSES",
+            "LOSING",
+            # Dictionary-marked function words that also carry the
+            # form-class flag in C's main dic (verified in isolation).
+            "SO",
+        }
+    )
 
     # Spell-out: known acronyms that DECtalk reads letter-by-letter
     # (each letter as its own word). When set, we split into separate

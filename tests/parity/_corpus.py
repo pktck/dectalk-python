@@ -256,6 +256,15 @@ CORPUS: tuple[str, ...] = (
     "silent",
     "distant",
     "patient",
+    # VPSTART verb expansion: many common verbs now get the ``)`` marker.
+    "we should go",
+    "they will see",
+    "you can ask",
+    "thank you",
+    "i think so",
+    "see you tomorrow",
+    "i want some",
+    "we know better",
 )
 
 
