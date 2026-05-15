@@ -134107,6 +134107,24 @@ CORPUS: tuple[str, ...] = (
     "we haven't seen it",
     "we haven't thought about it",
     "we haven't tried it",
+    # Broad-net batch 120: ``X don't have N``, ``come with me``, ``X was thinking``.
+    "come with us",
+    "go with her",
+    "go with him",
+    "i don't have a clue",
+    "i don't have an answer",
+    "i don't have money",
+    "i don't have time",
+    "i was wondering",
+    "stay with us",
+    "talk with me",
+    "talk with us",
+    "they don't have time",
+    "we don't have a clue",
+    "we don't have an answer",
+    "we don't have money",
+    "we don't have time",
+    "we were wondering",
 )
 
 
