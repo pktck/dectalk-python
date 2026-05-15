@@ -37,4 +37,6 @@ def empty_vtm_pipe() -> None:
     """
 
 
-__all__ = ["empty_vtm_pipe"]
+EmptyVtmPipe = empty_vtm_pipe
+
+__all__ = ["EmptyVtmPipe", "empty_vtm_pipe"]

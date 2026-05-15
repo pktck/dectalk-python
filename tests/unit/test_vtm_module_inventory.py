@@ -121,20 +121,9 @@ _DEFERRED: dict[str, str] = {
         "boundary; deferred along with the rest of the audio sync layer"
     ),
     # ---- vtmiont.c -- the VTM output thread and pipe machinery. -------
-    "EmptyVtmPipe": (
-        "ported as vtm.empty_vtm_pipe.empty_vtm_pipe (PEP8 rename) — "
-        "synchronous-pipeline no-op shim; the Python pipeline has no "
-        "inter-thread VTM pipe to drain"
-    ),
     "OutputData": (
         "Pushes a buffer of synthesised samples onto the audio handle; "
         "the Python audio backend uses a different output path"
-    ),
-    "SendVisualNotification": (
-        "ported as vtm.send_visual_notification.send_visual_notification "
-        "(PEP8 rename) — architectural shim that returns the VisualNotification "
-        "payload and invokes an optional visual_sink callable; the Python "
-        "pipeline has no host-callback surface yet"
     ),
     # ---- playtone.c -- DTMF / sine-pair tone injection. ---------------
 }

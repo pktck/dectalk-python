@@ -122,4 +122,6 @@ def send_visual_notification(
     return payload
 
 
-__all__ = ["VisualNotification", "send_visual_notification"]
+SendVisualNotification = send_visual_notification
+
+__all__ = ["SendVisualNotification", "VisualNotification", "send_visual_notification"]
