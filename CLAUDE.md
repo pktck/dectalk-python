@@ -98,8 +98,8 @@ patches, builds `libtts_us.so`, and runs the full test suite with
 
 ## C-to-Python port context
 
-See `/root/.claude/plans/create-a-python-port-smooth-hoare.md` for the
-authoritative plan. Key invariants:
+See [`docs/PLAN.md`](docs/PLAN.md) for the authoritative plan. Key
+invariants:
 
 - The synthesizer back-end (`src/dectalk/hlsyn/`) is bit-accurate already.
 - `dectalk.speak()` and `dectalk.to_wav()` route through
