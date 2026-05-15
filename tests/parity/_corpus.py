@@ -133652,6 +133652,28 @@ CORPUS: tuple[str, ...] = (
     "merry christmas to all",
     "merry christmas to you",
     "wonderful to see you",
+    # Broad-net batch 109: ``X is good/bad for Y``, ``X went to the N``.
+    "he went to the church",
+    "he went to the library",
+    "he went to the office",
+    "he went to the school",
+    "i went to the church",
+    "i went to the library",
+    "i went to the office",
+    "i went to the school",
+    "she went to the church",
+    "she went to the library",
+    "she went to the office",
+    "she went to the school",
+    "they are bad for me",
+    "they are good for me",
+    "they went to the church",
+    "they went to the library",
+    "they went to the office",
+    "they went to the school",
+    "we went to the church",
+    "we went to the library",
+    "we went to the school",
 )
 
 
