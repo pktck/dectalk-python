@@ -125118,6 +125118,26 @@ CORPUS: tuple[str, ...] = (
     "when did you happen",
     "when did you hear it",
     "when did you see it",
+    # Broad-net batch 69: long sentences, discourse markers, acceptances.
+    "after all",
+    "he ate dinner and watched the show",
+    "i played the piano for my mother",
+    "in other words",
+    "my friend came over to visit me",
+    "on the other hand",
+    "she did the right thing yesterday",
+    "that is great",
+    "that sounds fun",
+    "that sounds good",
+    "that sounds great",
+    "that sounds nice",
+    "that works for me",
+    "that works for us",
+    "the cars and the trucks waited",
+    "the dog and the cat slept",
+    "the kids went to bed at nine",
+    "they came back at the right time",
+    "we went home after the long day",
 )
 
 
