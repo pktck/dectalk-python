@@ -432,6 +432,13 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     "el",
                     "en",
                     "em",
+                    # Sibilants / palatal fricatives also trigger
+                    # AH0+S -> IX (``conscious`` -> ``aan shixs``,
+                    # ``precious`` -> ``ehshixs``).
+                    "sh",
+                    "zh",
+                    "ch",
+                    "jh",
                 )
                 or ah_before_final_s_prev_emit in _VOWEL_DECTALK_CODES
                 or m_in_cluster

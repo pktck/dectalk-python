@@ -244,6 +244,8 @@ CORPUS: tuple[str, ...] = (
     "mastiff",
     "cousin",
     "robin",
+    # SH/ZH/CH/JH + AH0 + S -> IX (``conscious``, ``precious`` if in lex).
+    "conscious",
 )
 
 
