@@ -116,6 +116,10 @@ CORPUS: tuple[str, ...] = (
     "darkness",
     "sadness",
     "happiness",
+    # ``-ful`` / ``-less`` adjective suffixes.
+    "helpful",
+    "helpless",
+    "careless",
 )
 
 

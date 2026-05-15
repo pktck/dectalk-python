@@ -806,6 +806,25 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             stem_phones = lookup(ness_stem[:-1] + "Y", lang=lang)
                         if stem_phones is not None:
                             phones = [*stem_phones, "N", "IX", "S"]
+                    # ``-ful`` adjective suffix: strip and append F + L
+                    # (``helpful`` -> ``hx' ehllp f el``). Encoder's
+                    # word-final syllabic-L rule handles the EL.
+                    if (
+                        phones is None and token.text.endswith("FUL") and len(token.text) > 3  # noqa: PLR2004
+                    ):
+                        ful_stem = token.text[:-3]
+                        stem_phones = lookup(ful_stem, lang=lang)
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "F", "L"]
+                    # ``-less`` adjective suffix: strip and append L+IX+S
+                    # (``helpless`` -> ``hx' ehllp llixs``).
+                    if (
+                        phones is None and token.text.endswith("LESS") and len(token.text) > 4  # noqa: PLR2004
+                    ):
+                        less_stem = token.text[:-4]
+                        stem_phones = lookup(less_stem, lang=lang)
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "L", "IX", "S"]
                     # ``-ing`` gerund / present-participle suffix: strip
                     # and append ``IX + NG`` (the standard ``-ing`` form).
                     if (
