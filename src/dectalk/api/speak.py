@@ -825,6 +825,17 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         stem_phones = lookup(less_stem, lang=lang)
                         if stem_phones is not None:
                             phones = [*stem_phones, "L", "IX", "S"]
+                    # ``-ment`` noun-forming suffix: strip and append
+                    # ``M + AX + N + T`` (``payment`` -> ``p ' eym axn t``).
+                    if (
+                        phones is None and token.text.endswith("MENT") and len(token.text) > 4  # noqa: PLR2004
+                    ):
+                        ment_stem = token.text[:-4]
+                        stem_phones = lookup(ment_stem, lang=lang) or lookup(
+                            ment_stem + "E", lang=lang
+                        )
+                        if stem_phones is not None:
+                            phones = [*stem_phones, "M", "AX", "N", "T"]
                     # ``-ing`` gerund / present-participle suffix: strip
                     # and append ``IX + NG`` (the standard ``-ing`` form).
                     if (

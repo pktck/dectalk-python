@@ -120,6 +120,10 @@ CORPUS: tuple[str, ...] = (
     "helpful",
     "helpless",
     "careless",
+    # ``-ment`` noun-forming suffix.
+    "payment",
+    "shipment",
+    "statement",
 )
 
 
