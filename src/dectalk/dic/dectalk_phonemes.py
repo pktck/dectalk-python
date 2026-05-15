@@ -679,6 +679,26 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             )
             # AH0 + word-final F after coronal-sonorant prev emit reads
             # as IX (``sheriff`` / ``mastiff`` / ``midriff``).
+            # Also fires when the F is followed by a single STRESSED
+            # vowel + word-end -- the ``-fy`` verb suffix in words
+            # like ``justify`` (lex ``JH AH1 S T AH0 F AY2``: AY has
+            # secondary stress, AH0 -> IX). ``notify`` / ``verify``
+            # have lex AY0 (no stress) and stay AX.
+            _next_after_f = phonemes[i + 2] if i + 2 < len(phonemes) else ""
+            _next_after_f_base = _next_after_f.rstrip("0123456789")
+            _next_after_f_stress = (
+                _next_after_f[-1] if _next_after_f and _next_after_f[-1].isdigit() else ""
+            )
+            ah_before_f_then_fy_suffix = (
+                base in ("AH", "IH")
+                and stress_digit == "0"
+                and next_base == "F"
+                and _next_after_f_base == "AY"
+                and _next_after_f_stress in ("1", "2")
+                and _word_break_at(i + 3)
+                and _word_is_multi_syllabic(i)
+                and ah_before_final_s_prev_emit in ("r", "s", "n", "t", "ll")
+            )
             ah_before_final_f = (
                 base in ("AH", "IH")
                 and stress_digit == "0"
@@ -686,7 +706,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 and _word_break_at(i + 2)
                 and _word_is_multi_syllabic(i)
                 and ah_before_final_s_prev_emit in ("r", "s", "n", "t", "ll")
-            )
+            ) or ah_before_f_then_fy_suffix
             # Word-final L / N preceded by a consonant collapses to
             # the syllabic-L / syllabic-N allophone (``el`` / ``en``,
             # US_EL / US_EN). DECtalk applies this whenever there's
