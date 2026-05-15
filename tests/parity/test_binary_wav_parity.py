@@ -43,10 +43,13 @@ def _have_artefacts() -> bool:
     return has_lib and has_bin
 
 
-pytestmark = pytest.mark.skipif(
-    not _have_artefacts(),
-    reason="locally-built libtts or shipped DECtalk binary not present",
-)
+pytestmark = [
+    pytest.mark.c_oracle,
+    pytest.mark.skipif(
+        not _have_artefacts(),
+        reason="locally-built libtts or shipped DECtalk binary not present",
+    ),
+]
 
 
 _CORPUS: tuple[str, ...] = _SHARED_CORPUS

@@ -41,13 +41,16 @@ def _convert_to_phonemes_exported() -> bool:
     return True
 
 
-pytestmark = pytest.mark.skipif(
-    not _have_artefacts() or not _convert_to_phonemes_exported(),
-    reason=(
-        "libtts_us.so or TextToSpeechConvertToPhonemes missing — "
-        "run `uv run python scripts/apply_c_patches.py`"
+pytestmark = [
+    pytest.mark.c_oracle,
+    pytest.mark.skipif(
+        not _have_artefacts() or not _convert_to_phonemes_exported(),
+        reason=(
+            "libtts_us.so or TextToSpeechConvertToPhonemes missing — "
+            "run `uv run python scripts/apply_c_patches.py`"
+        ),
     ),
-)
+]
 
 
 _CORPUS: tuple[str, ...] = (

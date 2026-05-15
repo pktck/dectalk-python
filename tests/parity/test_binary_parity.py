@@ -32,6 +32,8 @@ from scipy.signal import welch  # pyright: ignore[reportMissingTypeStubs,reportU
 
 import dectalk
 
+pytestmark = pytest.mark.c_oracle
+
 # Absolute peak headroom in int16; values above this are saturated and
 # can't be compared meaningfully.
 _INT16_MAX = 32767

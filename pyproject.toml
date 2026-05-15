@@ -23,6 +23,8 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-xdist>=3.0",
+    "pytest-benchmark>=4.0",
     "ruff>=0.6",
     "pyright>=1.1.380",
 ]
@@ -105,4 +107,7 @@ addopts = [
 markers = [
     "slow: marks tests as slow (deselect with -m 'not slow')",
     "audio: tests that require audio playback hardware",
+    "c_oracle: requires the built DECtalk C oracle (DECTALK_SRC + DECTALK_BIN); skip in fast CI",
+    "parity: parity test that re-parses C source; auto-skips when DECTALK_SRC is absent",
+    "perf: performance benchmark; run via pytest --benchmark-only",
 ]
