@@ -206,10 +206,6 @@ _DEFERRED: dict[str, str] = {
         "Spins until the worker thread drains the text queue; not "
         "needed in the synchronous Python path"
     ),
-    "LinearToMuLaw": (
-        "Sign+magnitude -> 8-bit mu-law encode; Python audio backend "
-        "writes int16 PCM so no mu-law conversion is needed"
-    ),
     "FixMemoryLockup": (
         "Forces a pthread_yield() / sleep when allocations stall; "
         "Python relies on the CPython allocator and the GIL instead"
