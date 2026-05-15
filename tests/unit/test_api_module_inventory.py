@@ -322,10 +322,6 @@ _DEFERRED: dict[str, str] = {
         "Public entry; enumerates loaded languages. Python's "
         "``dectalk.api.available_voices`` covers the common case"
     ),
-    "TextToSpeechGetCaps": (
-        "Public entry; fills a TTS_CAPS_T. The dataclass lives in "
-        "``dectalk.api.api_structs.TtsCaps`` but the call site isn't wrapped yet"
-    ),
     "TextToSpeechGetFeatures": (
         "Public entry; returns the feature bitmask. The constants live "
         "in ``dectalk.api.tts_feats`` but no Python wrapper exists yet"
