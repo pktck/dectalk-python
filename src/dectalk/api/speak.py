@@ -781,6 +781,25 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         stem_phones = lookup(stem + "E", lang=lang) or lookup(stem, lang=lang)
                         if stem_phones is not None:
                             phones = [*stem_phones, "ER0"]
+                    # ``-ed`` past-tense suffix: strip and apply the
+                    # voicing+epenthesis rule:
+                    #   stem ends in T / D   -> append IX + D
+                    #   stem ends in voiceless -> append T
+                    #   otherwise (voiced)   -> append D
+                    if (
+                        phones is None and token.text.endswith("ED") and len(token.text) > 2  # noqa: PLR2004
+                    ):
+                        # Try with and without the silent ``-e`` re-attached.
+                        ed_stem = token.text[:-2]
+                        stem_phones = lookup(ed_stem + "E", lang=lang) or lookup(ed_stem, lang=lang)
+                        if stem_phones is not None:
+                            last_base = stem_phones[-1].rstrip("0123456789")
+                            if last_base in ("T", "D"):
+                                phones = [*stem_phones, "IX", "D"]
+                            elif last_base in ("P", "K", "F", "S", "TH", "CH", "SH"):
+                                phones = [*stem_phones, "T"]
+                            else:
+                                phones = [*stem_phones, "D"]
                     if phones is None:
                         if not lts_fallback:
                             raise UnknownWordError(

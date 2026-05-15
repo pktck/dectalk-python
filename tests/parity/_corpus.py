@@ -94,6 +94,13 @@ CORPUS: tuple[str, ...] = (
     # ``-er`` agentive / comparative suffix: stem stripping.
     "later",
     "faster",
+    # ``-ed`` past-tense suffix: stem stripping + voicing/epenthesis rule
+    # (T after voiceless, IX+D after T/D, D after voiced).
+    "walked",
+    "talked",
+    "needed",
+    "loved",
+    "liked",
 )
 
 
