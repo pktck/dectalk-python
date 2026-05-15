@@ -340,7 +340,8 @@ class CAPI:
     # list as new patches under ``tests/parity/c_patches/`` land.
     #   - ``kernel`` -> 0002-stage-boundary-dumps.patch
     #   - ``cmd``    -> 0003-cmd-stage-dump-hooks.patch
-    _SUPPORTED_DUMP_STAGES: tuple[str, ...] = ("kernel", "cmd")
+    #   - ``ph``     -> 0004-ph-stage-dump-hooks.patch
+    _SUPPORTED_DUMP_STAGES: tuple[str, ...] = ("kernel", "cmd", "ph")
 
     def dump_pipeline(self, text: str, stages: list[str]) -> dict[str, bytes]:
         """Return per-stage boundary dumps from the C oracle.

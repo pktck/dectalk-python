@@ -94,6 +94,29 @@ def test_cmd_dump_is_deterministic(capi: CAPI) -> None:
     assert a == b, f"cmd dumps diverged across calls: {len(a)} B vs {len(b)} B"
 
 
+def test_ph_dump_is_non_empty(capi: CAPI) -> None:
+    """The PH dump for ``hello world`` must contain non-trivial 16-bit tokens.
+
+    Validates the hook added by
+    ``tests/parity/c_patches/0004-ph-stage-dump-hooks.patch``. In
+    ``SINGLE_THREADED`` builds the hook lives in ``ph_loop`` (the entry
+    point of the PH stage) and captures each 16-bit token the LTS stage
+    pushes across the (now-elided) ``pKsd_t->ph_pipe`` boundary.
+    """
+    dumps = capi.dump_pipeline("hello world", ["ph"])
+    assert "ph" in dumps
+    payload = dumps["ph"]
+    assert payload, "ph dump was empty -- patch not applied or hook misfired?"
+    assert b"ph_write" in payload
+
+
+def test_ph_dump_is_deterministic(capi: CAPI) -> None:
+    """Two back-to-back PH-dump calls with the same input must be identical."""
+    a = capi.dump_pipeline("hello world", ["ph"])["ph"]
+    b = capi.dump_pipeline("hello world", ["ph"])["ph"]
+    assert a == b, f"ph dumps diverged across calls: {len(a)} B vs {len(b)} B"
+
+
 def test_unsupported_stage_raises(capi: CAPI) -> None:
     """Asking for a stage we haven't implemented yet is a CAPIError."""
     with pytest.raises(CAPIError):
