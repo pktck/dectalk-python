@@ -73,6 +73,21 @@ def _python_phonemes(text: str) -> bytes:
     return dectalk.text_to_dectalk_phonemes(text)
 
 
+# Module-scoped CAPI: each test creating its own instance exhausts file
+# descriptors after a few thousand parametrised cases (libtts dlopens its
+# own resources without closing). One process-level handle keeps the FD
+# count flat regardless of corpus size.
+_CAPI: CAPI | None = None
+
+
+def _get_capi() -> CAPI:
+    """Return the lazily-initialised module-scoped CAPI handle."""
+    global _CAPI  # noqa: PLW0603
+    if _CAPI is None:
+        _CAPI = CAPI()
+    return _CAPI
+
+
 @pytest.mark.parametrize("text", CORPUS, ids=list(CORPUS))
 def test_python_phonemes_match_c_phonemes(text: str) -> None:
     """``dectalk.text_to_dectalk_phonemes`` matches ``CAPI.convert_to_phonemes``.
@@ -86,8 +101,7 @@ def test_python_phonemes_match_c_phonemes(text: str) -> None:
     a new sentinel rewriter, or a kernel-level expansion rule) -- not
     an xfail.
     """
-    capi = CAPI()
-    expected = capi.convert_to_phonemes(text)
+    expected = _get_capi().convert_to_phonemes(text)
     actual = _python_phonemes(text)
     assert actual == expected, (
         f"phoneme mismatch for {text!r}:\n"
