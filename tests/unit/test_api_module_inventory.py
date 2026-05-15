@@ -447,10 +447,6 @@ _DEFERRED: dict[str, str] = {
         "Public entry; unloads a per-handle user dictionary. Python "
         "port has no user-dictionary surface"
     ),
-    "TextToSpeechVersion": (
-        "Public entry; fills a version string. ``dectalk.api.version_info`` "
-        "covers the dataclass but no Python wrapper exists yet"
-    ),
     "TextToSpeechVersionEx": (
         "Public entry; ``Version`` variant with extended fields. "
         "Same status as ``TextToSpeechVersion``"
