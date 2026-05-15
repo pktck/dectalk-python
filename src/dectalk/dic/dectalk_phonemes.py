@@ -550,26 +550,35 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     k -= 1
                 if k >= 0:
                     prev_emit_base = out_parts[k].rstrip(" ")
-            n_then_word_end = (
-                i + 2 >= len(phonemes)
-                or phonemes[i + 2] == "_"
-                or (phonemes[i + 2] or "").startswith("__")
-                or (
-                    i + 2 < len(phonemes)
-                    and phonemes[i + 2].rstrip("0123456789") == "T"
-                    and (
-                        i + 3 >= len(phonemes)
-                        or phonemes[i + 3] == "_"
-                        or (phonemes[i + 3] or "").startswith("__")
-                    )
-                )
+            # The AH0+N rule has two firing paths:
+            # - AH0 + N + T word-final (silent / distant / patient /
+            #   parent): fires regardless of preceding consonant -- the
+            #   ``-ent`` suffix is reliably reduced.
+            # - AH0 + N word-final (no T after): fires only after
+            #   sonorants / sibilants. ``cotton`` (T+AH0+N) stays AX;
+            #   ``children`` (R+AH0+N) becomes IX.
+            n_t_word_final = (
+                i + 1 < len(phonemes)
+                and phonemes[i + 1].rstrip("0123456789") == "N"
+                and i + 2 < len(phonemes)
+                and phonemes[i + 2].rstrip("0123456789") == "T"
+                and _word_break_at(i + 3)
+            )
+            n_alone_word_final = (
+                i + 1 < len(phonemes)
+                and phonemes[i + 1].rstrip("0123456789") == "N"
+                and _word_break_at(i + 2)
             )
             ah_before_final_n = (
                 base == "AH"
                 and stress_digit == "0"
-                and next_base == "N"
-                and n_then_word_end
-                and prev_emit_base in ("sh", "zh", "ch", "jh", "r", "b", "z", "s")
+                and (
+                    n_t_word_final
+                    or (
+                        n_alone_word_final
+                        and prev_emit_base in ("sh", "zh", "ch", "jh", "r", "b", "z", "s")
+                    )
+                )
             )
             # AH0 + F + L word-final reads as IX + F + EL (the ``-iful``
             # connector in ``beautiful``).

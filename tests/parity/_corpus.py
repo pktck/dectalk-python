@@ -246,6 +246,16 @@ CORPUS: tuple[str, ...] = (
     "robin",
     # SH/ZH/CH/JH + AH0 + S -> IX (``conscious``, ``precious`` if in lex).
     "conscious",
+    # More multi-word phrasal coverage with combined rules.
+    "the lights are on",
+    "random things",
+    "fast cars",
+    "busy bees",
+    "social media",
+    # AH0+N+T word-final -> IX regardless of preceding consonant.
+    "silent",
+    "distant",
+    "patient",
 )
 
 
