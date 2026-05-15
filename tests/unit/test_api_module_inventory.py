@@ -185,33 +185,10 @@ _DEFERRED: dict[str, str] = {
     # shared-memory layer at all (it uses regular process memory through
     # ctypes), so no equivalent is needed.
     # ----- ttsapi.c -- internal helpers. --------------------------------
-    "GetBuffer": (
-        "Pops a TTS_BUFFER_T off the free list; Python audio backend "
-        "uses bytes / numpy arrays directly with no buffer pool"
-    ),
-    "DeleteTextToSpeechObjects": (
-        "Frees all per-handle pthread/queue resources; the Python port "
-        "owns no per-handle state -- ``_capi.CAPI`` does"
-    ),
     "SetSpeaker": (
         "Internal helper that copies SPEAKER_T fields into the TTS "
         "handle; Python's ``dectalk.voices`` resolves preset names "
         "directly through libtts_us.so's SetSpeaker"
-    ),
-    "TextToSpeechThreadMain": (
-        "OP_THREAD_ROUTINE worker pumping the text queue; Python port "
-        "is single-threaded and dispatches synchronously through _capi"
-    ),
-    "DrainPipes": (
-        "Forces an LTS/PH/VTM pipe drain at shutdown; Python pipeline "
-        "is synchronous so there's nothing left to drain"
-    ),
-    "TextToSpeechErrorHandler": (
-        "Posts MMRESULT errors to the host's error callback; Python raises exceptions instead"
-    ),
-    "WaitForLtsFlush": (
-        "Spins until the LTS pipe drains its current sentence; not "
-        "needed in the synchronous Python pipeline"
     ),
     "WriteAudioToFile": (
         "Internal RIFF/WAV header writer used by the worker thread; "

@@ -88,8 +88,47 @@ def SendBuffer(*args: object, **kwargs: object) -> int:  # noqa: N802
     return _MMSYSERR_NOERROR
 
 
+def GetBuffer(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; no per-handle buffer pool to draw from."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def DeleteTextToSpeechObjects(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; CPython's GC handles per-handle cleanup."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechThreadMain(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; pipeline runs inline, no worker-thread main loop."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def DrainPipes(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; the synchronous pipeline drains before returning."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def TextToSpeechErrorHandler(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; errors surface as exceptions, not handler callbacks."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def WaitForLtsFlush(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; LTS finishes synchronously, nothing to wait on."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
 __all__ = [
+    "DeleteTextToSpeechObjects",
+    "DrainPipes",
     "FixMemoryLockup",
+    "GetBuffer",
     "PlayAudioCallbackRoutine",
     "PumpModeMessage",
     "PutIndexMarkInBuffer",
@@ -99,6 +138,9 @@ __all__ = [
     "ReturnRemainingBuffers",
     "SendBuffer",
     "StartDecTalkSystemThread",
+    "TextToSpeechErrorHandler",
+    "TextToSpeechThreadMain",
     "WaitForEmptyPipes",
+    "WaitForLtsFlush",
     "WaitForTextQueuingToComplete",
 ]
