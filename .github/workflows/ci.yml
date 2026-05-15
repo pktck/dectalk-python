@@ -12,6 +12,13 @@ on:
   pull_request:
     branches: [main, dev]
 
+# Auto-cancel superseded runs on the same branch. The session pushes
+# fast and the cloud runners can't keep up; without this every push
+# stacks another full matrix on top of the still-queued previous one.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-and-type:
     name: Lint & type-check (${{ matrix.os }}, Py ${{ matrix.python-version }})
