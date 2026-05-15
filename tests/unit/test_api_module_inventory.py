@@ -333,7 +333,6 @@ _DEFERRED: dict[str, str] = {
         "Public entry; returns the feature bitmask. The constants live "
         "in ``dectalk.api.tts_feats`` but no Python wrapper exists yet"
     ),
-    "TextToSpeechGetLanguage": "Public entry; the Python port hard-codes US English for now",
     "TextToSpeechGetLastError": (
         "Public entry; returns the last MMRESULT. Python raises "
         "exceptions, so there's no thread-local last-error to query"
