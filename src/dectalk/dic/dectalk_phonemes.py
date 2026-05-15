@@ -707,6 +707,26 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 and _word_is_multi_syllabic(i)
                 and ah_before_final_s_prev_emit in ("r", "s", "n", "t", "ll")
             ) or ah_before_f_then_fy_suffix
+            # AH0/IH0 + S + F + AY at word-end reads as IX (the
+            # ``-sify`` suffix in ``satisfy`` -> ``s ' aet ixs f ay``).
+            # Mirrors ``ah_before_f_then_fy_suffix`` but with an extra
+            # S between the reduced vowel and the F. The C source
+            # accepts AY0 here (lex ``S AE1 T AH0 S F AY0``) so we do
+            # not gate on stress digit.
+            _ph_i2 = phonemes[i + 2] if i + 2 < len(phonemes) else ""
+            _ph_i2_base = _ph_i2.rstrip("0123456789")
+            _ph_i3 = phonemes[i + 3] if i + 3 < len(phonemes) else ""
+            _ph_i3_base = _ph_i3.rstrip("0123456789")
+            ah_before_s_then_fy_suffix = (
+                base in ("AH", "IH")
+                and stress_digit == "0"
+                and next_base == "S"
+                and _ph_i2_base == "F"
+                and _ph_i3_base == "AY"
+                and _word_break_at(i + 4)
+                and _word_is_multi_syllabic(i)
+                and ah_before_final_s_prev_emit in ("r", "s", "n", "t", "ll")
+            )
             # Word-final L / N preceded by a consonant collapses to
             # the syllabic-L / syllabic-N allophone (``el`` / ``en``,
             # US_EL / US_EN). DECtalk applies this whenever there's
@@ -781,6 +801,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or ah_before_final_sh
                     or ah_before_final_p
                     or ah_before_final_f
+                    or ah_before_s_then_fy_suffix
                 ):
                     dt = "ix"
                 elif _word_is_multi_syllabic(i) or next_is_fricative or next_is_word_end:
@@ -796,6 +817,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or ah_before_final_sh
                     or ah_before_final_p
                     or ah_before_final_f
+                    or ah_before_s_then_fy_suffix
                 )
             ):
                 dt = "ix"
