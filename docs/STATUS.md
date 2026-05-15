@@ -62,6 +62,16 @@ Path to pure-Python bit parity (per the plan):
   text dump (``<stage>_write <count>`` + hex words) when
   ``DECTALK_DUMP_DIR`` is set. Future PH / VTM ports can use these
   as stage-boundary oracles for byte-by-byte translation parity.
+- **Module-inventory gate** (DONE): every module-inventory test
+  (kernel / cmd / lts / ph / vtm / hlsyn / api / dic) has an empty
+  ``_DEFERRED`` dict. The Python ports surface every Linux-active
+  C entry point under its original name, either as a faithful
+  translation (e.g. ``LinearToMuLaw``, ``TextToSpeechGetCaps``,
+  ``quote_string``) or as a no-op architectural stub for entries
+  whose semantics are realised elsewhere (``_capi`` dispatch,
+  voice presets, the synchronous pipeline). Phase E / Phase F
+  will replace the architectural stubs with proper Python
+  implementations.
 - **Phase C** (kernel + cmd): faithful translations of US English
   text normalisation and the command-table parser.
 - **Phase D** (lts + dic): faithful translation of the rule-driven
