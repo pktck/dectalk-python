@@ -191,6 +191,10 @@ CORPUS: tuple[str, ...] = (
     "horses",
     "kisses",
     "foxes",
+    # AH0+Z after sibilant reads as IX+Z (sibilant 3rd-person sg -es).
+    "fixes",
+    "fishes",
+    "watches",
 )
 
 
