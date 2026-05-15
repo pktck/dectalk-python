@@ -431,16 +431,88 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             out.append(p)
         return out
 
-    # Inflectional -s (plural / 3rd-person sg) after a voiced consonant
-    # voices to Z. The rule only fires when the word's *spelling* ends
-    # with ``s`` (or ``es``); root-internal S like ``COURSE`` / ``HORSE``
-    # stays as S even though it's preceded by R (a voiced consonant).
-    voiced_cons_for_z: frozenset[str] = frozenset(
-        {"B", "D", "G", "JH", "L", "M", "N", "NG", "R", "V", "Z", "ZH", "DH"}
+    # Stops that trigger the syllabic-L/N conversion when followed by
+    # an unstressed L / N at the stem end. (Subset of "true" voiced /
+    # voiceless stops -- the same set the C source's allophone rule
+    # consults in ``ph_aloph*.c``.)
+    syllabic_trigger_stops: frozenset[str] = frozenset(
+        {"P", "B", "T", "D", "K", "G", "F", "V", "S", "Z", "TH", "DH", "SH", "ZH"}
     )
 
-    def _voice_final_s_after_consonant(phones: list[str], word: str) -> list[str]:
-        """``...C S`` -> ``...C Z`` when ``word`` looks like inflectional -s."""
+    def _apply_pre_inflection_syllabic(stem_phones: list[str]) -> list[str]:
+        """Substitute N/L -> EN/EL inside the stem where the syllabic rule fires.
+
+        Mirrors the encoder's word-final syllabic-sonorant rule but
+        applies it to the *stem* before an inflectional suffix is
+        appended. Two patterns:
+
+        - ``<stop> N`` at stem end -> ``<stop> EN`` (``REASON`` ->
+          ``R IY Z EN``).
+        - ``<stop> N <stop>`` where the trailing stop is the last
+          phoneme of the stem -> ``<stop> EN <stop>`` (``SECOND`` ->
+          ``S EH K EN D``; the trailing D is the silent past-tense
+          consonant that lives between the syllabic N and the
+          inflectional -s).
+        """
+        if len(stem_phones) < 2:  # noqa: PLR2004
+            return list(stem_phones)
+        out = list(stem_phones)
+        last = len(out) - 1
+
+        def _maybe_convert(idx: int) -> bool:
+            base = out[idx].rstrip("0123456789")
+            if base not in {"L", "N"}:
+                return False
+            if out[idx][-1:].isdigit():
+                # Stressed L/N never collapses to a syllabic form.
+                return False
+            prev_base = out[idx - 1].rstrip("0123456789")
+            if prev_base not in syllabic_trigger_stops:
+                return False
+            out[idx] = "EN" if base == "N" else "EL"
+            return True
+
+        # Case 1: stem ends with N/L directly.
+        if not _maybe_convert(last) and last >= 2:  # noqa: PLR2004
+            # Case 2: stem ends with stop and the phoneme before it is N/L.
+            tail_base = out[last].rstrip("0123456789")
+            if tail_base in {"D", "T"}:
+                _maybe_convert(last - 1)
+        return out
+
+    # Inflectional -s (plural / 3rd-person sg) voices to Z when the
+    # preceding phoneme is voiced (any vowel, or a voiced consonant).
+    # The rule only fires when the word's *spelling* ends with an
+    # inflectional ``-s``; root-internal S like ``COURSE`` / ``HORSE``
+    # stays as S even though it's preceded by R (a voiced consonant).
+    # Syllabic variants of L / N / M (``EL`` / ``EN`` / ``EM``) are
+    # voiced too, so they belong in this set alongside the regular
+    # voiced consonants.
+    voiced_cons_for_z: frozenset[str] = frozenset(
+        {"B", "D", "G", "JH", "L", "M", "N", "NG", "R", "V", "Z", "ZH", "DH",
+         "EL", "EN", "EM"}
+    )  # fmt: skip
+    vowel_arpabet: frozenset[str] = frozenset(
+        {"IY", "IH", "EY", "EH", "AE", "AA", "AY", "AW", "AH", "AO",
+         "OW", "OY", "UH", "UW", "ER", "AX", "IX"}
+    )  # fmt: skip
+
+    def _voice_final_s_after_consonant(
+        phones: list[str], word: str, *, from_stem_strip: bool = False
+    ) -> list[str]:
+        """``...C S`` -> ``...C Z`` when ``word`` looks like inflectional -s.
+
+        Args:
+            phones: phoneme list ending with a final ``S`` token.
+            word: original orthographic form (used for the ``-s`` ending check).
+            from_stem_strip: True iff ``phones`` was assembled by appending S to
+                a separately-looked-up stem. In that case the S is provably the
+                inflectional ending and the voicing fires after both voiced
+                consonants and vowels (``days`` -> Z, ``seconds`` -> Z). If the
+                whole word was in the lexicon, we only voice after voiced
+                consonants so words like ``yes`` / ``this`` (where the root S
+                is preceded by a vowel) stay voiceless.
+        """
         if len(phones) < 2 or phones[-1] != "S":  # noqa: PLR2004 — len() < 2 means no preceding context
             return phones
         # Only voice when the spelling suggests a true ``-s`` ending.
@@ -451,6 +523,8 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             return phones
         prev_base = phones[-2].rstrip("0123456789")
         if prev_base in voiced_cons_for_z:
+            return [*phones[:-1], "Z"]
+        if from_stem_strip and prev_base in vowel_arpabet:
             return [*phones[:-1], "Z"]
         return phones
 
@@ -655,12 +729,45 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 # auxiliary verbs (are/had/is/was/were/will) get secondary
                 # stress applied through a fixed phoneme sequence.
                 is_sentence_initial = all(t.kind is not TokenKind.WORD for t in tokens[:tok_idx])
+                stem_stripped = False
                 if is_sentence_initial and token.text in first_verb_phones:
                     phones = list(first_verb_phones[token.text])
                 elif token.text in word_phoneme_overrides:
                     phones = list(word_phoneme_overrides[token.text])
                 else:
                     phones = lookup(token.text, lang=lang)
+                    # Plural / 3rd-person -s stem stripping: if the word
+                    # isn't in the lexicon but its singular form is, use
+                    # the singular's phonemes and append S (the encoder's
+                    # voicing rule will pick Z when appropriate). DECtalk
+                    # handles this via the runtime suffix engine; we
+                    # short-circuit here for the common ``-s`` / ``-es``
+                    # cases the corpus exercises.
+                    if (
+                        phones is None
+                        and token.text.endswith("S")
+                        and not token.text.endswith(("SS", "US", "IS"))
+                    ):
+                        stem = token.text[:-1]
+                        if stem.endswith("E") and len(stem) > 2:  # noqa: PLR2004
+                            # ``minutes`` -> ``minute`` (drop the trailing
+                            # E along with the S so we hit the stem entry).
+                            stem_phones = lookup(stem, lang=lang) or lookup(stem[:-1], lang=lang)
+                        else:
+                            stem_phones = lookup(stem, lang=lang)
+                        if stem_phones is not None:
+                            # When the stem ends in a sonorant (L/N)
+                            # preceded by a stop ("SECOND" -> S EH K N D
+                            # ; "REASON" -> R IY Z N), the syllabic rule
+                            # needs the L/N to read as ``el`` / ``en``
+                            # even though the stem itself is followed by
+                            # an inflectional consonant rather than a
+                            # word break. Materialise that here by
+                            # rewriting the relevant phoneme in the stem
+                            # before concatenation.
+                            stem_phones = _apply_pre_inflection_syllabic(stem_phones)
+                            phones = [*stem_phones, "S"]
+                            stem_stripped = True
                     if phones is None:
                         if not lts_fallback:
                             raise UnknownWordError(
@@ -675,8 +782,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 # Word-final ``-s`` after a voiced consonant voices to
                 # Z ("sells" / "dogs" / etc.). Gated on the word's
                 # spelling so root-internal S ("course" / "horse")
-                # stays voiceless.
-                phones = _voice_final_s_after_consonant(phones, token.text)
+                # stays voiceless; gated on whether we did stem-stripping
+                # so a vowel-final ``YES`` (whole word in lexicon) stays
+                # voiceless while a vowel-final ``DAYS`` (stem stripped)
+                # voices to Z.
+                phones = _voice_final_s_after_consonant(
+                    phones, token.text, from_stem_strip=stem_stripped
+                )
                 flat.extend(phones)
             elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
                 ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")

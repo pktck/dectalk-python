@@ -85,6 +85,12 @@ CORPUS: tuple[str, ...] = (
     "is it raining",
     "this is good",
     "it was good",
+    # Stem-stripping plurals: lookup falls back to the singular stem
+    # (``seconds`` -> ``second``), with syllabic-N / voicing applied.
+    "two seconds",
+    "three reasons",
+    "five days",
+    "two trees",
 )
 
 
