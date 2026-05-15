@@ -56,10 +56,12 @@ Stage-boundary milestones reached so far:
 
 Path to pure-Python bit parity (per the plan):
 
-- **Phase A.4** (next): patch the C source to emit per-stage
-  intermediate dumps so each future port has a stage-boundary oracle.
-  `convert_to_phonemes` already gives us the LTS+dic boundary; the
-  PH input and VTM input boundaries still need hooks.
+- **Phase A.4** (DONE): per-stage intermediate dump hooks are
+  installed. ``CAPI.dump_pipeline`` exposes ``kernel`` (0002 patch),
+  ``cmd`` (0003), ``ph`` (0004), and ``vtm`` (0005). Each writes a
+  text dump (``<stage>_write <count>`` + hex words) when
+  ``DECTALK_DUMP_DIR`` is set. Future PH / VTM ports can use these
+  as stage-boundary oracles for byte-by-byte translation parity.
 - **Phase C** (kernel + cmd): faithful translations of US English
   text normalisation and the command-table parser.
 - **Phase D** (lts + dic): faithful translation of the rule-driven
