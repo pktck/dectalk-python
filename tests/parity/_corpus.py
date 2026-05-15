@@ -2985,6 +2985,91 @@ CORPUS: tuple[str, ...] = (
     # Storyteller openings.
     "long long ago",
     "once upon a time",
+    # ``do you`` interrogatives (more).
+    "do you want",
+    "do you need",
+    "do you like",
+    "do you love",
+    "do you hate",
+    "do you understand",
+    "do you care",
+    # ``you will X`` future-prediction.
+    "you will know",
+    "you will see",
+    "you will find",
+    "you will love",
+    "you will hear",
+    # ``won't`` contractions.
+    "i won't see",
+    "i won't hear",
+    "we won't see",
+    # ``you need to X``.
+    "you need to know",
+    "you need to see",
+    "you need to try",
+    # ``i think X``.
+    "i think it is",
+    "i think you are",
+    "i think we are",
+    "i think they are",
+    # ``X will do it``.
+    "we will do it",
+    "i will do it",
+    "they will do it",
+    # More short verbs.
+    "play",
+    "draw",
+    "cook",
+    # ``X go / come / eat / sleep`` (we/they).
+    "we go",
+    "we come",
+    "we eat",
+    "we sleep",
+    "they go",
+    "they come",
+    "they eat",
+    # Past-tense subject+verb.
+    "the dog ran",
+    "the bird sang",
+    "i saw it",
+    "we saw it",
+    "they saw it",
+    # Conditional ``if X``.
+    "if i go",
+    "if we leave",
+    # ``hello + name``.
+    "hello sam",
+    "hello tom",
+    "hello dan",
+    # Number-repeat.
+    "ten ten",
+    "five five",
+    # Money phrase.
+    "give me a dollar",
+    # ``a X story`` adjective+noun.
+    "a happy story",
+    "a sad story",
+    "a funny story",
+    "a long story",
+    # State.
+    "we are alone",
+    # ``we / they need to think``.
+    "we need to think",
+    "they need to think",
+    "i want to think",
+    # ``X time`` compound nouns.
+    "play time",
+    "lunch time",
+    "dinner time",
+    "story time",
+    "bed time",
+    # Two-adjective + noun.
+    "the big red ball",
+    "a small blue car",
+    # Idiom + nursery.
+    "give me a hand",
+    "row your boat",
+    "twinkle twinkle",
     # Round 11 corpus expansion: SVO sentences, math facts, travel,
     # cooking, weather, sports, family relations, multi-word
     # noun/adjective phrases, partitive ``of`` phrases,
