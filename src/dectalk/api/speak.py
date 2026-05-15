@@ -244,7 +244,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     # Spell-out: known acronyms that DECtalk reads letter-by-letter
     # (each letter as its own word). When set, we split into separate
     # letter pronunciations using the ``letter_names`` table below.
-    spell_out_words: frozenset[str] = frozenset({"FBI"})
+    # Dynamic spell-out set: starts empty; the chunk pre-pass adds any
+    # all-uppercase 2-4 letter chunk where ``ls_spel_say_it`` decides
+    # to spell rather than speak (e.g. ``FBI``, ``DNA``, ``BBQ``).
+    spell_out_words: set[str] = set()
 
     # Word-level phoneme overrides for words where the Python LTS
     # diverges from DECtalk's transcription. Keyed by the upper-cased
@@ -684,6 +687,21 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         tokens.append(Token(TokenKind.WORD, "POINT"))
                     for w in number_to_words(int(part.replace(",", ""))):
                         tokens.append(Token(TokenKind.WORD, w))
+            elif (
+                inner and inner.isalpha() and inner.isupper() and 2 <= len(inner) <= 4  # noqa: PLR2004
+            ):
+                # All-uppercase 2-4 letter token: run the
+                # ``ls_spel_say_it`` decision. If ``say_it`` returns
+                # False (spell it), record the upper-cased token in
+                # ``spell_out_words`` so the main loop's letter-by-letter
+                # path renders it. Otherwise let ``tokenize`` handle it
+                # as a normal word.
+                from dectalk.lts.spell_or_say import say_it  # noqa: PLC0415
+
+                if not say_it(inner):
+                    spell_out_words.add(inner)
+                tokens.extend(tokenize(chunk))
+                continue
             elif inner and "-" in inner and not inner.startswith("-"):
                 # Hyphenated compound (``forty-two``, ``self-taught``):
                 # tokenise each part separately so we can insert the
