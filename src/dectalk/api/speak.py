@@ -413,6 +413,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             "JUSTIFIED",
             "JUSTIFIES",
             "JUSTIFYING",
+            # More high-frequency verbs verified to take ``)``.
+            "LISTEN",
+            "LISTENED",
+            "LISTENING",
+            "LISTENS",
             # Dictionary-marked function words that also carry the
             # form-class flag in C's main dic (verified in isolation).
             "SO",
@@ -574,6 +579,35 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         "EVERYONE": ["EH1", "V", "R", "IY0", "__PUNCT__*", "W", "AH0", "N"],
         "ANYWHERE": ["EH1", "N", "IY0", "__PUNCT__*", "W", "EY0", "R"],
         "SOMETIMES": ["S", "AH1", "M", "__PUNCT__*", "T", "AY0", "M", "Z"],
+        # Additional MBOUND compounds derived by replaying the C
+        # dictionary's ``*`` marker output. Each second component carries
+        # secondary stress (``2``) where the C emit shows `` ` `` and
+        # primary (``1``) where it shows ``'``; the first-component
+        # vowel keeps its lexicon stress.
+        "WEEKEND": ["W", "IY1", "K", "__PUNCT__*", "EH0", "N", "D"],
+        "RAINCOAT": ["R", "EY1", "N", "__PUNCT__*", "K", "OW2", "T"],
+        "SNOWFLAKE": ["S", "N", "OW1", "__PUNCT__*", "F", "L", "EY0", "K"],
+        "SNOWMAN": ["S", "N", "OW1", "__PUNCT__*", "M", "AE0", "N"],
+        "SUNSET": ["S", "AH1", "N", "__PUNCT__*", "S", "EH2", "T"],
+        "DAYDREAM": ["D", "EY1", "__PUNCT__*", "D", "R", "IY0", "M"],
+        "NIGHTMARE": ["N", "AY1", "T", "__PUNCT__*", "M", "EY0", "R"],
+        "HIGHWAY": ["HH", "AY1", "__PUNCT__*", "W", "EY2"],
+        "HEADPHONE": ["HH", "EH1", "D", "__PUNCT__*", "F", "OW2", "N"],
+        "OUTSIDE": ["AW0", "T", "__PUNCT__*", "S", "AY1", "D"],
+        "OUTDOOR": ["AW0", "T", "__PUNCT__*", "D", "OW1", "R"],
+        "OUTDOORS": ["AW0", "T", "__PUNCT__*", "D", "OW1", "R", "Z"],
+        "MYSELF": ["M", "AY0", "__PUNCT__*", "S", "EH1", "L", "F"],
+        "YOURSELF": ["Y", "ER0", "__PUNCT__*", "S", "EH2", "L", "F"],
+        "HIMSELF": ["HH", "IH0", "M", "__PUNCT__*", "S", "EH2", "L", "F"],
+        "HERSELF": ["HH", "ER0", "__PUNCT__*", "S", "EH1", "L", "F"],
+        "OURSELVES": ["AA0", "R", "__PUNCT__*", "S", "EH1", "L", "V", "Z"],
+        "THEMSELVES": ["DH", "EH0", "M", "__PUNCT__*", "S", "EH1", "L", "V", "Z"],
+        "NEWSPAPER": ["N", "UW1", "Z", "__PUNCT__*", "P", "EY2", "P", "ER0"],
+        "BEDROOM": ["B", "EH1", "D", "__PUNCT__*", "R", "UW2", "M"],
+        "FOOTBALL": ["F", "UH1", "T", "__PUNCT__*", "B", "AO2", "L"],
+        "AIRPORT": ["EY1", "R", "__PUNCT__*", "P", "OW2", "R", "T"],
+        "AIRPLANE": ["EY1", "R", "__PUNCT__*", "P", "L", "EY2", "N"],
+        "SCHOOLHOUSE": ["S", "K", "UW1", "L", "__PUNCT__*", "HH", "AW2", "S"],
         # ``eleven`` lex stores AH0 L EH1 V AH0 N; C reads the
         # post-stress AH0 (between V and final N) as IX.
         "ELEVEN": ["AH0", "L", "EH1", "V", "IX", "N"],
