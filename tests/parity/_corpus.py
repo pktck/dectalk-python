@@ -144,6 +144,8 @@ CORPUS: tuple[str, ...] = (
     # ``-n't`` contractions: N becomes syllabic-EN before the trailing T.
     "didn't",
     "couldn't",
+    # AH0 + F + L word-final (the ``-iful`` connector): AH0 -> IX.
+    "beautiful",
 )
 
 

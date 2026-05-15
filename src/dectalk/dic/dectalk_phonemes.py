@@ -426,6 +426,20 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                 )
                 and prev_emit_base in ("sh", "zh", "ch", "jh", "r")
             )
+            # AH0 + F + L word-final reads as IX + F + EL (the ``-iful``
+            # connector in ``beautiful``).
+            ah_before_ful = (
+                base == "AH"
+                and stress_digit == "0"
+                and next_base == "F"
+                and i + 2 < len(phonemes)
+                and phonemes[i + 2].rstrip("0123456789") == "L"
+                and (
+                    i + 3 >= len(phonemes)
+                    or phonemes[i + 3] == "_"
+                    or (phonemes[i + 3] or "").startswith("__")
+                )
+            )
             # Word-final L / N preceded by a consonant collapses to
             # the syllabic-L / syllabic-N allophone (``el`` / ``en``,
             # US_EL / US_EN). DECtalk applies this whenever there's
@@ -487,7 +501,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or not phonemes[i + 1]
                     or (phonemes[i + 1] or "").startswith("__")
                 )
-                if ah_before_final_s or next_base == "NG" or ah_before_final_n:
+                if ah_before_final_s or next_base == "NG" or ah_before_final_n or ah_before_ful:
                     dt = "ix"
                 elif _word_is_multi_syllabic(i) or next_is_fricative or next_is_word_end:
                     dt = "ax"
