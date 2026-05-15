@@ -141,6 +141,9 @@ CORPUS: tuple[str, ...] = (
     "tried",
     # Mono-syllabic AH0+S (``us``) keeps AX; multi-syllabic uses IX.
     "us",
+    # ``-n't`` contractions: N becomes syllabic-EN before the trailing T.
+    "didn't",
+    "couldn't",
 )
 
 

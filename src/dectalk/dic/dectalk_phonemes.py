@@ -435,15 +435,30 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             # preceded by a vowel ("fall" -> F AO L; "rain" -> R EY
             # N) it stays as the plain code.
             syllabic_after_consonant_word_final = False
+            # The sonorant is "word-final enough" for the syllabic
+            # rule when followed by a word break OR when followed by
+            # ``T`` that is itself word-final (``didn't`` -> ``D EN T``,
+            # ``couldn't`` -> ``D EN T`` -- the contraction's -n't).
+            next_is_word_end = (
+                i + 1 >= len(phonemes)
+                or phonemes[i + 1] == "_"
+                or not phonemes[i + 1]
+                or (phonemes[i + 1] or "").startswith("__")
+            )
+            t_then_word_end = (
+                i + 1 < len(phonemes)
+                and phonemes[i + 1].rstrip("0123456789") == "T"
+                and (
+                    i + 2 >= len(phonemes)
+                    or phonemes[i + 2] == "_"
+                    or not phonemes[i + 2]
+                    or (phonemes[i + 2] or "").startswith("__")
+                )
+            )
             if (
                 base in ("L", "N")
                 and not stress_digit
-                and (
-                    i + 1 >= len(phonemes)
-                    or phonemes[i + 1] == "_"
-                    or not phonemes[i + 1]
-                    or (phonemes[i + 1] or "").startswith("__")
-                )
+                and (next_is_word_end or t_then_word_end)
                 and out_parts
             ):
                 # Walk back through any stress-marker emit to find
