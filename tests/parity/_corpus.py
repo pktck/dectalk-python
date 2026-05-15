@@ -267,6 +267,11 @@ CORPUS: tuple[str, ...] = (
     "we know better",
     "they sing songs",
     "she put it down",
+    # More sentences with VPSTART verbs.
+    "asked a question",
+    "wanted to know",
+    "told the truth",
+    "thinking about",
 )
 
 
