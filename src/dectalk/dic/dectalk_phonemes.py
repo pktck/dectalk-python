@@ -353,6 +353,40 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                         return True
                 return False
 
+            def _word_is_multi_syllabic(idx: int) -> bool:
+                # True iff the word containing ``phonemes[idx]`` has at
+                # least one vowel besides the one at ``idx``. Walks both
+                # directions to the surrounding word-break markers.
+                if _has_prior_vowel_in_word(idx):
+                    return True
+                vowel_set = {
+                    "AA",
+                    "AE",
+                    "AH",
+                    "AO",
+                    "AX",
+                    "AY",
+                    "AW",
+                    "EH",
+                    "ER",
+                    "EY",
+                    "IH",
+                    "IX",
+                    "IY",
+                    "OW",
+                    "OY",
+                    "UH",
+                    "UW",
+                }
+                for j in range(idx + 1, len(phonemes)):
+                    ph_j = phonemes[j]
+                    if not ph_j or ph_j == "_" or ph_j.startswith("__"):
+                        break
+                    base_j = ph_j.rstrip("0123456789")
+                    if j != idx and base_j in vowel_set:
+                        return True
+                return False
+
             ah_before_final_s = (
                 base == "AH"
                 and stress_digit == "0"
@@ -425,7 +459,25 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     if prev_emit and prev_emit not in _VOWEL_DECTALK_CODES:
                         syllabic_after_consonant_word_final = True
             if base == "AH" and stress_digit == "0":
-                dt = "ix" if ah_before_final_s or next_base == "NG" or ah_before_final_n else "ax"
+                # Multi-syllable words: AH0 reduces to AX. In
+                # monosyllabic function-word context, AH0 before a
+                # fricative (S/Z/V/F) still reduces (``of``, ``us``);
+                # before a stop or nasal it keeps its full AH quality
+                # (``some``, ``but``).
+                next_is_fricative = next_base in {"S", "Z", "V", "F"}
+                # AH0 is word-final iff there's a word break right after.
+                next_is_word_end = (
+                    i + 1 >= len(phonemes)
+                    or phonemes[i + 1] == "_"
+                    or not phonemes[i + 1]
+                    or (phonemes[i + 1] or "").startswith("__")
+                )
+                if ah_before_final_s or next_base == "NG" or ah_before_final_n:
+                    dt = "ix"
+                elif _word_is_multi_syllabic(i) or next_is_fricative or next_is_word_end:
+                    dt = "ax"
+                else:
+                    dt = "ah"
             elif base == "IH" and stress_digit == "0" and next_base == "NG":
                 dt = "ix"
             elif syllabic_after_consonant_word_final and base == "L":
