@@ -124,6 +124,9 @@ CORPUS: tuple[str, ...] = (
     "payment",
     "shipment",
     "statement",
+    # ``-tion`` / ``-sion`` (AH0+N -> IX+N after SH/ZH/CH/JH/R).
+    "nation",
+    "mission",
 )
 
 

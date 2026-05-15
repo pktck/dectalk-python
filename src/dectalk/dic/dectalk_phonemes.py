@@ -225,7 +225,8 @@ _TWO_CHAR: Final[int] = 2
 
 _VOWEL_DECTALK_CODES: Final[frozenset[str]] = frozenset(
     {"iy", "ih", "ey", "eh", "ae", "aa", "ay", "aw", "ah", "ao",
-     "ow", "oy", "uh", "uw", "ax", "rr"}
+     "ow", "oy", "uh", "uw", "ax", "rr",
+     "ix", "ir", "er", "ar", "or", "ur"}
 )  # fmt: skip
 
 
@@ -320,6 +321,31 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     or (phonemes[i + 2] or "").startswith("__")
                 )
             )
+            # AH0 + word-final N preceded by a palatal/post-alveolar
+            # affricate / fricative (SH / ZH / CH / JH) or R reads as
+            # IX (the -tion / -tian / -ren morphology -- ``nation``,
+            # ``mission``, ``children``).
+            prev_emit_base: str = ""
+            if out_parts:
+                k = len(out_parts) - 1
+                while k >= 0 and out_parts[k] in (
+                    f"{DECTALK_PRIMARY_STRESS} ",
+                    f"{DECTALK_SECONDARY_STRESS} ",
+                ):
+                    k -= 1
+                if k >= 0:
+                    prev_emit_base = out_parts[k].rstrip(" ")
+            ah_before_final_n = (
+                base == "AH"
+                and stress_digit == "0"
+                and next_base == "N"
+                and (
+                    i + 2 >= len(phonemes)
+                    or phonemes[i + 2] == "_"
+                    or (phonemes[i + 2] or "").startswith("__")
+                )
+                and prev_emit_base in ("sh", "zh", "ch", "jh", "r")
+            )
             # Word-final L / N preceded by a consonant collapses to
             # the syllabic-L / syllabic-N allophone (``el`` / ``en``,
             # US_EL / US_EN). DECtalk applies this whenever there's
@@ -353,7 +379,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     if prev_emit and prev_emit not in _VOWEL_DECTALK_CODES:
                         syllabic_after_consonant_word_final = True
             if base == "AH" and stress_digit == "0":
-                dt = "ix" if ah_before_final_s or next_base == "NG" else "ax"
+                dt = "ix" if ah_before_final_s or next_base == "NG" or ah_before_final_n else "ax"
             elif base == "IH" and stress_digit == "0" and next_base == "NG":
                 dt = "ix"
             elif syllabic_after_consonant_word_final and base == "L":
