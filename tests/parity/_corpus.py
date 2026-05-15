@@ -139,6 +139,8 @@ CORPUS: tuple[str, ...] = (
     # Y -> I in -ed past tense (``studied`` -> ``study``).
     "studied",
     "tried",
+    # Mono-syllabic AH0+S (``us``) keeps AX; multi-syllabic uses IX.
+    "us",
 )
 
 

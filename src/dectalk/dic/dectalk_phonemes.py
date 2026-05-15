@@ -313,11 +313,45 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             # ``AH0 S _``, ``AH0 S T _``, or ``AH0 S <end>`` (Python's
             # transcription of the C-source's IH0 -> IX context for
             # words like ``dennis`` and the ``-est`` superlative).
+            # Only fires when AH0 is preceded by another vowel in the
+            # same word -- i.e. it's a reduced-schwa context, not the
+            # only vowel as in monosyllabic ``us`` (AH0 S).
             def _word_break_at(idx: int) -> bool:
                 if idx >= len(phonemes):
                     return True
                 ph = phonemes[idx]
                 return not ph or ph == "_" or ph.startswith("__")
+
+            def _has_prior_vowel_in_word(idx: int) -> bool:
+                # Walk backwards through ``phonemes`` from ``idx - 1`` to
+                # the most recent word-break marker; return True if any
+                # token along the way is a vowel.
+                for j in range(idx - 1, -1, -1):
+                    ph_j = phonemes[j]
+                    if not ph_j or ph_j == "_" or ph_j.startswith("__"):
+                        break
+                    base_j = ph_j.rstrip("0123456789")
+                    if base_j in {
+                        "AA",
+                        "AE",
+                        "AH",
+                        "AO",
+                        "AX",
+                        "AY",
+                        "AW",
+                        "EH",
+                        "ER",
+                        "EY",
+                        "IH",
+                        "IX",
+                        "IY",
+                        "OW",
+                        "OY",
+                        "UH",
+                        "UW",
+                    }:
+                        return True
+                return False
 
             ah_before_final_s = (
                 base == "AH"
@@ -331,6 +365,7 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                         and _word_break_at(i + 3)
                     )
                 )
+                and _has_prior_vowel_in_word(i)
             )
             # AH0 + word-final N preceded by a palatal/post-alveolar
             # affricate / fricative (SH / ZH / CH / JH) or R reads as
