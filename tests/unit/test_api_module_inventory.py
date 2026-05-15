@@ -314,9 +314,6 @@ _DEFERRED: dict[str, str] = {
         "Public entry; closes a WAV file the engine was writing into. "
         "Python's ``to_wav`` writes the whole file atomically"
     ),
-    "TextToSpeechControlPanel": (
-        "Public entry; opens the Windows control panel applet. Python port has no GUI surface"
-    ),
     "TextToSpeechConvertToPhonemes": (
         "Public entry (exposed on Linux by 0001-expose-convert-to-phonemes-on-linux.patch); "
         "ported as ``dectalk.api.text_to_phonemes`` (Pythonic rename)"
