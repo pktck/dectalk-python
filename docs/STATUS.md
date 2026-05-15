@@ -29,16 +29,24 @@ Stage-boundary milestones reached so far:
 
 - **LTS+dic phoneme stream**: ``dectalk.text_to_dectalk_phonemes``
   produces byte-identical output to ``CAPI.convert_to_phonemes``
-  across **93+ bit-parity corpus prompts** spanning sentence-initial
-  stress, function-word destressing, plural / -s / -ed / -ing /
-  -ness / -ful / -less / -ment / -er / -est stem stripping with
-  Y->I alternation, n't contractions, syllabic-L/N rules, AH0
-  reduction with prior-vowel gating, -tion AH0->IX, dotted-decimal
-  expansion, BILLION/MILLION/THOUSAND digit-expansion, WH-question
-  intonation, title abbreviations, and the first-verbs stress
-  hack. The gate test
-  ``tests/parity/test_python_phonemes_vs_c_parity.py`` enforces
-  this with strict passes (no xfail).
+  across **195+ bit-parity corpus prompts** spanning sentence-initial
+  stress, function-word destressing (a/and/to/for), plural / -s /
+  -ed / -ing / -ness / -ful / -less / -ment / -er / -est / -ly /
+  -ive / -tion / -sion stem stripping with Y->I alternation,
+  n't contractions, syllabic-L/N rules (incl. word-final-T/-D
+  context), AH0 reduction with sonorant/sibilant context-gates for
+  word-final S/T/N/K/Z/D/V/SH/P/F contexts, IH0 reduction before
+  NG and K, AH0+N+T -> IX after sonorant/sibilant prev, -ent/-ant
+  / -iful / -ous / -tion morphology, M-in-cluster sonorant for
+  AH0+S, dotted-decimal and digit-string expansion with
+  C-faithful commas / AND / OR-vowel for digit-only forms,
+  sibilant-final plural IX+Z epenthesis, possessive 's IX+Z
+  variant, hyphenated # marker, teen MBOUND ``*`` markers, title
+  abbreviation overrides, WH-question intonation, first-verbs
+  sentence-initial S2 stress, curated VPSTART verb list of ~85
+  pure verbs, and dynamic spell-out via ``ls_spel_say_it``. The
+  gate test ``tests/parity/test_python_phonemes_vs_c_parity.py``
+  enforces this with strict passes (no xfail).
 
 Path to pure-Python bit parity (per the plan):
 
