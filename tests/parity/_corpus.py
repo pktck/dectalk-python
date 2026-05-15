@@ -203,6 +203,8 @@ CORPUS: tuple[str, ...] = (
     "softly",
     "badly",
     "quickly",
+    # ``-it`` short-vowel rule now covers IY / UW tense monophthongs too.
+    "spirit",
 )
 
 

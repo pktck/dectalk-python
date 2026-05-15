@@ -451,7 +451,10 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             # (IH / EH / AE / AH / AO / UH); diphthong-stressed words
             # like ``private`` (AY) / ``climate`` (AY) keep AX.
             def _stressed_short_vowel_in_word(idx: int) -> bool:
-                short_vowels = {"AE", "AH", "AO", "EH", "IH", "UH"}
+                # Tense monophthongs IY / UW are included alongside the
+                # lax monophthongs because the C source treats them the
+                # same way for the -it AH0->IX rule.
+                short_vowels = {"AE", "AH", "AO", "EH", "IH", "UH", "IY", "UW"}
                 for j in range(idx - 1, -1, -1):
                     ph_j = phonemes[j]
                     if not ph_j or ph_j == "_" or ph_j.startswith("__"):
