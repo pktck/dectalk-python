@@ -380,10 +380,6 @@ _DEFERRED: dict[str, str] = {
     "TextToSpeechPause": (
         "Public entry; pauses the worker thread. Python pipeline is synchronous -- nothing to pause"
     ),
-    "TextToSpeechReserved1": "Public entry; reserved no-op (returns MMSYSERR_NOERROR)",
-    "TextToSpeechReserved2": "Public entry; reserved no-op (returns MMSYSERR_NOERROR)",
-    "TextToSpeechReserved3": "Public entry; reserved no-op (returns MMSYSERR_NOERROR)",
-    "TextToSpeechReserved5": "Public entry; reserved no-op (returns MMSYSERR_NOERROR)",
     "TextToSpeechReset": (
         "Public entry; flushes the worker queues. Python pipeline is "
         "synchronous so there's nothing to reset between calls"
