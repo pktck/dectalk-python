@@ -343,6 +343,8 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             "LIVE",
             "LIVES",
             "LIVED",
+            "MADE",
+            "AM",
             # Dictionary-marked function words that also carry the
             # form-class flag in C's main dic (verified in isolation).
             "SO",
@@ -491,6 +493,19 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         "BIRTHDAY": ["B", "ER1", "TH", "__PUNCT__*", "D", "EY2"],
         "NOTEBOOK": ["N", "OW1", "T", "__PUNCT__*", "B", "UH2", "K"],
         "LIGHTHOUSE": ["L", "AY1", "T", "__PUNCT__*", "HH", "AW2", "S"],
+        # Compound words whose C dic carries an internal ``*`` MBOUND
+        # marker between the two parts. The bundled lexicon stores
+        # them as flat phoneme sequences; insert the marker and use
+        # the C-emitted unreduced vowels for the second component
+        # (compound-internal post-stress IH0 stays as IH, not IX --
+        # the MBOUND breaks the "same-word" context that the
+        # syllable-internal reduction rule needs).
+        # ``IH`` (no stress digit) bypasses the IH0+NG -> IX reduction
+        # rule and matches the C emit's unmarked-IH after MBOUND.
+        "EVERYTHING": ["EH1", "V", "R", "IY0", "__PUNCT__*", "TH", "IH", "NG"],
+        "EVERYONE": ["EH1", "V", "R", "IY0", "__PUNCT__*", "W", "AH0", "N"],
+        "ANYWHERE": ["EH1", "N", "IY0", "__PUNCT__*", "W", "EY0", "R"],
+        "SOMETIMES": ["S", "AH1", "M", "__PUNCT__*", "T", "AY0", "M", "Z"],
         # ``eleven`` lex stores AH0 L EH1 V AH0 N; C reads the
         # post-stress AH0 (between V and final N) as IX.
         "ELEVEN": ["AH0", "L", "EH1", "V", "IX", "N"],

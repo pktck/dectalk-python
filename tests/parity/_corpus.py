@@ -295,6 +295,17 @@ CORPUS: tuple[str, ...] = (
     # More VPSTART verb prompts.
     "i can hear you",
     "we live here",
+    # AM as a sentence-internal verb gets the ``)`` marker.
+    "i am happy",
+    # MADE (past of MAKE) is form-classed as a verb in C's main dic.
+    "made",
+    # Compound words whose C dictionary entry carries an internal
+    # ``*`` MBOUND marker. Post-MBOUND vowels stay unreduced (compare
+    # ``everything`` -- C emits ``thihnx`` not ``thixnx``).
+    "everything",
+    "everyone",
+    "anywhere",
+    "sometimes",
 )
 
 
