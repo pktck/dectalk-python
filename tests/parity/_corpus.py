@@ -133767,6 +133767,16 @@ CORPUS: tuple[str, ...] = (
     "we were here two months ago",
     "we were here two weeks ago",
     "we were here two years ago",
+    # Broad-net batch 112: longer descriptive sentences.
+    "he went home to rest",
+    "i went home to rest",
+    "i went home to sleep",
+    "she went home to rest",
+    "the rain is falling on the roof",
+    "the sky is filled with stars",
+    "the trees are full of leaves",
+    "they went home to rest",
+    "we went home to rest",
 )
 
 
