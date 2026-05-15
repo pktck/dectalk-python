@@ -186,6 +186,11 @@ CORPUS: tuple[str, ...] = (
     "eighteen",
     "15",
     "18",
+    # Sibilant-final plurals: IX+Z epenthesis (classes / horses / roses).
+    "classes",
+    "horses",
+    "kisses",
+    "foxes",
 )
 
 

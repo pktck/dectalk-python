@@ -819,6 +819,20 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             stem_phones = lookup(stem[:-2] + "Y", lang=lang)
                         elif stem_phones is None and len(stem) > 1 and stem.endswith("I"):
                             stem_phones = lookup(stem[:-1] + "Y", lang=lang)
+                        # Sibilant-final stems take ``-es``: try the
+                        # base form with the trailing E dropped (``masses``
+                        # -> ``mass``).
+                        if stem_phones is None and stem.endswith("E") and len(stem) > 2:  # noqa: PLR2004
+                            stem_phones = lookup(stem[:-1], lang=lang)
+                        # LTS fallback so ``masses`` / ``foxes`` /
+                        # ``classes`` etc. still get the IX+Z epenthesis
+                        # treatment even when neither the full word nor
+                        # the bare stem is in the lexicon.
+                        if stem_phones is None and lts_fallback:
+                            ltstem = stem
+                            if ltstem.endswith("E"):
+                                ltstem = ltstem[:-1]
+                            stem_phones = _dedupe_consecutive_phonemes(lts(ltstem))
                         if stem_phones is not None:
                             # When the stem ends in a sonorant (L/N)
                             # preceded by a stop ("SECOND" -> S EH K N D
@@ -830,7 +844,15 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             # rewriting the relevant phoneme in the stem
                             # before concatenation.
                             stem_phones = _apply_pre_inflection_syllabic(stem_phones)
-                            phones = [*stem_phones, "S"]
+                            # Sibilant-final stems take an epenthetic
+                            # IX before the inflectional Z (``classes``
+                            # -> CLASS + IX + Z; ``horses`` -> HORSE +
+                            # IX + Z; ``roses`` -> ROSE + IX + Z).
+                            last_base = stem_phones[-1].rstrip("0123456789")
+                            if last_base in {"S", "Z", "SH", "ZH", "CH", "JH"}:
+                                phones = [*stem_phones, "IX", "Z"]
+                            else:
+                                phones = [*stem_phones, "S"]
                             stem_stripped = True
                     # ``-er`` agentive / comparative suffix: strip and
                     # look up the bare stem, then append ER0. Handles
