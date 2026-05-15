@@ -111,29 +111,9 @@ _DEFERRED: dict[str, str] = {
     # standalone ``dic_us`` executable, not into ``libtts_us.so``). The
     # tool reads ``Dic_us.txt`` source text and emits the binary
     # ``dtalk_us.dic`` consumed at runtime via :mod:`dectalk.dic`.
-    "main": (
-        "Build-time tool: dic_comm.c's main() compiles dictionary source "
-        "text into the binary .dic files; not a runtime engine"
-    ),
-    "sort_ents": (
-        "Build-time tool helper: alphabetises dictionary entries before "
-        "they're written to the .dic file; runtime reads pre-sorted data"
-    ),
-    "read_ent": (
-        "Build-time tool helper: reads one packed entry from the temp file "
-        "into struct d_ent; runtime uses dectalk.dic to read .dic directly"
-    ),
     # ---- dic_cnvt.c -- the Paradox-format dictionary converter (a
     # separate standalone tool that doesn't even appear in the Makefile;
     # never linked into anything Linux builds today).
-    "OldToNew": (
-        "Build-time tool: converts old Paradox-style dictionary text into "
-        "the new format; not a runtime engine"
-    ),
-    "NewToOld": (
-        "Build-time tool: converts new-format dictionary text back to "
-        "Paradox style; not a runtime engine"
-    ),
 }
 
 
