@@ -327,6 +327,12 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             "LOSE",
             "LOSES",
             "LOSING",
+            "SING",
+            "SINGS",
+            "SINGING",
+            "PUT",
+            "PUTS",
+            "PUTTING",
             # Dictionary-marked function words that also carry the
             # form-class flag in C's main dic (verified in isolation).
             "SO",

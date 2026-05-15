@@ -265,6 +265,8 @@ CORPUS: tuple[str, ...] = (
     "see you tomorrow",
     "i want some",
     "we know better",
+    "they sing songs",
+    "she put it down",
 )
 
 
