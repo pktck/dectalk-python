@@ -867,6 +867,40 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         stem_phones = lookup(stem + "E", lang=lang) or lookup(stem, lang=lang)
                         if stem_phones is not None:
                             phones = [*stem_phones, "ER0"]
+                    # ``-ly`` adverb suffix: strip and append ``L + IY0``
+                    # (``friendly`` -> ``FRIEND`` + ``L + IY`` ->
+                    # ``f r ' ehn d lliy``). Consonant-final stems only;
+                    # vowel-final stems would need extra handling we skip.
+                    if (
+                        phones is None and token.text.endswith("LY") and len(token.text) > 3  # noqa: PLR2004
+                    ):
+                        ly_stem = token.text[:-2]
+                        stem_phones = lookup(ly_stem, lang=lang) or lookup(ly_stem + "E", lang=lang)
+                        if stem_phones is not None:
+                            last_base = stem_phones[-1].rstrip("0123456789")
+                            # Only fire when the stem ends in a consonant
+                            # so we don't break vowel-final ``happily`` /
+                            # ``easily`` patterns that diverge from C.
+                            if last_base not in {
+                                "AA",
+                                "AE",
+                                "AH",
+                                "AO",
+                                "AX",
+                                "AY",
+                                "AW",
+                                "EH",
+                                "ER",
+                                "EY",
+                                "IH",
+                                "IX",
+                                "IY",
+                                "OW",
+                                "OY",
+                                "UH",
+                                "UW",
+                            }:
+                                phones = [*stem_phones, "L", "IY0"]
                     # ``-ness`` noun-forming suffix: strip and append
                     # ``N + IX + S`` (``darkness`` -> ``d ' aar k n ixs``).
                     # Also tries the Y->I morphological alternation:

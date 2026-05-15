@@ -198,6 +198,11 @@ CORPUS: tuple[str, ...] = (
     # M-in-cluster + AH0+S -> IX (``christmas`` -- SM cluster, IX).
     # M-after-vowel + AH0+S -> AX (``famous`` -- EY+M, AX).
     "christmas",
+    # ``-ly`` adverb suffix: consonant-final stem + L + IY0.
+    "friendly",
+    "softly",
+    "badly",
+    "quickly",
 )
 
 
