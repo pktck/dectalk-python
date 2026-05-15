@@ -205,6 +205,10 @@ CORPUS: tuple[str, ...] = (
     "quickly",
     # ``-it`` short-vowel rule now covers IY / UW tense monophthongs too.
     "spirit",
+    # Number / teen edge cases.
+    "eleven",
+    "thirteen",
+    "13",
 )
 
 

@@ -362,6 +362,15 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "billion" -- not in the bundled lexicon. C output is
         # ``b ' ihllyxaxn`` = B IH L Y AX N (with primary stress on IH).
         "BILLION": ["B", "IH1", "L", "Y", "AX", "N"],
+        # ``eleven`` lex stores AH0 L EH1 V AH0 N; C reads the
+        # post-stress AH0 (between V and final N) as IX.
+        "ELEVEN": ["AH0", "L", "EH1", "V", "IX", "N"],
+        # ``thirteen`` -- the *one* teen word missing from the C
+        # MBOUND-marker pattern in the lexicon (lex stores just TH
+        # ER1 T IY2 N). C emits ``th' rr* t ` iyn``.
+        "THIRTEEN": ["TH", "ER1", "__PUNCT__*", "T", "IY2", "N"],
+        # Digit-expanded ``13`` -- primary stress on second syllable.
+        "__NUM_THIRTEEN__": ["TH", "ER1", "__PUNCT__*", "T", "IY1", "N"],
         # Digit-expansion-only sentinels. The C kernel reads digit
         # strings ("4", "40", "1234") with subtly different pronunciations
         # than the literal words ("four", "forty") -- specifically the
@@ -607,6 +616,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # digit-expansion contexts.
         def _digit_expand(value: int) -> list[Token]:
             teens = {
+                "THIRTEEN": "__NUM_THIRTEEN__",
                 "FOURTEEN": "__NUM_FOURTEEN__",
                 "FIFTEEN": "__NUM_FIFTEEN__",
                 "SIXTEEN": "__NUM_SIXTEEN__",
