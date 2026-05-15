@@ -120,13 +120,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         if not _TASKS_MD.exists():
-            print("docs/TASKS.md missing — run without --check to create it",
-                  file=sys.stderr)
+            print("docs/TASKS.md missing — run without --check to create it", file=sys.stderr)
             return 2
         existing = _TASKS_MD.read_text(encoding="utf-8")
         if existing != new_content:
-            print("docs/TASKS.md is out of date; run scripts/refresh_tasks.py",
-                  file=sys.stderr)
+            print("docs/TASKS.md is out of date; run scripts/refresh_tasks.py", file=sys.stderr)
             return 1
         print("docs/TASKS.md up to date")
         return 0

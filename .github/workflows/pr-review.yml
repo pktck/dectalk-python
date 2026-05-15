@@ -31,47 +31,38 @@ jobs:
       - name: Collect diff facts
         id: facts
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # On synchronize, github.event.before is the previous PR head — so the
+          # diff is bounded to the latest push. On opened/reopened, before is
+          # the base SHA, which gives the full PR diff (intentional).
+          BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           mkdir -p /tmp/pr-review
-          # Files changed.
-          git diff --name-only --diff-filter=ACM "${BASE_SHA}" "${HEAD_SHA}" \
-            > /tmp/pr-review/files.txt
-          # Added lines only (strip leading + and the diff header).
-          git diff "${BASE_SHA}" "${HEAD_SHA}" -- '*.py' '*.sh' '*.toml' '*.yml' '*.yaml' \
+          # Diff range: prefer "since previous push" (synchronize), fall back
+          # to "since PR base" (opened/reopened). On a long-running feature
+          # branch the full-PR view drowns out the per-push signal.
+          if [[ -n "${BEFORE_SHA}" && "${BEFORE_SHA}" != "0000000000000000000000000000000000000000" ]] \
+              && git cat-file -e "${BEFORE_SHA}" 2>/dev/null; then
+            range="${BEFORE_SHA}..${HEAD_SHA}"
+          else
+            range="${BASE_SHA}...${HEAD_SHA}"
+          fi
+          echo "Reviewing diff range: ${range}"
+          # Added lines only (strip leading + and the diff headers).
+          git diff "${range}" -- '*.py' '*.sh' '*.toml' '*.yml' '*.yaml' \
             | awk '/^\+\+\+/ {next} /^\+/ {print substr($0, 2)}' \
             > /tmp/pr-review/added.txt
-          # Counts of newly added concerns.
           todo_count=$(grep -cE '\b(TODO|FIXME|XXX|HACK)\b' /tmp/pr-review/added.txt || true)
           ignore_count=$(grep -cE '# (type|pyright): ignore' /tmp/pr-review/added.txt || true)
-          deferred_changed=$(git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" \
+          deferred_changed=$(git diff --name-only "${range}" \
                             -- 'tests/unit/test_*_module_inventory.py' | wc -l)
-          # New src/dectalk modules missing parity sibling.
-          missing_parity=""
-          while IFS= read -r f; do
-            case "$f" in
-              src/dectalk/*.py)
-                stem=$(basename "$f" .py)
-                if ! grep -q "${stem}" /tmp/pr-review/files.txt | grep -q "tests/"; then
-                  expected="tests/unit/test_${stem}_*.py"
-                  # Search the repo for any matching test file.
-                  if ! compgen -G "${expected}" >/dev/null 2>&1; then
-                    missing_parity="${missing_parity}- \`$f\`"$'\n'
-                  fi
-                fi
-                ;;
-            esac
-          done < /tmp/pr-review/files.txt
           {
             echo "todo_count=${todo_count}"
             echo "ignore_count=${ignore_count}"
             echo "deferred_changed=${deferred_changed}"
-            echo "missing_parity<<MISSING_EOF"
-            printf '%s' "${missing_parity}"
-            echo
-            echo "MISSING_EOF"
+            echo "range=${range}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Post review comment
@@ -80,7 +71,7 @@ jobs:
           TODO_COUNT: ${{ steps.facts.outputs.todo_count }}
           IGNORE_COUNT: ${{ steps.facts.outputs.ignore_count }}
           DEFERRED_CHANGED: ${{ steps.facts.outputs.deferred_changed }}
-          MISSING_PARITY: ${{ steps.facts.outputs.missing_parity }}
+          RANGE: ${{ steps.facts.outputs.range }}
         with:
           script: |
             const env = process.env;
@@ -88,20 +79,19 @@ jobs:
             const todoCount = parseInt(env.TODO_COUNT || '0', 10);
             const ignoreCount = parseInt(env.IGNORE_COUNT || '0', 10);
             const deferredChanged = parseInt(env.DEFERRED_CHANGED || '0', 10);
-            const missing = (env.MISSING_PARITY || '').trim();
+            const range = env.RANGE || 'PR diff';
 
             const flags = [];
             if (todoCount > 0) flags.push(`- ${todoCount} new TODO/FIXME/XXX/HACK comment(s) added`);
             if (ignoreCount > 0) flags.push(`- ${ignoreCount} new \`# type: ignore\` / \`# pyright: ignore\` directive(s)`);
             if (deferredChanged > 0) flags.push(`- \`_DEFERRED\` allow-list file(s) modified — verify Python symbol now exists`);
-            if (missing) flags.push(`- New \`src/dectalk\` module(s) without a sibling parity test:\n${missing}`);
 
-            const sections = [marker, '## Auto-review summary'];
+            const sections = [marker, '## Auto-review summary', '', `_Diff range: \`${range}\`_`];
             if (flags.length === 0) {
-              sections.push('', ':white_check_mark: No grep-level concerns. Run `/review` if you want a deeper read.');
+              sections.push('', ':white_check_mark: No grep-level concerns in this push. Run `/review` for a deeper read.');
             } else {
               sections.push('', 'Heads-up for human/orchestrator review:', '', ...flags);
-              sections.push('', '_This is grep-level only. Run `/review` for a substantive read._');
+              sections.push('', '_Grep-level only. Run `/review` for a substantive read._');
             }
             const body = sections.join('\n');
 

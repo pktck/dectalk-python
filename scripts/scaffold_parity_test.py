@@ -175,17 +175,21 @@ def _target_test_path(c_function: str, py_module: str) -> Path:
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: write a scaffolded parity test."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--c-file", required=True,
-                        help="C source path relative to DECTALK_SRC root, "
-                             "e.g. src/dapi/src/ph/ph_setar.c")
-    parser.add_argument("--c-function", required=True,
-                        help="Name of the C function to test (e.g. phsettar)")
-    parser.add_argument("--python-module", required=True,
-                        help="Dotted Python module path, e.g. dectalk.ph.phsettar")
-    parser.add_argument("--python-symbol", required=True,
-                        help="The Python symbol to exercise (often == c-function)")
-    parser.add_argument("--force", action="store_true",
-                        help="Overwrite an existing test file")
+    parser.add_argument(
+        "--c-file",
+        required=True,
+        help="C source path relative to DECTALK_SRC root, e.g. src/dapi/src/ph/ph_setar.c",
+    )
+    parser.add_argument(
+        "--c-function", required=True, help="Name of the C function to test (e.g. phsettar)"
+    )
+    parser.add_argument(
+        "--python-module", required=True, help="Dotted Python module path, e.g. dectalk.ph.phsettar"
+    )
+    parser.add_argument(
+        "--python-symbol", required=True, help="The Python symbol to exercise (often == c-function)"
+    )
+    parser.add_argument("--force", action="store_true", help="Overwrite an existing test file")
     args = parser.parse_args(argv)
 
     target = _target_test_path(args.c_function, args.python_module)
