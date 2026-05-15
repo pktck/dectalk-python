@@ -2797,6 +2797,92 @@ CORPUS: tuple[str, ...] = (
     "right for you",
     # Two-modifier noun phrases.
     "a good little book",
+    # Emphatic / cleft "it is X" patterns.
+    "it is i",
+    "it is you",
+    "it is me",
+    "it was i",
+    # Modal-existential ``there + modal + be``.
+    "there will be",
+    "there might be",
+    "there must be",
+    # Quantifier-headed phrases.
+    "all the people",
+    "all the days",
+    "none of them",
+    "one of them",
+    "two of them",
+    # Tag-question phrases.
+    "is not it",
+    "was not it",
+    # WH-cleft ``what i X``.
+    "what i want",
+    "what i need",
+    "what i know",
+    "what i did",
+    # Pronoun + adverb of degree + verb.
+    "i hardly see",
+    # ``if you X`` conditionals.
+    "if you go",
+    "if you come",
+    "if you stay",
+    # ``have/had/will been`` auxiliary chains.
+    "i have been",
+    "we have been",
+    "they have been",
+    "i had been",
+    "we had been",
+    "they had been",
+    "i will be",
+    "we will be",
+    "they will be",
+    # Long-range progressive sentences.
+    "the rain is falling",
+    "the moon is rising",
+    # ``very very`` intensification.
+    "very very nice",
+    "very very bad",
+    # Action verb + object.
+    "i kick the ball",
+    "i throw the ball",
+    "i catch the ball",
+    "i hit the ball",
+    # ``X or Y`` interrogative-pair.
+    "what or why",
+    "where or when",
+    # Pronoun + transitive + pronoun.
+    "she sees us",
+    "he sees us",
+    # ``the X`` natural-phenomenon noun phrases.
+    "the fire",
+    "the ice",
+    "the sea",
+    "the air",
+    "the sky",
+    # Number + duration noun.
+    "five years",
+    "ten years",
+    "twenty years",
+    # ``A and B`` color pairs.
+    "red and white",
+    "blue and white",
+    "green and white",
+    # More short-vowel verbs.
+    "begin",
+    "end",
+    "start",
+    # Abstract nouns.
+    "peace",
+    "joy",
+    "honor",
+    "wisdom",
+    # ``you can X`` / ``i will X`` modal phrases.
+    "you can stay",
+    "you can wait",
+    "i will stay",
+    "i will leave",
+    # Longer sentence.
+    "love is in the air",
     # Round 11 corpus expansion: SVO sentences, math facts, travel,
     # cooking, weather, sports, family relations, multi-word
     # noun/adjective phrases, partitive ``of`` phrases,
