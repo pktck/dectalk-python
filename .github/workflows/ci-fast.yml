@@ -1,0 +1,56 @@
+name: CI (fast)
+
+# Per-commit fast checks for working branches. Targets ~2-3 min wall-clock.
+# Runs ruff + ruff-format + pyright + pytest (excluding c_oracle/slow) +
+# shellcheck on ubuntu-latest + Py 3.11 only. The full 3 OS x 3 Python
+# matrix + c-oracle parity tests run in ci.yml on push to dev/main and on PRs.
+
+on:
+  push:
+    branches: ["claude/**", dev]
+    paths-ignore:
+      - "tests/parity/_corpus.py"
+      - "docs/STATUS.md"
+      - "docs/PLAN.md"
+      - "docs/PLAN-CI-STRATEGY.md"
+      - "docs/PORTING.md"
+      - "docs/TASKS.md"
+      - "README.md"
+
+concurrency:
+  group: ci-fast-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Fast checks (Ubuntu, Py 3.11)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync --only-group dev
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Pyright strict type check
+        run: uv run pyright
+
+      - name: Pytest (no c_oracle, no slow)
+        run: uv run pytest -n auto -m "not c_oracle and not slow"
+
+      - name: Shellcheck
+        run: |
+          if compgen -G "scripts/*.sh" >/dev/null; then
+            shellcheck scripts/*.sh
+          fi

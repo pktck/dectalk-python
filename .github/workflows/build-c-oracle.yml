@@ -1,0 +1,146 @@
+name: Build C oracle release
+
+# Builds the DECtalk C oracle (cloned C source + applied patches + compiled
+# libtts_us.so + sample binaries + dictionaries) once and publishes the
+# result as a GitHub Release asset. Other workflows and local devs then
+# fetch the tarball via scripts/setup_c_oracle.sh's fast path instead of
+# rebuilding from source on every run.
+#
+# The release tag derives from a hash of: pinned upstream SHA + every
+# .patch under tests/parity/c_patches + setup_c_oracle.sh +
+# apply_c_patches.py. Any change to those inputs produces a new tag,
+# triggering a fresh build.
+#
+# See docs/PLAN-CI-STRATEGY.md §2 for the rationale.
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "scripts/setup_c_oracle.sh"
+      - "scripts/apply_c_patches.py"
+      - "tests/parity/c_patches/**"
+      - ".github/workflows/build-c-oracle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-c-oracle
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build + publish c-oracle tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: uv sync --all-groups
+
+      - name: Install C build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential libasound2-dev libpulse-dev autoconf automake \
+            pkg-config zstd
+
+      - name: Compute oracle release tag
+        id: tag
+        run: |
+          # Mirror the oracle_hash() logic in setup_c_oracle.sh exactly so the
+          # script's fast-path fetch can find this release.
+          DECTALK_REF=$(grep -oE 'DECTALK_REF:-[a-f0-9]{40}' scripts/setup_c_oracle.sh \
+                       | head -n1 | sed 's/DECTALK_REF:-//')
+          if [[ -z "${DECTALK_REF}" ]]; then
+            echo "ERROR: could not parse DECTALK_REF from scripts/setup_c_oracle.sh" >&2
+            exit 1
+          fi
+          hash=$({
+            printf "%s\n" "${DECTALK_REF}"
+            find tests/parity/c_patches -name "*.patch" -exec sha256sum {} \; | sort
+            sha256sum scripts/setup_c_oracle.sh scripts/apply_c_patches.py
+          } | sha256sum | cut -c1-16)
+          echo "tag=c-oracle-${hash}" >> "$GITHUB_OUTPUT"
+          echo "hash=${hash}" >> "$GITHUB_OUTPUT"
+          echo "ref=${DECTALK_REF}" >> "$GITHUB_OUTPUT"
+          echo "Computed tag c-oracle-${hash} for upstream ${DECTALK_REF}"
+
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          if curl -fsSL -o /dev/null \
+               -H "Authorization: Bearer ${GH_TOKEN}" \
+               -H "Accept: application/vnd.github+json" \
+               "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${tag}"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${tag} already exists; skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Release ${tag} not found; will build and publish."
+          fi
+
+      - name: Build the C oracle
+        if: steps.check.outputs.exists == 'false'
+        run: scripts/setup_c_oracle.sh
+
+      - name: Package the oracle as a tarball
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          mkdir -p /tmp/c-oracle-stage
+          # We want the archive to expand to ./dectalk-src/ and
+          # ./dectalk-binary-stable/ at its root, so setup_c_oracle.sh can
+          # mv them into any DECTALK_SRC / DECTALK_BIN destination.
+          cp -r /tmp/dectalk-src /tmp/c-oracle-stage/dectalk-src
+          cp -r /tmp/dectalk-binary-stable /tmp/c-oracle-stage/dectalk-binary-stable
+          tar --use-compress-program='zstd -T0 -19' \
+            -cf /tmp/c-oracle.tar.zst \
+            -C /tmp/c-oracle-stage \
+            dectalk-src dectalk-binary-stable
+          ls -lh /tmp/c-oracle.tar.zst
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.tag.outputs.tag }}"
+          ref="${{ steps.tag.outputs.ref }}"
+          body=$(cat <<EOF
+          Prebuilt DECtalk C oracle for cache-friendly CI and local dev.
+
+          - **Upstream commit**: \`${ref}\`
+          - **Patch hash**: \`${{ steps.tag.outputs.hash }}\`
+          - **Built**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+
+          Fetched automatically by \`scripts/setup_c_oracle.sh\` when the
+          local hash matches this tag.
+          EOF
+          )
+          # Create the release.
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases" \
+            -d "$(jq -n --arg tag "${tag}" --arg name "${tag}" --arg body "${body}" \
+                  '{tag_name: $tag, name: $name, body: $body, draft: false, prerelease: false}')" \
+            -o /tmp/release.json
+          upload_url=$(jq -r '.upload_url | sub("\\{.*\\}"; "")' /tmp/release.json)
+          # Upload the asset.
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Content-Type: application/zstd" \
+            --data-binary @/tmp/c-oracle.tar.zst \
+            "${upload_url}?name=c-oracle.tar.zst"
+          echo "Published release ${tag}"
