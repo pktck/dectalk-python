@@ -52,9 +52,6 @@ _DEFERRED: dict[str, str] = {
     # through libtts_us.so's PA_GetVolume / PA_SetVolume on Linux. The
     # Python audio backend does its own gain shaping, so the bridging
     # logic in StereoVolumeControl / SetStereoVolume isn't needed yet.
-    "StereoVolumeControl": "Calls PA_GetVolume/PA_SetVolume; Python audio backend bypasses",
-    "SetStereoVolume": "Calls PA_SetVolume; Python audio backend bypasses",
-    "ModifyVolume": "static helper to StereoVolumeControl; deferred along with it",
     # Pythonic-rename camelCase->snake_case. Python ports live in
     # volume_table.py as encode_dectalk_volume / decode_dectalk_volume.
 }
