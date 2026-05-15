@@ -202,23 +202,6 @@ _DEFERRED: dict[str, str] = {
         "OP_THREAD_ROUTINE worker pumping the text queue; Python port "
         "is single-threaded and dispatches synchronously through _capi"
     ),
-    "WaitForTextQueuingToComplete": (
-        "Spins until the worker thread drains the text queue; not "
-        "needed in the synchronous Python path"
-    ),
-    "WaitForEmptyPipes": (
-        "Blocks until the LTS/PH/VTM pipes drain; the synchronous "
-        "Python pipeline finishes a segment before returning"
-    ),
-    "StartDecTalkSystemThread": (
-        "Spawns the per-handle worker pthread; Python port runs the "
-        "pipeline inline (no worker thread)"
-    ),
-    "PlayAudioCallbackRoutine": (
-        "Audio-device callback that hands buffers back to the play "
-        "queue; the Python audio backend bypasses this with its own "
-        "sounddevice / wave writer"
-    ),
     "PutIndexMarkInBuffer": (
         "Stages an index-mark token in the current output buffer; "
         "Python emits marks through ``IndexMarkEvent`` callbacks"

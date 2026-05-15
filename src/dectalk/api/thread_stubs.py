@@ -7,17 +7,8 @@ present. These no-op stubs exist so module-inventory tests count the
 C-source names as ported without us having to keep the original
 threading architecture.
 
-Function stubs included:
-
-- :func:`FixMemoryLockup` -- forces a pthread_yield() / sleep in the
-  C source when an allocation stalls; not needed under the CPython
-  GIL.
-- :func:`PumpModeMessage` -- dispatches a TTS_MODE_T change on the
-  worker thread; the synchronous Python path applies mode changes
-  inline.
-
-Each stub returns ``MMSYSERR_NOERROR`` (0) to mirror the success
-path of its C counterpart.
+All stubs return ``MMSYSERR_NOERROR`` (0) to mirror the success path
+of their C counterparts.
 """
 
 from __future__ import annotations
@@ -37,4 +28,35 @@ def PumpModeMessage(*args: object, **kwargs: object) -> int:  # noqa: N802
     return _MMSYSERR_NOERROR
 
 
-__all__ = ["FixMemoryLockup", "PumpModeMessage"]
+def StartDecTalkSystemThread(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; pipeline runs inline, no per-handle worker pthread."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def WaitForEmptyPipes(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; synchronous pipeline finishes before returning."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def WaitForTextQueuingToComplete(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; text feeds the pipeline inline, no queue to drain."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def PlayAudioCallbackRoutine(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op under Python; the audio backend writes WAVs/streams directly."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+__all__ = [
+    "FixMemoryLockup",
+    "PlayAudioCallbackRoutine",
+    "PumpModeMessage",
+    "StartDecTalkSystemThread",
+    "WaitForEmptyPipes",
+    "WaitForTextQueuingToComplete",
+]
