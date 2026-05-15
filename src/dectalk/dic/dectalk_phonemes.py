@@ -585,18 +585,49 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
             # the dictionary's form-class flag isn't derivable from
             # immediate context. n_alone_word_final uses the narrower
             # set (no T) so ``cotton`` stays AX.
+            # ``parent`` (P EY1 R AH0 N T) emits ``p ' eyr ixn t`` --
+            # the prev_emit is ``r`` (the R after a vowel) and AH0+N+T
+            # fires IX. ``different`` (D IH1 F R AH0 N T) also emits
+            # prev_emit ``r``, but the R follows the consonant ``f``
+            # rather than a vowel, and AH0+N+T stays AX. Distinguish
+            # by inspecting prev2_emit: vowel-before-R reads as IX,
+            # consonant-before-R reads as AX.
+            prev2_emit_base: str = ""
+            if out_parts:
+                k2 = len(out_parts) - 1
+                # Skip the immediate prev emit + any stress markers.
+                while k2 >= 0 and out_parts[k2] in (
+                    f"{DECTALK_PRIMARY_STRESS} ",
+                    f"{DECTALK_SECONDARY_STRESS} ",
+                ):
+                    k2 -= 1
+                k2 -= 1  # step past prev_emit_base itself
+                while k2 >= 0 and out_parts[k2] in (
+                    f"{DECTALK_PRIMARY_STRESS} ",
+                    f"{DECTALK_SECONDARY_STRESS} ",
+                ):
+                    k2 -= 1
+                if k2 >= 0:
+                    prev2_emit_base = out_parts[k2].rstrip(" ")
+            prev_is_vowel_plus_r = prev_emit_base == "r" and prev2_emit_base in _VOWEL_DECTALK_CODES
             ah_before_final_n = (
                 base == "AH"
                 and stress_digit == "0"
                 and (
                     (
                         n_t_word_final
-                        and prev_emit_base
-                        in ("sh", "zh", "ch", "jh", "r", "b", "z", "s", "ll", "t", "k")
+                        and (
+                            prev_emit_base
+                            in ("sh", "zh", "ch", "jh", "b", "z", "s", "ll", "t", "k")
+                            or prev_is_vowel_plus_r
+                        )
                     )
                     or (
                         n_alone_word_final
-                        and prev_emit_base in ("sh", "zh", "ch", "jh", "r", "b", "z", "s")
+                        and (
+                            prev_emit_base in ("sh", "zh", "ch", "jh", "b", "z", "s")
+                            or prev_is_vowel_plus_r
+                        )
                     )
                 )
             )
