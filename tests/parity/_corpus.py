@@ -106,6 +106,12 @@ CORPUS: tuple[str, ...] = (
     "talking",
     "jumping",
     "running",
+    # ``'s`` contraction (``that's`` = ``that is``): strip the apostrophe
+    # and append S (voicing handled by the encoder).
+    "that's",
+    "it's",
+    "what's",
+    "there's",
 )
 
 

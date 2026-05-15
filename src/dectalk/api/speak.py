@@ -736,6 +736,18 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     phones = list(word_phoneme_overrides[token.text])
                 else:
                     phones = lookup(token.text, lang=lang)
+                    # ``'s`` contraction (``that's`` = ``that is``,
+                    # ``it's`` = ``it is``). Strip the apostrophe + S
+                    # and look up the base form; if found, append S
+                    # (the encoder's voicing rule handles is/iz).
+                    if (
+                        phones is None and token.text.endswith("'S") and len(token.text) > 2  # noqa: PLR2004
+                    ):
+                        base = token.text[:-2]
+                        base_phones = lookup(base, lang=lang)
+                        if base_phones is not None:
+                            phones = [*base_phones, "S"]
+                            stem_stripped = True
                     # Plural / 3rd-person -s stem stripping: if the word
                     # isn't in the lexicon but its singular form is, use
                     # the singular's phonemes and append S (the encoder's
