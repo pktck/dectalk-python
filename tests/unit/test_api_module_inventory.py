@@ -160,24 +160,6 @@ _DEFERRED: dict[str, str] = {
     # does, and ``dectalk._capi`` happily uses its bundled license. There
     # is no need for a Pythonic equivalent unless we ever ship a pure-
     # Python license validator (which we have no plans to do).
-    "encryptString": (
-        "FONIX license obfuscation; Python port relies on libtts_us.so's bundled check"
-    ),
-    "decryptString": (
-        "FONIX license obfuscation; Python port relies on libtts_us.so's bundled check"
-    ),
-    "sixencode24": (
-        "static helper to encryptString (24-bit -> 4 sixel encoding); deferred along with it"
-    ),
-    "sixdecode24": (
-        "static helper to decryptString (4 sixel -> 24-bit decoding); deferred along with it"
-    ),
-    "trand": "tiny LCG used to seed the FONIX cipher; deferred with the rest of crypt2.c",
-    "rot24": "24-bit rotate helper for the FONIX cipher; deferred with the rest of crypt2.c",
-    "unrot24": (
-        "24-bit reverse-rotate helper for the FONIX cipher; deferred with the rest of crypt2.c"
-    ),
-    "rot32": "32-bit rotate helper for the FONIX cipher; deferred with the rest of crypt2.c",
     # ----- init.c -- per-DLL shared-memory init/fini. -------------------
     # On Linux every actual body sits inside an ``#ifdef __osf__`` or a
     # ``#if defined VXWORKS || defined _SPARC_SOLARIS_`` branch, so the
@@ -185,29 +167,12 @@ _DEFERRED: dict[str, str] = {
     # shared-memory layer at all (it uses regular process memory through
     # ctypes), so no equivalent is needed.
     # ----- ttsapi.c -- internal helpers. --------------------------------
-    "SetSpeaker": (
-        "Internal helper that copies SPEAKER_T fields into the TTS "
-        "handle; Python's ``dectalk.voices`` resolves preset names "
-        "directly through libtts_us.so's SetSpeaker"
-    ),
-    "WriteAudioToFile": (
-        "Internal RIFF/WAV header writer used by the worker thread; "
-        "Python uses the stdlib ``wave`` module via ``to_wav``"
-    ),
     # ----- ttsapi.c -- per-stage boundary-dump hooks (Phase A.4). -------
     # Added by tests/parity/c_patches/0002-stage-boundary-dumps.patch.
     # These are C-only test instrumentation, gated on DECTALK_DUMP_DIR.
     # The Python side reads the resulting dump files via
     # ``dectalk._capi.CAPI.dump_pipeline`` (which is itself the Python
     # equivalent of "what these helpers do").
-    "_dectalk_dump_kernel_open": (
-        "C-only test hook (lazy fopen of kernel.dump); Python-side "
-        "equivalent is ``CAPI.dump_pipeline`` setting DECTALK_DUMP_DIR"
-    ),
-    "_dectalk_dump_kernel_chunk": (
-        "C-only test hook (per-write_pipe-chunk record emitter); "
-        "Python-side equivalent is ``CAPI.dump_pipeline`` reading the dump file"
-    ),
     # ----- ttsapi.c -- public TextToSpeech* entry points. ---------------
     # These are the symbols ``libtts_us.so`` exports. ``dectalk._capi.CAPI``
     # binds the ones the Python port needs (``TextToSpeechStartup`` /
@@ -216,122 +181,6 @@ _DEFERRED: dict[str, str] = {
     # are the user-facing Pythonic wrappers. None of these entry points is
     # re-exported under its original camelCase name, so each is deferred
     # with that explanation.
-    "TextToSpeechConvertToPhonemes": (
-        "Public entry (exposed on Linux by 0001-expose-convert-to-phonemes-on-linux.patch); "
-        "ported as ``dectalk.api.text_to_phonemes`` (Pythonic rename)"
-    ),
-    "TextToSpeechEnumLangs": (
-        "Public entry; enumerates loaded languages. Python's "
-        "``dectalk.api.available_voices`` covers the common case"
-    ),
-    "TextToSpeechGetFeatures": (
-        "Public entry; returns the feature bitmask. The constants live "
-        "in ``dectalk.api.tts_feats`` but no Python wrapper exists yet"
-    ),
-    "TextToSpeechGetPhVdefParams": (
-        "Public entry; returns per-voice PH parameter overrides. "
-        "Python ``dectalk.voices`` exposes per-preset parameters directly"
-    ),
-    "TextToSpeechGetRate": (
-        "Public entry; returns the current speaking rate. Python "
-        "callers pass ``rate=...`` to ``speak`` / ``to_wav`` directly"
-    ),
-    "TextToSpeechGetSpeaker": (
-        "Public entry; returns the current SPEAKER_T id. Python uses "
-        "``dectalk.voices`` preset names, not numeric ids"
-    ),
-    "TextToSpeechGetStatus": (
-        "Public entry; queries TTS_STATUS_T bits. Python returns the "
-        "result of ``speak`` synchronously, no async status to poll"
-    ),
-    "TextToSpeechGetVolume": (
-        "Public entry; returns 16-bit master volume. Python doesn't "
-        "expose a master-volume knob -- callers post-process audio"
-    ),
-    "TextToSpeechLoadUserDictionary": (
-        "Public entry; loads a per-handle pronunciation dictionary. "
-        "Python's pure-Python pipeline uses a built-in dictionary only"
-    ),
-    "TextToSpeechOpenInMemory": (
-        "Public entry; opens an in-memory sink. Python's ``to_wav`` "
-        "returns bytes directly, no sink lifecycle"
-    ),
-    "TextToSpeechOpenLogFile": (
-        "Public entry; opens a phoneme-log file. Python returns "
-        "transcripts through ``text_to_phonemes`` instead"
-    ),
-    "TextToSpeechOpenSapi5Output": ("Public entry; SAPI5 only. Python port has no SAPI5 surface"),
-    "TextToSpeechOpenWaveOutFile": (
-        "Public entry; opens a WAV file for the engine to stream into. "
-        "Python's ``to_wav`` writes the whole file atomically"
-    ),
-    "TextToSpeechReset": (
-        "Public entry; flushes the worker queues. Python pipeline is "
-        "synchronous so there's nothing to reset between calls"
-    ),
-    "TextToSpeechSelectLang": (
-        "Public entry; switches the active language for a handle. Python "
-        "passes ``lang=`` per call instead of mutating handle state"
-    ),
-    "TextToSpeechSetRate": (
-        "Public entry; sets the speaking rate. Python callers pass "
-        "``rate=...`` to ``speak`` / ``to_wav`` directly"
-    ),
-    "TextToSpeechSetSpeaker": (
-        "Public entry; sets the SPEAKER_T id. Python callers pass "
-        "a voice preset name to ``speak`` / ``to_wav`` directly"
-    ),
-    "TextToSpeechSetVolume": (
-        "Public entry; sets 16-bit master volume. Python doesn't expose a master-volume knob"
-    ),
-    "TextToSpeechShutdown": (
-        "Public entry; tears down a handle. ``_capi.CAPI`` calls this "
-        "transparently when the wrapper is finalised"
-    ),
-    "TextToSpeechSpeak": (
-        "Public entry; queues text for the worker. Ported as the "
-        "Pythonic ``dectalk.api.speak`` / ``to_wav`` (no host-supplied handle)"
-    ),
-    "TextToSpeechSpeakEx": (
-        "Public entry; ``Speak`` variant with extra flags. Ported "
-        "behaviour is covered by ``dectalk.api.speak`` / ``to_wav``"
-    ),
-    "TextToSpeechStartLang": (
-        "Public entry; loads a language into a handle. Python loads "
-        "languages through the dectalkml dispatcher transparently"
-    ),
-    "TextToSpeechStartup": (
-        "Public entry; allocates a handle and worker thread. "
-        "``_capi.CAPI`` calls this transparently"
-    ),
-    "TextToSpeechStartupEx": (
-        "Public entry; ``Startup`` variant with callback hooks. "
-        "Python doesn't expose host callbacks"
-    ),
-    "TextToSpeechStartupExFonix": (
-        "Public entry; FONIX licensee ``StartupEx``. Python port "
-        "relies on libtts_us.so's bundled license"
-    ),
-    "TextToSpeechTuning": (
-        "Public entry; enables / extracts VTM tuning data. Python "
-        "port has no tuning-data surface yet"
-    ),
-    "TextToSpeechTyping": (
-        "Public entry; per-character interactive synthesis. Python "
-        "port has no streaming character-by-character surface yet"
-    ),
-    "TextToSpeechUnloadUserDictionary": (
-        "Public entry; unloads a per-handle user dictionary. Python "
-        "port has no user-dictionary surface"
-    ),
-    "TextToSpeechVersionEx": (
-        "Public entry; ``Version`` variant with extended fields. "
-        "Same status as ``TextToSpeechVersion``"
-    ),
-    "TextToSpeechVisualMarks": (
-        "Public entry; enables phoneme/duration visual notifications. "
-        "Python port has no visual-mark callback surface yet"
-    ),
 }
 
 
