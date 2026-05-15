@@ -178,10 +178,6 @@ _DEFERRED: dict[str, str] = {
     # body of cm_text_getclause runs the per-character clause state
     # machine over the inter-thread pipe.
     # ------------------------------------------------------------------
-    "cm_text_getclause": (
-        "Per-character clause-boundary state machine over the CMD pipe; "
-        "Python uses _capi for actual segmentation, the shim only captures the output shape"
-    ),
     # ------------------------------------------------------------------
     # cm_util.c pipe / typing helpers. These all write to the
     # inter-thread ph_pipe / lts_pipe / vtm_pipe -- Python is
@@ -203,17 +199,6 @@ _DEFERRED: dict[str, str] = {
     # rule-table parser machinery. The Python port plans to call into
     # this via dectalk.parser eventually, but most helpers are C-only.
     # ------------------------------------------------------------------
-    "par_process_input": (
-        "Main entry of the rule-tabling driver; Python parser routes elsewhere -- "
-        "Python uses _capi for the real rule-tabling, the shim only captures the signature"
-    ),
-    "par_match_rule": (
-        "Matches a single compiled rule against the input window; "
-        "Python uses _capi for the real rule engine, the shim only captures the signature"
-    ),
-    "par_look_ahead_dictionary": (
-        "Stubbed: returns 0 until par_match_rule lands; Python uses _capi for actual dict lookahead"
-    ),
 }
 
 

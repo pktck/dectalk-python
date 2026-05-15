@@ -215,6 +215,33 @@ def par_dict_dlook(*args: object, **kwargs: object) -> int:
     return _MMSYSERR_NOERROR
 
 
+# --- More parser internals deferred behind ``_capi``. ---
+
+
+def cm_text_getclause(*args: object, **kwargs: object) -> int:
+    """No-op: Python uses _capi for clause segmentation."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def par_process_input(*args: object, **kwargs: object) -> int:
+    """No-op: Python uses _capi for the real rule-tabling driver."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def par_match_rule(*args: object, **kwargs: object) -> int:
+    """No-op: Python uses _capi for the real rule engine."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def par_look_ahead_dictionary(*args: object, **kwargs: object) -> int:
+    """No-op: Python uses _capi for actual dictionary lookahead."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
 __all__ = [
     "CloseDbgLogFile",
     "CloseLogFile",
@@ -238,6 +265,7 @@ __all__ = [
     "cm_util_initialize",
     "cm_util_type_out",
     "cmd_main",
+    "cm_text_getclause",
     "par_copy_index_cm_text",
     "par_copy_index_list_cm_text",
     "par_dict_dlook",
@@ -245,5 +273,8 @@ __all__ = [
     "par_dict_lookup",
     "par_dict_ufind_word",
     "par_is_index_set_cm_text",
+    "par_look_ahead_dictionary",
+    "par_match_rule",
+    "par_process_input",
     "wave_file_open",
 ]
