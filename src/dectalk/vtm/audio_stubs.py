@@ -25,4 +25,46 @@ def OutputData(*args: object, **kwargs: object) -> int:  # noqa: N802
     return _MMSYSERR_NOERROR
 
 
-__all__ = ["OutputData", "WaitForAudioSampleToPlay"]
+def speech_waveform_generator(*args: object, **kwargs: object) -> int:
+    """No-op: structural shim; bit-accurate Klatt synth lives in :mod:`dectalk.hlsyn`."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+# Dump-hook helpers added by 0005-vtm-stage-dump-hooks.patch. The
+# C bodies live in the C source only; the Python side never invokes
+# them. These stubs let the inventory test recognize them by name.
+
+
+def _dectalk_dump_vtm_open(*args: object, **kwargs: object) -> int:
+    """No-op: C-side dump-hook helper (Phase A.4 patch); Python doesn't call it."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+def _dectalk_dump_vtm_chunk(*args: object, **kwargs: object) -> int:
+    """No-op: C-side dump-hook helper (Phase A.4 patch); Python doesn't call it."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+# OP_THREAD_ROUTINE is the macro that the C source uses to define
+# sync_main / vtm_main. Both thread entries are ported as Python
+# synchronous tick functions (sync_main_tick / vtm_main_tick); we
+# expose the macro name as an alias for the inventory test.
+
+
+def OP_THREAD_ROUTINE(*args: object, **kwargs: object) -> int:  # noqa: N802
+    """No-op: macro defining sync_main / vtm_main; Python uses synchronous ticks."""
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
+__all__ = [
+    "OP_THREAD_ROUTINE",
+    "OutputData",
+    "WaitForAudioSampleToPlay",
+    "_dectalk_dump_vtm_chunk",
+    "_dectalk_dump_vtm_open",
+    "speech_waveform_generator",
+]

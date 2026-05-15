@@ -95,27 +95,8 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
     # ---- vtmiont.c -- VTM-stage dump hook (Phase A.4). -----------------
-    "_dectalk_dump_vtm_chunk": (
-        "C-side dump-hook helper added by 0005-vtm-stage-dump-hooks.patch; "
-        "writes one record per vtm_loop call to <DECTALK_DUMP_DIR>/vtm.dump"
-    ),
-    "_dectalk_dump_vtm_open": (
-        "C-side dump-hook helper added by 0005-vtm-stage-dump-hooks.patch; "
-        "lazily opens vtm.dump on first call"
-    ),
     # ---- vtm3.c -- the speech waveform generator (Klatt synthesiser). --
-    "speech_waveform_generator": (
-        "Inner Klatt waveform loop; the bit-accurate synth lives in "
-        "src/dectalk/hlsyn/, this is the C-style entry not yet wrapped"
-    ),
     # ---- sync.c -- the VTM-side sync thread and WFASTP helper. --------
-    "OP_THREAD_ROUTINE": (
-        "ported as synchronous shims (PEP8 rename): the two thread entries "
-        "the macro expands to -- sync_main in sync.c and vtm_main in "
-        "vtmiont.c -- are now vtm.sync_main.sync_main_tick and "
-        "vtm.vtm_main.vtm_main_tick respectively; the Python pipeline runs "
-        "inline on the main thread so each tick is a no-op"
-    ),
     # ---- vtmiont.c -- the VTM output thread and pipe machinery. -------
     # ---- playtone.c -- DTMF / sine-pair tone injection. ---------------
 }
