@@ -173,6 +173,11 @@ CORPUS: tuple[str, ...] = (
     "the dogs ran",
     "you are welcome",
     "an apple tree",
+    # Hyphenated compounds: emit ``#`` syllable-break instead of word break.
+    "forty",
+    "forty-two",
+    "twenty-one",
+    "self-taught",
 )
 
 

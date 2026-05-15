@@ -266,13 +266,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "dalmatians" -- Python's LTS spuriously emits T+IH+AE+N+S
         # for "-tians". DECtalk has SH+IX+N (with -s -> Z plural).
         "DALMATIANS": ["D", "AH0", "L", "M", "AE1", "SH", "IX", "N", "S"],
-        # "forty" -- Python's number_to_words expands "40" / "42" to
-        # FORTY which the dict transcribes as F AO1 R T IY0. DECtalk's
-        # digit-expansion path uses the OR r-coloured vowel instead
-        # of AO+R: F + stress + OR + T + IY. (Standalone literal
-        # "forty" would emit ``f ' aor t iy`` -- but it isn't in the
-        # parity corpus, only digit-expanded forms are.)
-        "FORTY": ["F", "OR1", "T", "IY0"],
+        # Literal "forty" reads via the lexicon as ``f ' aor t iy``
+        # (AO + R). Digit-expanded ``40`` / ``42`` uses the OR
+        # r-coloured single vowel and so gets its own sentinel.
+        "__NUM_FORTY__": ["F", "OR1", "T", "IY0"],
         # "fourteen" -- digit-expansion path. DECtalk emits the OR
         # r-coloured vowel + ``*`` MBOUND marker + primary stress on
         # both syllables (``f ' or* t ' iyn``).
@@ -589,6 +586,8 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 next_w = words[i_w + 1] if i_w + 1 < len(words) else None
                 if w == "FOUR":
                     out.append(Token(TokenKind.WORD, "__NUM_FOUR__"))
+                elif w == "FORTY":
+                    out.append(Token(TokenKind.WORD, "__NUM_FORTY__"))
                 elif w == "THOUSAND":
                     out.append(Token(TokenKind.WORD, "__NUM_THOUSAND__"))
                     if next_w is not None:
@@ -639,6 +638,17 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         tokens.append(Token(TokenKind.WORD, "POINT"))
                     for w in number_to_words(int(part.replace(",", ""))):
                         tokens.append(Token(TokenKind.WORD, w))
+            elif inner and "-" in inner and not inner.startswith("-"):
+                # Hyphenated compound (``forty-two``, ``self-taught``):
+                # tokenise each part separately so we can insert the
+                # ``#`` syllable-break marker the C source emits in
+                # place of the regular word break.
+                parts = inner.split("-")
+                for i_part, part in enumerate(parts):
+                    if i_part > 0:
+                        tokens.append(Token(TokenKind.PAUSE_SHORT, "#"))
+                    if part:
+                        tokens.extend(tokenize(part))
             else:
                 tokens.extend(tokenize(chunk))
                 continue
