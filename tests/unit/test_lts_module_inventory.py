@@ -102,10 +102,6 @@ _DEFERRED: dict[str, str] = {
     # ls_adju_allo2 is the big sweep that calls the (ported) helpers
     # ls_adju_del_phone / ls_adju_ins_phone but isn't itself a function
     # the pure-Python pipeline calls into yet -- the C oracle drives it.
-    "ls_adju_allo2": (
-        "Allophone sweep entry; pure-Python pipeline drives ls_adju helpers "
-        "directly without the full top-level sweep yet"
-    ),
     # l_us_pr1.c -- processing helpers. Most are ported; the top-level
     # ls_proc_do_number is the big number-to-words dispatcher that orchestrates
     # the ported ls_proc_do_*_digits helpers -- it's still in transit.
@@ -115,36 +111,9 @@ _DEFERRED: dict[str, str] = {
     # ls_rule_rule_match + ls_rule_env_match + ls_rule_add_graph +
     # ls_rule_lts_out into the rules engine. The C-named entry points
     # aren't exported individually.
-    "ls_rule_lts": (
-        "Top-level LTS rule loop; collapsed into dectalk.lts.rules_us.lts() "
-        "with the helpers fused in"
-    ),
-    "ls_rule_lts_out": (
-        "Trailing post-pass that pushes the phone list to the next stage; "
-        "fused into the Python rules_us.lts() emission step"
-    ),
-    "ls_rule_add_graph": (
-        "Per-grapheme accumulator inside ls_rule_lts; fused into the Python "
-        "grapheme buffer construction in rules_us.lts()"
-    ),
-    "ls_rule_rule_match": (
-        "Rule pattern matcher driving ls_rule_lts; fused into the Python "
-        "_match_rule helper in rules_us"
-    ),
-    "ls_rule_env_match": (
-        "Environment-matcher helper for ls_rule_rule_match; fused into the "
-        "Python _context_ok helper in rules_us"
-    ),
-    "ls_rule_show_phone": (
-        "Debug-only phone-stream printer (VMS/LDS_BUILD); no Python equivalent "
-        "needed for the release build"
-    ),
     # l_us_sp1.c -- spell vs say. ls_spel_say_it has a Python port (it
     # lives in dectalk.lts.spell_or_say under the renamed export
     # ``say_it``). The Pythonic rename is allow-listed below.
-    "ls_spel_say_it": (
-        "ported as dectalk.lts.spell_or_say.say_it (Pythonic rename drops the ls_spel_ prefix)"
-    ),
 }
 
 
