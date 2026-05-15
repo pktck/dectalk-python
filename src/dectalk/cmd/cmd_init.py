@@ -88,4 +88,6 @@ def free_cmd_thread_memory(p_cmd_t: CmdT) -> None:
     p_cmd_t.esc_seq = None
 
 
-__all__ = ["cmd_init", "free_cmd_thread_memory"]
+FreeCMDThreadMemory = free_cmd_thread_memory
+
+__all__ = ["FreeCMDThreadMemory", "cmd_init", "free_cmd_thread_memory"]

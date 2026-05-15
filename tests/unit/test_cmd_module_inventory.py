@@ -233,12 +233,6 @@ _DEFERRED: dict[str, str] = {
     "cm_util_flush_init": "Resets the pipe-flush state; Python has no flush state",
     "cm_util_type_out": "Writes ASCII typing chars onto the PH pipe; Python typing path differs",
     # ------------------------------------------------------------------
-    # cmd_init.c memory teardown. The C function FreeCMDThreadMemory
-    # frees malloc()'d pCmd_t state; Python relies on GC. We expose the
-    # same surface under the Pythonic snake_case name.
-    # ------------------------------------------------------------------
-    "FreeCMDThreadMemory": "ported as cmd_init.free_cmd_thread_memory (PEP8 rename)",
-    # ------------------------------------------------------------------
     # cmd_wav.c WAV-output handler. The Python port's WAV output runs
     # via dectalk._capi.CAPI and bypasses the C-level [:wave] code,
     # which threads bytes through the kernel pipe and PH layer.
