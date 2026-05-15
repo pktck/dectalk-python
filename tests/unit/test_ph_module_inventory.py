@@ -87,48 +87,9 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
     # ph_sort.c -- top-level sort pipeline.
-    "all_phsort": (
-        "Multi-lang sort dispatcher; Python uses _capi for bit-identical audio; "
-        "structural shim only"
-    ),
-    "fr_phsort": (
-        "French-specific phsort entry; Python uses _capi for bit-identical audio; "
-        "structural shim only"
-    ),
     # ph_sttr2.c -- shared shrink helpers.
-    "setloc": (
-        "Static helper for phsettar locus computation; Python uses _capi for "
-        "bit-identical audio; structural shim only"
-    ),
     # ph_setar.c -- target setting pipeline.
-    "phsettar": (
-        "Top-level phsettar entry; Python uses _capi for bit-identical audio; structural shim only"
-    ),
-    "gettar": (
-        "Per-phone target lookup dispatcher; Python uses _capi for bit-identical "
-        "audio; structural shim only"
-    ),
-    "getbegtar": (
-        "Beginning-of-phone target lookup; Python uses _capi for bit-identical "
-        "audio; structural shim only"
-    ),
-    "getendtar": (
-        "End-of-phone target lookup; Python uses _capi for bit-identical audio; "
-        "structural shim only"
-    ),
-    "init_variables": (
-        "Static phsettar initialiser; Python uses _capi for bit-identical audio; "
-        "structural shim only"
-    ),
-    "make_dip": (
-        "Static parameter-dip generator inside phsettar; Python uses _capi for "
-        "bit-identical audio; structural shim only"
-    ),
     # ph_inton2.c -- intonation engine.
-    "phinton": (
-        "Big intonation engine entry point; Python uses _capi for bit-identical "
-        "audio; structural shim only"
-    ),
 }
 
 
