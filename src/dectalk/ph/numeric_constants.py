@@ -52,6 +52,54 @@ F3: Final[int] = 3
 FZ: Final[int] = 4
 """Parameter index for the nasal zero frequency."""
 
+B1: Final[int] = 5
+"""Parameter index for first formant bandwidth."""
+
+B2: Final[int] = 6
+"""Parameter index for second formant bandwidth."""
+
+B3: Final[int] = 7
+"""Parameter index for third formant bandwidth."""
+
+AV: Final[int] = 8
+"""Parameter index for voicing amplitude."""
+
+AP: Final[int] = 9
+"""Parameter index for aspiration amplitude."""
+
+A2: Final[int] = 10
+"""Parameter index for parallel-branch second formant amplitude."""
+
+A3: Final[int] = 11
+"""Parameter index for parallel-branch third formant amplitude."""
+
+A4: Final[int] = 12
+"""Parameter index for parallel-branch fourth formant amplitude."""
+
+A5: Final[int] = 13
+"""Parameter index for parallel-branch fifth formant amplitude."""
+
+A6: Final[int] = 14
+"""Parameter index for parallel-branch sixth formant amplitude."""
+
+AB: Final[int] = 15
+"""Parameter index for bypass-path amplitude."""
+
+TILT: Final[int] = 16
+"""Parameter index for spectral tilt."""
+
+AREAB: Final[int] = 17
+"""Parameter index for back-cavity area."""
+
+AREAL: Final[int] = 18
+"""Parameter index for lip-opening area."""
+
+AREAG: Final[int] = 19
+"""Parameter index for glottal area."""
+
+AREAN: Final[int] = 20
+"""Parameter index for nasal-port area."""
+
 # -- Formant overload caps --------------------------------------------------
 
 F2max: Final[int] = 2500
@@ -101,6 +149,21 @@ MALLINE: Final[int] = 9
 
 
 __all__ = [
+    "A2",
+    "A3",
+    "A4",
+    "A5",
+    "A6",
+    "AB",
+    "AP",
+    "AREAB",
+    "AREAG",
+    "AREAL",
+    "AREAN",
+    "AV",
+    "B1",
+    "B2",
+    "B3",
     "F0",
     "F1",
     "F2",
@@ -119,6 +182,7 @@ __all__ = [
     "NSAMP_FRAME",
     "SPDEF_PARS",
     "SYNC_PARS",
+    "TILT",
     "TONE_PARS",
     "VOICE_PARS",
     "F2max",

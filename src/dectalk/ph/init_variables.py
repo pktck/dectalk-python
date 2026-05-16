@@ -61,24 +61,39 @@ coefficients that drive sonorant duration shaping, and zeroes the
 
 The fourteen short-pointer ``out`` arguments are how the static
 function returns its computed state to the caller (:func:`phsettar`).
-
-This module is an **architectural shim**: the Python ``dectalk.speak``
-and ``dectalk.to_wav`` paths route the PH stage through
-``dectalk._capi.CAPI`` for byte-identical audio, so the actual
-algorithm lives in the C library; this file documents the C-source
-location and signature so the inventory enumerator sees a Python
-symbol and the deferred reason stays accurate.
-
-See Phase E in
-``/root/.claude/plans/create-a-python-port-smooth-hoare.md`` for the
-roadmap to a fully Python implementation.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
+from dectalk.ph.getbegtar import getbegtar
+from dectalk.ph.math_helpers import muldv
+from dectalk.ph.numeric_constants import (
+    A2,
+    A3,
+    A4,
+    A5,
+    A6,
+    AB,
+    AP,
+    AV,
+    B1,
+    B2,
+    B3,
+    F1,
+    FRAC_HALF,
+    FRAC_ONE,
+    TILT,
+)
+from dectalk.ph.phoneme_features import FOBST
+from dectalk.ph.task_helpers import mstofr
+from dectalk.ph.timing import inh_timing, phone_feature
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.utterance_constants import GEN_SIL
 
 
 @dataclass(slots=True)
@@ -88,7 +103,7 @@ class InitVariablesOut:
     The C signature passes fourteen ``short *`` pointers (and one
     ``short **``) so the function can write its initialised state
     back to the caller. The Python port collects them into a single
-    mutable struct; once the body is implemented, fields land here.
+    mutable struct so :func:`phsettar` can destructure the result.
 
     Attributes:
         inhdr_frames: Inherent duration of the current phone in frames.
@@ -127,33 +142,86 @@ class InitVariablesOut:
 def init_variables(phTTS: TtsHandle) -> InitVariablesOut:  # noqa: N803
     """Initialise per-phone transient state for :func:`phsettar`.
 
-    Mirrors the C signature ``static void init_variables(
-    LPTTS_HANDLE_T, short *psInhdr_frames, short *psShrink,
-    short *psShrif, short *psShrib, short *psPholas, short *psFealas,
-    short *psFeacur, short *psFeanex, short *psStruclm2,
-    short *psStruclas, short *psStruccur, short *psStrucnex,
-    short **ppsNdips, short *psPhonp2)`` -- the fourteen out-pointers
-    are collapsed into a single :class:`InitVariablesOut`.
-
-    The Python pipeline currently delegates the PH-targets stage to
-    ``dectalk._capi.CAPI`` for byte-identical output against the
-    reference C binary; calling this shim directly raises
-    :class:`NotImplementedError` to make that delegation explicit at
-    the call site.
+    Faithful translation of the static C helper. The fourteen C
+    out-pointers are collapsed into a single :class:`InitVariablesOut`
+    instance.
 
     Args:
-        phTTS: Two-pointer engine handle.
+        phTTS: Two-pointer engine handle. ``p_ph_thread_data`` must be
+            a populated :class:`~dectalk.ph.dph_t.DphT` with
+            ``pSTphsettar`` pointing at a
+            :class:`~dectalk.ph.dph_settar_st.DphSettarSt`.
 
-    Raises:
-        NotImplementedError: Always. The byte-identical audio path
-            routes through :mod:`dectalk._capi`; see Phase E in
-            ``/root/.claude/plans/create-a-python-port-smooth-hoare.md``.
+    Returns:
+        Fresh :class:`InitVariablesOut` carrying the fourteen values
+        the C source would have written through out-pointers.
     """
-    del phTTS
-    raise NotImplementedError(
-        "Routes through dectalk._capi for byte-identical audio; "
-        "see Phase E in /root/.claude/plans/create-a-python-port-smooth-hoare.md"
-    )
+    p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
+    p_dphsettar = cast(DphSettarSt, p_dph_t.pSTphsettar)
+    out = InitVariablesOut()
+
+    if p_dph_t.nphone == 0:
+        # First position of the clause: previous phone is silence,
+        # struclm2 is zero by definition (no phone two positions back).
+        out.struclm2 = 0
+        out.pholas = GEN_SIL
+        if p_dphsettar.initsw == 0:
+            # Very first init since engine startup: seed every parameter's
+            # tarend with the beginning target of phone 0.
+            p_dphsettar.initsw += 1
+            for idx in range(F1, TILT + 1):
+                p_dph_t.param[idx].tarend = getbegtar(phTTS, 0)
+    else:
+        if p_dph_t.nphone > 1:
+            out.struclm2 = p_dph_t.allofeats[p_dph_t.nphone - 2]
+        out.pholas = p_dphsettar.phcur
+        out.struclas = p_dph_t.allofeats[p_dph_t.nphone - 1]
+
+    # Normal initialization of the per-phoneme transient state.
+    p_dphsettar.phcur = p_dph_t.allophons[p_dph_t.nphone]
+    out.struccur = p_dph_t.allofeats[p_dph_t.nphone]
+
+    if p_dph_t.nphone < (p_dph_t.nallotot - 2):
+        p_dphsettar.phonex = p_dph_t.allophons[p_dph_t.nphone + 1]
+        out.strucnex = p_dph_t.allofeats[p_dph_t.nphone + 1]
+    else:
+        p_dphsettar.phonex = GEN_SIL
+        out.strucnex = 0
+
+    # The C source seeds the dipspec write pointer at &dipspec[1]; the
+    # Python port uses an integer offset rather than a raw pointer.
+    out.ndips_offset = 1
+
+    # Pre-compute often-used phone feature lookups.
+    out.fealas = phone_feature(out.pholas)
+    out.feacur = phone_feature(p_dphsettar.phcur)
+    out.feanex = phone_feature(p_dphsettar.phonex)
+
+    out.inhdr_frames = mstofr(inh_timing(p_dphsettar.phcur))
+
+    # Sonorant shrink coefficients. Only meaningful when the current
+    # phone is not an obstruent and not silence. (The FRENCH branch of
+    # the C uses FPLOSV / TFricative gating; this port is US-build.)
+    if (out.feacur & FOBST) == 0 and p_dphsettar.phcur != GEN_SIL:
+        if p_dph_t.durfon < (out.inhdr_frames << 1):
+            out.shrink = muldv(FRAC_ONE, p_dph_t.durfon, out.inhdr_frames)
+        else:
+            out.shrink = FRAC_ONE + (FRAC_ONE - 1)
+        out.shrif = (out.shrink >> 1) + FRAC_HALF
+        out.shrib = out.shrif - 1600
+
+    # Zero the per-parameter "special override" slots. The C source
+    # writes PAV.tspesh through PTILT.tspesh by name; in Python the
+    # parameters live in the param[] array.
+    for idx in (AV, AP, B1, B2, B3, A2, A3, A4, A5, A6, AB, TILT):
+        p_dph_t.param[idx].tspesh = 0
+
+    # PAREAL.tspesh and PAREAB.tspesh are zeroed by phsettar's
+    # prologue (before init_variables), not here. The C source does
+    # zero PF1.tspesh inside init_variables, so we do too.
+    p_dph_t.param[F1].tspesh = 0
+
+    return out
 
 
 __all__ = ["InitVariablesOut", "init_variables"]

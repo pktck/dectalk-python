@@ -13,11 +13,16 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
 from dectalk.ph.init_variables import InitVariablesOut, init_variables
+from dectalk.ph.numeric_constants import A2, AV, B1, F1, TILT
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.utterance_constants import GEN_SIL
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_setar.c"
 
@@ -162,26 +167,37 @@ def test_tspesh_reset_loop() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
-        init_variables(handle)
+def _make_handle(*, nphone: int, initsw: int = 1, nallotot: int = 10) -> TtsHandle:
+    """Build a minimal :class:`TtsHandle` populated for init_variables.
 
+    The C source reads ``allophons[nphone-2..nphone+1]``,
+    ``allofeats[nphone-2..nphone+1]``, ``durfon``, and
+    ``pSTphsettar->{initsw,phcur,phonex}``. The fixture writes a
+    contiguous run of ``GEN_SIL`` so all phone-feature lookups
+    short-circuit through the table without out-of-range errors.
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
+    ``initsw=1`` skips the very-first-call branch that loops over
+    ``getbegtar(handle, 0)`` -- that codepath calls into the still-
+    deferred ``getbegtar`` shim, which is its own port target.
+    """
+    p_dph_t = DphT()
+    p_dph_t.allophons = [GEN_SIL] * nallotot
+    p_dph_t.allofeats = [0] * nallotot
+    p_dph_t.nallotot = nallotot
+    p_dph_t.nphone = nphone
+    p_dph_t.durfon = 12
+    settar = DphSettarSt()
+    settar.initsw = initsw
+    settar.phcur = GEN_SIL
+    p_dph_t.pSTphsettar = settar
     handle = TtsHandle()
-    with pytest.raises(NotImplementedError) as exc_info:
-        init_variables(handle)
-    assert "Phase E" in str(exc_info.value)
+    handle.p_ph_thread_data = p_dph_t
+    return handle
 
 
 def test_init_variables_out_default_constructible() -> None:
     """The companion ``InitVariablesOut`` dataclass is default-constructible."""
     out = InitVariablesOut()
-    # Default-zero across all fourteen out-parameters keeps shim semantics
-    # explicit until a full port lands.
     for name in (
         "inhdr_frames",
         "shrink",
@@ -199,3 +215,85 @@ def test_init_variables_out_default_constructible() -> None:
         "phonp2",
     ):
         assert getattr(out, name) == 0
+
+
+def test_first_position_seeds_pholas_to_gen_sil() -> None:
+    """``nphone == 0`` sets ``pholas`` to GEN_SIL and ``struclm2`` to 0."""
+    handle = _make_handle(nphone=0)
+    out = init_variables(handle)
+    assert out.pholas == GEN_SIL
+    assert out.struclm2 == 0
+
+
+def test_first_position_initsw_branch_is_skipped_when_already_set() -> None:
+    """When ``initsw != 0`` the first-call PF1..PTILT seeding loop is skipped."""
+    handle = _make_handle(nphone=0, initsw=1)
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
+    init_variables(handle)
+    # tarend slots stay at their default (0) because the getbegtar loop
+    # only fires on first-ever init (initsw == 0).
+    for idx in range(F1, TILT + 1):
+        assert p_dph_t.param[idx].tarend == 0
+
+
+def test_subsequent_position_writes_pholas_from_phcur() -> None:
+    """``nphone > 0`` copies ``pholas = phcur`` and reads ``struclas`` from allofeats."""
+    handle = _make_handle(nphone=3)
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
+    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)  # type: ignore[name-defined]
+    settar.phcur = 0x1E03  # arbitrary phone code
+    p_dph_t.allofeats[1] = 0xAB
+    p_dph_t.allofeats[2] = 0xCD
+    out = init_variables(handle)
+    assert out.pholas == 0x1E03
+    assert out.struclas == 0xCD
+    assert out.struclm2 == 0xAB
+
+
+def test_phcur_loaded_from_allophons() -> None:
+    """``phcur`` is updated from ``allophons[nphone]``."""
+    handle = _make_handle(nphone=2)
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
+    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)  # type: ignore[name-defined]
+    p_dph_t.allophons[2] = 0x1E07
+    init_variables(handle)
+    assert settar.phcur == 0x1E07
+
+
+def test_near_clause_end_clamps_phonex_to_gen_sil() -> None:
+    """Within 2 phones of the end ``phonex = GEN_SIL`` and ``strucnex = 0``."""
+    handle = _make_handle(nphone=9, nallotot=10)
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
+    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)  # type: ignore[name-defined]
+    out = init_variables(handle)
+    assert settar.phonex == GEN_SIL
+    assert out.strucnex == 0
+
+
+def test_ndips_offset_seeded_at_one() -> None:
+    """``ppsNdips`` is initialised to ``&dipspec[1]``; Python uses offset 1."""
+    handle = _make_handle(nphone=1)
+    out = init_variables(handle)
+    assert out.ndips_offset == 1
+
+
+def test_silence_skips_shrink_block() -> None:
+    """``phcur == GEN_SIL`` skips the sonorant-shrink computation."""
+    handle = _make_handle(nphone=1)
+    out = init_variables(handle)
+    # phcur is GEN_SIL by the fixture default; shrink/shrif/shrib stay 0.
+    assert out.shrink == 0
+    assert out.shrif == 0
+    assert out.shrib == 0
+
+
+def test_tspesh_slots_zeroed() -> None:
+    """All sixteen ``param[].tspesh`` slots reachable from C are cleared."""
+    handle = _make_handle(nphone=1)
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
+    # Pre-poison the slots so we can prove the function clears them.
+    for idx in (F1, B1, AV, A2):
+        p_dph_t.param[idx].tspesh = 42
+    init_variables(handle)
+    for idx in (F1, B1, AV, A2):
+        assert p_dph_t.param[idx].tspesh == 0

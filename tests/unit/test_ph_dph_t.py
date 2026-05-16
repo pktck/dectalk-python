@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from dectalk.ph.dph_t import DphT
+from dectalk.ph.numeric_constants import VOICE_PARS
+from dectalk.ph.parameter_struct import Parameter
 
 _C_HEADER: Path = Path("/tmp/dectalk-src/src/dapi/src/ph/ph_data.h")
 
@@ -77,12 +79,14 @@ def test_array_fields_default_empty_list() -> None:
         assert value == []
 
 
-def test_pointer_fields_default_none() -> None:
-    """Spot-check that pointer / object fields default to None."""
+def test_param_array_default_is_voice_pars_long() -> None:
+    """``param`` is a ``VOICE_PARS``-long list of zero-initialised Parameters."""
     state = DphT()
-    # ``param`` is the PARAMETER array
-    for name in ("param",):
-        assert getattr(state, name) is None
+    assert isinstance(state.param, list)
+    assert len(state.param) == VOICE_PARS
+    assert all(isinstance(p, Parameter) for p in state.param)
+    # All slots default-zero on tarend (no init has run yet).
+    assert all(p.tarend == 0 for p in state.param)
 
 
 def test_field_count_around_230() -> None:
