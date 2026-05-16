@@ -6,10 +6,10 @@ plan is the long-term blueprint; this file tracks actual progress.
 
 ## Session handoff — read first
 
-**Active branch**: `claude/port-ph-stage-python-a1ewa` (head `cdc37f3`).
+**Active branch**: `claude/port-ph-stage-python-a1ewa` (head `15e20cc`).
 **Open PR**: [#2 — Workflow overhaul: two-tier CI, cached C oracle,
 parallel-agent infra](https://github.com/pktck/dectalk-python/pull/2),
-still in **draft**. Targets `dev`.
+ready for review. Targets `dev`.
 
 The branch's name implies Phase E PH-stage porting, but its commits
 contain the workflow overhaul instead. Phase E work has not started on
@@ -47,7 +47,8 @@ Shipped and verified by green ci-full on `cdc37f3`:
 Still deferred (intentionally — not blocking merge of PR #2):
 
 - `tests/perf/` perf-benchmark suite + `perf-bench` CI job (specified
-  in `docs/PLAN-CI-STRATEGY.md` §7 but not implemented).
+  in `docs/PLAN-CI-STRATEGY.md` §7 but not implemented). Tracked as
+  [#3](https://github.com/pktck/dectalk-python/issues/3).
 
 ### Suggested next steps for a fresh session
 
