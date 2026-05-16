@@ -33,17 +33,23 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from dectalk.ph.inton_constants import SAFETY
-from dectalk.ph.numeric_constants import NPHON_MAX
+from dectalk.ph.numeric_constants import NPHON_MAX, VOICE_PARS
+from dectalk.ph.parameter_struct import Parameter
 
 # Array-size aliases mirroring the C source.
 _NPHON_BUF: int = NPHON_MAX + SAFETY + 2
+
+
+def _default_param_array() -> list[Parameter]:
+    """Return a fresh ``VOICE_PARS``-sized list of zero-initialised parameters."""
+    return [Parameter() for _ in range(VOICE_PARS)]
 
 
 @dataclass(slots=True)
 class DphT:
     """PH-thread instance data (DPH_T in C). 230+ fields total."""
 
-    param: object | None = None
+    param: list[Parameter] = field(default_factory=_default_param_array)
     last_lang: int = 0
     PHSwapIn: object | None = None
     PHSwapOut: object | None = None
