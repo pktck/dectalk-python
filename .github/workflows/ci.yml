@@ -100,12 +100,17 @@ jobs:
           fi
 
   c-oracle-tests:
-    # Builds (or fetches the prebuilt) DECtalk C oracle and runs the full test
-    # suite against it. This is the only job where the c_oracle-marked parity
-    # tests actually execute — elsewhere they're deselected by the marker.
-    name: Tests with C library (Ubuntu, Py 3.11)
+    # Sharded into 16 parallel jobs, each running ~1/16 of the c_oracle-marked
+    # parity corpus via pytest-shard. Branch protection references the
+    # aggregator job `c-oracle-aggregate` below (display name preserved as
+    # `Tests with C library (Ubuntu, Py 3.11)`).
+    name: c-oracle shard ${{ matrix.shard }}/16
     runs-on: ubuntu-latest
     needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
       - uses: actions/checkout@v4
 
@@ -138,26 +143,48 @@ jobs:
         if: steps.c-oracle-cache.outputs.cache-hit != 'true'
         run: scripts/setup_c_oracle.sh
 
-      - name: Run full pytest suite with C library
+      - name: Run c_oracle shard
         env:
           DECTALK_SRC: /tmp/dectalk-src
           DECTALK_BIN: /tmp/dectalk-binary-stable
-        run: uv run pytest -n auto 2>&1 | tee /tmp/pytest_full.log
+        run: |
+          uv run pytest -n auto -m c_oracle \
+            --shard-id=${{ matrix.shard }} --num-shards=16 \
+            2>&1 | tee /tmp/pytest_full.log
 
       - name: Capture failure tail for PR comment
         if: failure()
         run: |
           mkdir -p /tmp/ci-failure
-          tail -n 200 /tmp/pytest_full.log > /tmp/ci-failure/c-oracle-pytest.txt 2>/dev/null || true
+          tail -n 200 /tmp/pytest_full.log \
+            > /tmp/ci-failure/c-oracle-pytest-shard-${{ matrix.shard }}.txt \
+            2>/dev/null || true
 
       - name: Upload failure tail
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-failure-c-oracle
+          name: ci-failure-c-oracle-shard-${{ matrix.shard }}
           path: /tmp/ci-failure/
           if-no-files-found: ignore
           retention-days: 7
+
+  c-oracle-aggregate:
+    # Single status job whose name matches the branch-protection required
+    # check (`Tests with C library (Ubuntu, Py 3.11)`). Succeeds iff every
+    # sharded c-oracle-tests matrix entry succeeded.
+    name: Tests with C library (Ubuntu, Py 3.11)
+    needs: c-oracle-tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check shard results
+        run: |
+          if [[ "${{ needs.c-oracle-tests.result }}" != "success" ]]; then
+            echo "::error::One or more c-oracle shards failed (aggregate result: ${{ needs.c-oracle-tests.result }})"
+            exit 1
+          fi
+          echo "All 16 c-oracle shards succeeded."
 
   report-ci-status:
     # Sticky comment on the PR summarising every job's outcome plus a link
