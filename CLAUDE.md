@@ -74,6 +74,32 @@ your latest commit, ignore them — concurrency cancels the older runs
 and `paths-ignore` (below) keeps quiet pushes silent. Verify by checking
 the run's commit SHA, not by acting on the webhook.
 
+### Closing the merge loop (don't sit idle waiting for "all green")
+
+The PR subscription delivers individual events (per-comment, per-check,
+per-review) — there is **no guaranteed "all CI green" webhook**.
+The bot's CI-status sticky comment fires for the first workflow run on
+a SHA, so when concurrency cancels and replaces a run, you can get a
+single FAIL comment from the cancelled run and then silence as the
+replacement goes green. "Subscribed and waiting" is the right state
+only when you're babysitting a PR for *new* failures — not when the
+goal is to merge once green.
+
+When the goal is autonomous merge:
+
+1. After pushing, you own the wait. Don't assume a webhook will wake
+   you at "all green."
+2. Either use `Monitor` with an until-loop on `get_status` returning
+   `success`, or schedule an explicit `get_check_runs` ~5 min after
+   push (the typical full-CI duration). Both are non-polling.
+3. Once status is green, call `merge_pull_request` (rebase — linear
+   history is required on `dev` and `main`) and
+   `unsubscribe_pr_activity`. The merge is the loop's terminal state.
+
+If `enable_pr_auto_merge` is unavailable at the repo level (it is at
+present), do the manual merge yourself — don't tell the user "auto-merge
+unavailable" and then stop.
+
 ## CI throttling — do not saturate Actions
 
 CI is two-tier (see `docs/PLAN-CI-STRATEGY.md` §1):
@@ -92,9 +118,9 @@ CI is two-tier (see `docs/PLAN-CI-STRATEGY.md` §1):
   download instead of rebuilding.
 
 Path-ignore lists in both workflows already cover doc-only changes
-(`docs/PLAN.md`, `docs/STATUS.md`, `docs/PLAN-CI-STRATEGY.md`,
-`docs/PORTING.md`, `docs/TASKS.md`, `README.md`,
-`tests/parity/_corpus.py`). **Keep them there.**
+(`CLAUDE.md`, `docs/PLAN.md`, `docs/STATUS.md`,
+`docs/PLAN-CI-STRATEGY.md`, `docs/PORTING.md`, `docs/TASKS.md`,
+`README.md`, `tests/parity/_corpus.py`). **Keep them there.**
 
 Both workflows have `concurrency: cancel-in-progress: true`. Even with
 that, don't push 50+ commits in a turn — batch related changes into
