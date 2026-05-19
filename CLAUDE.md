@@ -69,6 +69,28 @@ name is intentional — don't autocorrect the spelling.
 Do **not** spam — send once per blocking event, not on every
 intermediate progress update.
 
+## PR cadence (target: 1 PR per 1-4h wall-clock)
+
+PRs trigger the full `ci.yml` matrix (9-way test, 16-shard c-oracle,
+~10-15 min of compute total). Don't open one for every commit.
+
+**Open a PR only for a milestone**, not for incremental progress.
+A milestone is something like:
+- a whole subsystem ported (e.g. the gettar/us_gettar/getbegtar/
+  getendtar chain landed together),
+- a measurable parity improvement (more c-oracle prompts pass),
+- infrastructure that other work depends on (CI policy, foundation
+  dataclasses, etc.).
+
+Stacking individual ports into a single branch and opening one PR
+after several hours of work is the right shape; don't open a fresh
+PR every 20-30 minutes. If a branch grows past ~4h of accumulated
+work without a clear stopping point, prefer to ship what's done and
+start fresh.
+
+The CI throttling section below describes the per-tier cost so you
+can pick the right cadence.
+
 ## CI watch (mandatory after every push)
 
 **After every `git push`, subscribe to the branch's PR via
