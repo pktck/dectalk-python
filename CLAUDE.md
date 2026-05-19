@@ -135,18 +135,30 @@ goal is to merge once green.
 
 When the goal is autonomous merge:
 
-1. After pushing, you own the wait. Don't assume a webhook will wake
-   you at "all green."
-2. Either use `Monitor` with an until-loop on `get_status` returning
-   `success`, or schedule an explicit `get_check_runs` ~5 min after
-   push (the typical full-CI duration). Both are non-polling.
-3. Once status is green, call `merge_pull_request` (rebase — linear
-   history is required on `dev` and `main`) and
+1. After pushing, **stay in foreground** until you've merged. The
+   remote-execution container suspends when your turn ends, killing
+   any `run_in_background: true` poll and gating webhook delivery
+   until the next resume — so "subscribed, turn ends" does NOT
+   reliably wake you when CI flips green.
+2. Use a foreground `until` loop with a short sleep (~30 s) that
+   exits when `get_status` returns `success`. Cap it at ~10 min;
+   beyond that, ntfy the user and end the turn.
+   Example: `until [ "$(curl ...)" = success ]; do sleep 30; done`
+   run as a foreground Bash call. The Bash tool blocks long leading
+   sleeps but allows the until-loop pattern.
+3. Once status is green, immediately call `merge_pull_request`
+   (rebase — linear history is required on `dev` and `main`) and
    `unsubscribe_pr_activity`. The merge is the loop's terminal state.
 
 If `enable_pr_auto_merge` is unavailable at the repo level (it is at
 present), do the manual merge yourself — don't tell the user "auto-merge
 unavailable" and then stop.
+
+**Anti-pattern**: pushing + subscribing + ending the turn while
+expecting webhooks to wake you "when CI is green." The container
+suspends, the in-progress webhooks queue, and the user has to nudge.
+This burned the loop on PR #12; see the foreground-until guidance
+above.
 
 ## CI throttling — do not saturate Actions
 
