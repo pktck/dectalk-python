@@ -13,11 +13,18 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from dectalk.include.usp_codes import USP_AA, USP_N
+from dectalk.kernel.ksd_t import KsdT
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
 from dectalk.ph.getbegtar import getbegtar
+from dectalk.ph.numeric_constants import F1, FZ
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.utterance_constants import GEN_SIL, NASAL_ZERO_CONS
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_setar.c"
 
@@ -102,16 +109,37 @@ def test_returns_temp() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
+def _make_handle(phones: list[int], np_idx: int) -> TtsHandle:
+    """Minimal handle with US-English tables for getbegtar tests."""
+    p_dph_t = DphT()
+    p_dph_t.allophons = list(phones)
+    p_dph_t.allofeats = [0] * len(phones)
+    p_dph_t.nallotot = len(phones)
+    p_dph_t.nphone = 1
+    p_dph_t.last_lang = 0
+    settar = DphSettarSt()
+    settar.np = np_idx
+    p_dph_t.pSTphsettar = settar
     handle = TtsHandle()
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
-        getbegtar(handle, 0)
+    handle.p_ph_thread_data = p_dph_t
+    handle.p_kernel_share_data = KsdT()
+    return handle
 
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError) as exc_info:
-        getbegtar(handle, 3)
-    assert "Phase E" in str(exc_info.value)
+def test_non_diphthong_delegates_to_gettar() -> None:
+    """For non-diphthong targets, getbegtar returns gettar's value unchanged."""
+    handle = _make_handle([GEN_SIL, USP_N, GEN_SIL, GEN_SIL], np_idx=FZ)
+    # N + FZ -> NASAL_ZERO_CONS (positive, non-sentinel).
+    assert getbegtar(handle, 1) == NASAL_ZERO_CONS
+
+
+def test_form_freq_path_executable() -> None:
+    """getbegtar runs end-to-end for the F1+AA non-diphthong path."""
+    handle = _make_handle([GEN_SIL, USP_AA, GEN_SIL, GEN_SIL], np_idx=F1)
+    # AA at F1 is a normal positive target from the table; the
+    # diphthong branch (and us_special_coartic call) is skipped.
+    result = getbegtar(handle, 1)
+    assert result > 0
+    # Confirm us_special_coartic wasn't invoked: par_type would be 3.
+    settar = cast(DphSettarSt, cast(DphT, handle.p_ph_thread_data).pSTphsettar)
+    assert settar.par_type == 3
