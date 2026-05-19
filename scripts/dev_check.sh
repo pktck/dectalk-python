@@ -6,7 +6,7 @@
 # Modes:
 #   (no args)   Full check: ruff, ruff format, pyright (all), pytest (all).
 #   --changed   Fast check: ruff + pyright on files changed vs origin/dev
-#               (falls back to HEAD~1), pytest with -n auto excluding c_oracle.
+#               (falls back to HEAD~1), pytest tests/unit/ excluding c_oracle.
 #   --smoke     Tightest loop: ruff + last-failed pytest only. <5s when green.
 
 set -euo pipefail
@@ -59,7 +59,7 @@ main_changed() {
   else
     printf '\nNo changed .py files vs origin/dev (or HEAD~1).\n'
   fi
-  run_step "pytest" uv run pytest -n auto -m "not c_oracle and not slow"
+  run_step "pytest (unit)" uv run pytest -n auto tests/unit/ -m "not c_oracle and not slow"
   run_shellcheck
   printf '\nChanged-file checks passed.\n'
 }
@@ -67,7 +67,7 @@ main_changed() {
 main_smoke() {
   cd "${REPO_ROOT}"
   run_step "ruff" uv run ruff check .
-  run_step "pytest --lf" uv run pytest -n auto -m "not c_oracle and not slow" --lf --last-failed-no-failures=all
+  run_step "pytest --lf (unit)" uv run pytest -n auto tests/unit/ -m "not c_oracle and not slow" --lf --last-failed-no-failures=all
   printf '\nSmoke checks passed.\n'
 }
 
@@ -79,8 +79,8 @@ case "${1:-}" in
 Usage: scripts/dev_check.sh [--changed | --smoke]
 
   (no args)   Full quality gate (ruff + pyright + pytest + shellcheck).
-  --changed   Only ruff+pyright on changed .py files; pytest excluding c_oracle.
-  --smoke     Ruff + last-failed pytest (tight inner-loop).
+  --changed   ruff+pyright on changed .py files; pytest tests/unit/ (no c_oracle).
+  --smoke     Ruff + last-failed pytest in tests/unit/ (tight inner-loop).
 EOF
     ;;
   *) main_full ;;

@@ -295,10 +295,12 @@ ci-full pipeline. To adjust the protection use the REST API with
 - **No args** — full local quality gate: `ruff check`, `ruff format`,
   `pyright`, `pytest -n auto`, `shellcheck`. Pre-push verification.
 - **`--changed`** — fast pre-push: `ruff` + `pyright` on `.py` files
-  changed vs `origin/dev`, plus `pytest -n auto -m "not c_oracle and
-  not slow"`. Runs in <10 s for small diffs.
-- **`--smoke`** — tight inner loop: `ruff` + `pytest --lf` (last
-  failed only). <5 s when green.
+  changed vs `origin/dev`, plus `pytest -n auto tests/unit/ -m "not
+  c_oracle and not slow"`. ~40 s on the current unit tree (~21 K
+  tests); ruff+pyright on a small diff adds a few seconds.
+- **`--smoke`** — tight inner loop: `ruff` + `pytest --lf` on
+  `tests/unit/` (last-failed only, falls back to the unit tree when
+  the cache is empty). <5 s when green.
 
 CI runs the same checks plus `c-oracle-tests`. The C-oracle build
 fetches a prebuilt tarball from GitHub Releases (built by
