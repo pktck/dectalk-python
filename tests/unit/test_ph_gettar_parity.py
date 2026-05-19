@@ -13,11 +13,20 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from dectalk.include.usp_codes import USP_AA, USP_K, USP_N
+from dectalk.kernel.ksd_t import KsdT
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
 from dectalk.ph.gettar import gettar
+from dectalk.ph.numeric_constants import F1, F2, F3, FZ
+from dectalk.ph.rom_tables import us_femamp, us_femdip, us_femtar
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.us_gettar import us_gettar
+from dectalk.ph.utterance_constants import GEN_SIL, NASAL_ZERO_CONS, NON_NASAL_ZERO
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_setar.c"
 
@@ -99,16 +108,118 @@ def test_loops_over_index_array() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
+def _make_handle(
+    *,
+    phones: list[int],
+    np_idx: int,
+    nphone: int = 1,
+    malfem: int = 0,
+) -> TtsHandle:
+    """Build a TtsHandle with a populated DphT for gettar testing.
+
+    ``phones`` is the ``allophons[]`` array; ``nphone`` is the current
+    walk position (passed as the ``phone`` argument to gettar). The
+    fixture leaves last_lang as 0 so the first call triggers the
+    table-loading branch.
+    """
+    p_dph_t = DphT()
+    p_dph_t.allophons = list(phones)
+    p_dph_t.allofeats = [0] * len(phones)
+    p_dph_t.nallotot = len(phones)
+    p_dph_t.nphone = nphone
+    p_dph_t.malfem = malfem
+    p_dph_t.last_lang = 0
+    settar = DphSettarSt()
+    settar.np = np_idx
+    p_dph_t.pSTphsettar = settar
     handle = TtsHandle()
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
-        gettar(handle, 0)
+    handle.p_ph_thread_data = p_dph_t
+    handle.p_kernel_share_data = KsdT()
+    return handle
 
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError) as exc_info:
-        gettar(handle, 5)
-    assert "Phase E" in str(exc_info.value)
+def test_first_call_loads_us_tables() -> None:
+    """First US-English call repoints ``p_tar`` / ``p_amp`` / ``p_diph``."""
+    handle = _make_handle(phones=[GEN_SIL, USP_AA, GEN_SIL, GEN_SIL], np_idx=FZ)
+    gettar(handle, 1)
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    assert p_dph_t.p_tar is not None
+    assert p_dph_t.p_amp is not None
+    assert p_dph_t.p_diph is not None
+
+
+def test_last_lang_caches_after_load() -> None:
+    """After the first call, ``last_lang`` matches the loaded font."""
+    handle = _make_handle(phones=[GEN_SIL, USP_AA, GEN_SIL, GEN_SIL], np_idx=FZ)
+    gettar(handle, 1)
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    assert p_dph_t.last_lang == (0x1E << 8)  # PFUSA << PSFONT
+
+
+def test_fz_returns_non_nasal_for_non_nasal_phone() -> None:
+    """FZ target for AA is NON_NASAL_ZERO (no nasal flag)."""
+    handle = _make_handle(phones=[GEN_SIL, USP_AA, GEN_SIL, GEN_SIL], np_idx=FZ)
+    assert gettar(handle, 1) == NON_NASAL_ZERO
+
+
+def test_fz_returns_nasal_const_for_nasal_phone() -> None:
+    """FZ target for N is NASAL_ZERO_CONS."""
+    handle = _make_handle(phones=[GEN_SIL, USP_N, GEN_SIL, GEN_SIL], np_idx=FZ)
+    assert gettar(handle, 1) == NASAL_ZERO_CONS
+
+
+def test_k_coarticulation_f2_plus_300() -> None:
+    """When the current phone is /k/ and np is F2, target gains +300."""
+    # Compare the same setup with phone=AA vs phone=K. The K position
+    # adds 300 to whatever us_gettar returned for the F2 target.
+    base = _make_handle(phones=[GEN_SIL, USP_AA, GEN_SIL, GEN_SIL], np_idx=F2)
+    kop = _make_handle(phones=[GEN_SIL, USP_K, GEN_SIL, GEN_SIL], np_idx=F2)
+    assert gettar(kop, 1) - gettar(base, 1) == 300 + (
+        # The base+K value also differs by whatever us_gettar reports;
+        # subtract that natural delta so we isolate the K rule.
+        _us_f2_target(USP_K) - _us_f2_target(USP_AA)
+    )
+
+
+def test_k_coarticulation_f3_plus_500() -> None:
+    """When the current phone is /k/ and np is F3, target gains +500."""
+    base = _make_handle(phones=[GEN_SIL, USP_AA, GEN_SIL, GEN_SIL], np_idx=F3)
+    kop = _make_handle(phones=[GEN_SIL, USP_K, GEN_SIL, GEN_SIL], np_idx=F3)
+    assert gettar(kop, 1) - gettar(base, 1) == 500 + (_us_f3_target(USP_K) - _us_f3_target(USP_AA))
+
+
+def _us_f2_target(phone: int) -> int:
+    """Helper: read us_femtar's F2 row directly."""
+    return us_femtar[(phone & 0xFF) + 1 * 71]
+
+
+def _us_f3_target(phone: int) -> int:
+    """Helper: read us_femtar's F3 row directly."""
+    return us_femtar[(phone & 0xFF) + 2 * 71]
+
+
+def test_non_us_font_raises_not_implemented() -> None:
+    """UK font (0x1D) raises pending uk_gettar port."""
+    handle = _make_handle(
+        phones=[GEN_SIL, 0x1D00 | 6, GEN_SIL, GEN_SIL],  # UK-font AA
+        np_idx=FZ,
+    )
+    with pytest.raises(NotImplementedError, match=r"UK/GR/LA/SP/FR|uk_/gr_"):
+        gettar(handle, 1)
+
+
+def test_npar_zero_index_F1_returns_us_gettar() -> None:  # noqa: N802 -- F1 is C macro name
+    """For F1 on AA the gettar return matches a direct us_gettar call."""
+    handle = _make_handle(phones=[GEN_SIL, USP_AA, GEN_SIL, GEN_SIL], np_idx=F1)
+    direct_handle = _make_handle(
+        phones=[GEN_SIL, USP_AA, GEN_SIL, GEN_SIL],
+        np_idx=F1,
+    )
+    # Pre-load tables in the direct-call fixture to match the
+    # gettar-loaded state.
+    p_dph_t = cast(DphT, direct_handle.p_ph_thread_data)
+    p_dph_t.p_tar = list(us_femtar)
+    p_dph_t.p_amp = list(us_femamp)
+    p_dph_t.p_diph = list(us_femdip)
+    expected = us_gettar(direct_handle, 1)
+    assert gettar(handle, 1) == expected
