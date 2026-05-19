@@ -43,6 +43,32 @@ Code_` link).
 commit metadata) and `github-actions[bot]` comments (workflow output;
 the workflow is agent-authored, the comment text is not).
 
+## User notifications (ntfy)
+
+The user is not always watching the session. Send a push notification
+via [ntfy.sh](https://ntfy.sh) to topic **`cladue-code-jafoofado`** when
+either condition holds:
+
+1. You are about to end the turn waiting for user input
+   (`AskUserQuestion`, an open clarification question, or just nothing
+   left to do without a decision).
+2. You have not produced user-facing output for ~10 minutes
+   (long-running agents, CI polling that's overdue, etc.).
+
+One-liner:
+
+```bash
+curl -sS -d "<short status — what you're waiting on>" \
+  https://ntfy.sh/cladue-code-jafoofado
+```
+
+Keep the message to one line ("CI green on PR #9, ready to merge",
+"asked you about X", "agent finished, awaiting review"). The topic
+name is intentional — don't autocorrect the spelling.
+
+Do **not** spam — send once per blocking event, not on every
+intermediate progress update.
+
 ## CI watch (mandatory after every push)
 
 **After every `git push`, subscribe to the branch's PR via
