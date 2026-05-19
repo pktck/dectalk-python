@@ -13,11 +13,18 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from dectalk.include.usp_codes import USP_AA, USP_N
+from dectalk.kernel.ksd_t import KsdT
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
 from dectalk.ph.getendtar import getendtar
+from dectalk.ph.numeric_constants import F1, FZ
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.utterance_constants import GEN_SIL, NASAL_ZERO_CONS
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_setar.c"
 
@@ -103,16 +110,46 @@ def test_returns_temp() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
+def _make_handle(phones: list[int], np_idx: int) -> TtsHandle:
+    """Minimal handle with US-English tables for getendtar tests."""
+    p_dph_t = DphT()
+    p_dph_t.allophons = list(phones)
+    p_dph_t.allofeats = [0] * len(phones)
+    p_dph_t.nallotot = len(phones)
+    p_dph_t.nphone = 1
+    p_dph_t.last_lang = 0
+    settar = DphSettarSt()
+    settar.np = np_idx
+    p_dph_t.pSTphsettar = settar
     handle = TtsHandle()
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
-        getendtar(handle, 0)
+    handle.p_ph_thread_data = p_dph_t
+    handle.p_kernel_share_data = KsdT()
+    return handle
 
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError) as exc_info:
-        getendtar(handle, 7)
-    assert "Phase E" in str(exc_info.value)
+def test_non_diphthong_delegates_to_gettar() -> None:
+    """For non-diphthong targets, getendtar returns gettar's value unchanged."""
+    handle = _make_handle([GEN_SIL, USP_N, GEN_SIL, GEN_SIL], np_idx=FZ)
+    assert getendtar(handle, 1) == NASAL_ZERO_CONS
+
+
+def test_diphthong_walk_returns_last_diph_entry() -> None:
+    """For diphthong sentinel, getendtar walks p_diph forward to -1."""
+    handle = _make_handle([GEN_SIL, USP_AA, GEN_SIL, GEN_SIL], np_idx=F1)
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    # Trigger gettar's first call (loads tables) so we can poison p_tar.
+    getendtar(handle, 1)
+    # Now poison: p_tar[AA & 0xFF + 0] = -3 (sentinel), p_diph[3..]: 700, 800, -1
+    p_tar = cast(list[int], p_dph_t.p_tar)
+    p_diph = cast(list[int], p_dph_t.p_diph)
+    p_tar[USP_AA & 0xFF] = -3
+    # Ensure p_diph slots 3, 4, 5 are 700, 800, -1
+    while len(p_diph) <= 5:
+        p_diph.append(0)
+    p_diph[3] = 700
+    p_diph[4] = 800
+    p_diph[5] = -1
+    # getendtar should walk to p_diph[5]==-1 then return p_diph[4]==800,
+    # plus us_special_coartic delta (which is 0 for AA at F1 with all
+    # GEN_SIL neighbours -- AA is not in any of the rule predicates).
+    assert getendtar(handle, 1) == 800
