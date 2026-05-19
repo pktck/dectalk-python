@@ -34,7 +34,7 @@ class DphSettarSt:
     phonex: int = 0
     gencoartic: int = 0
     initsw: int = 0
-    np: object | None = None
+    np: int = 0
     par_type: int = 0  # char in C
     nasvowel: int = 0
     phcur: int = 0

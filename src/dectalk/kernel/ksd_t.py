@@ -96,5 +96,12 @@ class KsdT:
     typing_table: list[bytes] | None = None
     error_table: list[bytes] | None = None
 
+    # Per-clause speech rate (volatile short in C). Read by us_gettar
+    # to fork a quieter glottal-stop target at slow rates.
+    sprate: int = 0
+    # Halt flag (volatile short in C). Inner loops poll this to bail
+    # out of the synthesis pipeline mid-clause.
+    halting: int = 0
+
 
 __all__ = ["KsdT"]

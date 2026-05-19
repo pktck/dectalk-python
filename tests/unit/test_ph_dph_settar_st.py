@@ -52,10 +52,7 @@ def test_default_construction_zero_filled() -> None:
     state = DphSettarSt()
     for f in fields(state):
         value = getattr(state, f.name)
-        if f.name == "np":
-            assert value is None
-        else:
-            assert value == 0
+        assert value == 0
 
 
 def test_uses_slots() -> None:
