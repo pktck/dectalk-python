@@ -14,11 +14,14 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.make_dip import make_dip
+from dectalk.ph.numeric_constants import FZ
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_setar.c"
 
@@ -148,18 +151,42 @@ def test_final_target_writes() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
+def _make_dph_for_make_dip() -> DphT:
+    """Build a minimal DphT populated for make_dip non-FORM_FREQ branch."""
     state = DphT()
-    cell = [0]
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
-        make_dip(state, pdip=0, inhdr_frames=0, shrink=0, struccur=0, pps_ndips=cell)
+    state.dipspec = [0] * 40
+    # Simple diph table: value=500, time=5 frames, sentinel -1.
+    state.p_diph = [0, 500, 5, -1, 0, 0]
+    state.durfon = 10
+    state.nphone = 0
+    settar = DphSettarSt()
+    settar.np = FZ  # par_type=1 (non-FORM_FREQ) so the formant rules skip.
+    settar.par_type = 1
+    state.pSTphsettar = settar
+    return state
 
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
-    state = DphT()
-    cell = [0]
-    with pytest.raises(NotImplementedError) as exc_info:
-        make_dip(state, pdip=1, inhdr_frames=2, shrink=3, struccur=4, pps_ndips=cell)
-    assert "Phase E" in str(exc_info.value)
+def test_make_dip_writes_dipspec_and_advances_ndips() -> None:
+    """make_dip writes paired (time, slope) entries to dipspec[]."""
+    state = _make_dph_for_make_dip()
+    cell = [1]  # Start offset into dipspec.
+    make_dip(state, pdip=0, inhdr_frames=8, shrink=16384, struccur=0, pps_ndips=cell)
+    # The function writes at least one (newtime, slope) pair plus the
+    # terminating pair, so the offset must have advanced.
+    assert cell[0] > 1
+
+
+def test_make_dip_sets_param_tarend_and_durlin() -> None:
+    """make_dip writes ``tarend`` (last newvalue) and ``durlin`` slots."""
+    state = _make_dph_for_make_dip()
+    cell = [1]
+    make_dip(state, pdip=0, inhdr_frames=8, shrink=16384, struccur=0, pps_ndips=cell)
+    settar = cast(DphSettarSt, state.pSTphsettar)
+    np_param = state.param[settar.np]
+    # `tarend` is the last newvalue assigned in the walk, which for our
+    # diph table `[0, 500, 5, -1, ...]` lands on `5` (the second
+    # iteration overwrites newvalue=5 via dipsw==1 path).
+    assert np_param.tarend == 5
+    # `durlin` is the first newtime written to dipspec (shrdur of 500
+    # with 8 inhdr_frames and FRAC_ONE shrink == 8 frames).
+    assert np_param.durlin == 8

@@ -17,8 +17,13 @@ from pathlib import Path
 
 import pytest
 
+from dectalk.kernel.ksd_t import KsdT
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
+from dectalk.ph.numeric_constants import F1
 from dectalk.ph.setloc import setloc
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.utterance_constants import GEN_SIL
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_sttr2.c"
 
@@ -122,16 +127,34 @@ def test_initfinso_branch() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
+def _make_setloc_handle() -> TtsHandle:
+    """Build a handle whose obstruent/sonorant pair fails the filter.
+
+    Phones are all GEN_SIL -- typob != OBSTRUENT so setloc returns 0.
+    """
+    p_dph_t = DphT()
+    p_dph_t.allophons = [GEN_SIL] * 6
+    p_dph_t.allofeats = [0] * 6
+    p_dph_t.allodurs = [0] * 6
+    p_dph_t.nallotot = 6
+    p_dph_t.nphone = 1
+    p_dph_t.last_lang = 0
+    settar = DphSettarSt()
+    settar.np = F1
+    p_dph_t.pSTphsettar = settar
     handle = TtsHandle()
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
-        setloc(handle, 0, 0, "i", 0, 0)
+    handle.p_ph_thread_data = p_dph_t
+    handle.p_kernel_share_data = KsdT()
+    return handle
 
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError) as exc_info:
-        setloc(handle, 0, 0, "f", 0, 0)
-    assert "Phase E" in str(exc_info.value)
+def test_setloc_returns_zero_when_filter_rejects() -> None:
+    """setloc returns 0 when the obstruent/sonorant filter rejects (silence)."""
+    handle = _make_setloc_handle()
+    assert setloc(handle, 0, 1, "i", 2, 0) == 0
+
+
+def test_setloc_final_branch_also_filters_to_zero() -> None:
+    """``initfinso == 'f'`` path also returns 0 for silence-silence input."""
+    handle = _make_setloc_handle()
+    assert setloc(handle, 0, 1, "f", 2, 0) == 0
