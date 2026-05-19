@@ -95,7 +95,7 @@ def _make_handle(
 def test_par_type_is_cached_into_settar() -> None:
     """us_gettar writes ``partyp[npar]`` into ``pDphsettar.par_type``."""
     handle = _make_handle(np_idx=F1, phone=USP_AA)
-    settar = cast(DphSettarSt, cast(DphT, handle.p_ph_thread_data).pSTphsettar)  # type: ignore[union-attr]
+    settar = cast(DphSettarSt, cast(DphT, handle.p_ph_thread_data).pSTphsettar)
     us_gettar(handle, 1)
     assert settar.par_type == partyp[F1 - 1]
 
@@ -157,7 +157,7 @@ def test_dummy_vowel_reduces_av_by_12() -> None:
     """Dummy-vowel flag in allofeats subtracts 12 from AV."""
     base = _make_handle(np_idx=AV, phone=USP_AA)
     poisoned = _make_handle(np_idx=AV, phone=USP_AA)
-    cast(DphT, poisoned.p_ph_thread_data).allofeats[1] = FDUMMY_VOWEL  # type: ignore[union-attr]
+    cast(DphT, poisoned.p_ph_thread_data).allofeats[1] = FDUMMY_VOWEL
     # Both go through the unstressed branch (allofeats stress==0), so
     # the dummy-vowel delta isolates to a -12 difference *modulo* any
     # later corrections. With a vowel like AA we don't hit any other
