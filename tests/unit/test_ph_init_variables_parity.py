@@ -228,7 +228,7 @@ def test_first_position_seeds_pholas_to_gen_sil() -> None:
 def test_first_position_initsw_branch_is_skipped_when_already_set() -> None:
     """When ``initsw != 0`` the first-call PF1..PTILT seeding loop is skipped."""
     handle = _make_handle(nphone=0, initsw=1)
-    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
     init_variables(handle)
     # tarend slots stay at their default (0) because the getbegtar loop
     # only fires on first-ever init (initsw == 0).
@@ -239,8 +239,8 @@ def test_first_position_initsw_branch_is_skipped_when_already_set() -> None:
 def test_subsequent_position_writes_pholas_from_phcur() -> None:
     """``nphone > 0`` copies ``pholas = phcur`` and reads ``struclas`` from allofeats."""
     handle = _make_handle(nphone=3)
-    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
-    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)  # type: ignore[name-defined]
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)
     settar.phcur = 0x1E03  # arbitrary phone code
     p_dph_t.allofeats[1] = 0xAB
     p_dph_t.allofeats[2] = 0xCD
@@ -253,8 +253,8 @@ def test_subsequent_position_writes_pholas_from_phcur() -> None:
 def test_phcur_loaded_from_allophons() -> None:
     """``phcur`` is updated from ``allophons[nphone]``."""
     handle = _make_handle(nphone=2)
-    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
-    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)  # type: ignore[name-defined]
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)
     p_dph_t.allophons[2] = 0x1E07
     init_variables(handle)
     assert settar.phcur == 0x1E07
@@ -263,8 +263,8 @@ def test_phcur_loaded_from_allophons() -> None:
 def test_near_clause_end_clamps_phonex_to_gen_sil() -> None:
     """Within 2 phones of the end ``phonex = GEN_SIL`` and ``strucnex = 0``."""
     handle = _make_handle(nphone=9, nallotot=10)
-    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
-    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)  # type: ignore[name-defined]
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    settar = cast(DphSettarSt, p_dph_t.pSTphsettar)
     out = init_variables(handle)
     assert settar.phonex == GEN_SIL
     assert out.strucnex == 0
@@ -290,7 +290,7 @@ def test_silence_skips_shrink_block() -> None:
 def test_tspesh_slots_zeroed() -> None:
     """All sixteen ``param[].tspesh`` slots reachable from C are cleared."""
     handle = _make_handle(nphone=1)
-    p_dph_t = cast(DphT, handle.p_ph_thread_data)  # type: ignore[name-defined]
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
     # Pre-poison the slots so we can prove the function clears them.
     for idx in (F1, B1, AV, A2):
         p_dph_t.param[idx].tspesh = 42
