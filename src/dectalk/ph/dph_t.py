@@ -281,6 +281,16 @@ class DphT:
     last_preamble_command: int = 0
     Word_has_stress: int = 0
     pSTphsettar: object | None = None
+    hat_seen: int = 0
+    wordcount: int = 0
+    wordclass: list[int] = field(default_factory=list[int])
+    holdwordclass: int = 0
+    syllable_struct: list[int] = field(default_factory=list[int])
+    phone_struct: list[int] = field(default_factory=list[int])
+    holdwordclass: int = 0
+    # From ph_syl.c; sized 256 in the C source.
+    syllable_struct: list[int] = field(default_factory=list[int])
+    phone_struct: list[int] = field(default_factory=list[int])
 
 
 __all__ = ["DphT"]
