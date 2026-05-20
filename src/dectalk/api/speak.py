@@ -146,6 +146,46 @@ def _speak_via_capi(
         return None
 
 
+def _pump_frames_to_samples(  # pyright: ignore[reportUnusedFunction]
+    frames: list[object],
+    preset: VoicePreset | None,
+) -> NDArray[np.int16]:
+    """Pump a Klatt frame sequence through ``ll_synthesize`` to int16 PCM.
+
+    Bridge between the (still-being-ported) ph_draw frame-emission stage
+    and the bit-accurate hlsyn synthesizer. Each frame is one Klatt
+    target; ``ll_synthesize`` consumes ``synth.spkr.UI`` samples per
+    frame and writes int16 PCM to the output buffer.
+
+    Args:
+        frames: Sequence of :class:`~dectalk.hlsyn.llsyn.LLFrame` (typed
+            as ``object`` here to keep the import lazy; runtime type is
+            checked by ``ll_synthesize``).
+        preset: Voice preset for speaker selection; ``None`` uses the
+            default neutral voice.
+
+    Returns:
+        1-D int16 array, ``len(frames) * synth.spkr.UI`` samples long.
+    """
+    from dectalk.hlsyn.llsyn import LLFrame, LLSynth  # noqa: PLC0415
+    from dectalk.hlsyn.synthesize import ll_synthesize  # noqa: PLC0415
+    from dectalk.hlsyn.vowels import default_speaker  # noqa: PLC0415
+
+    if not frames:
+        return np.zeros(0, dtype=np.int16)
+
+    spkr = preset.speaker if preset is not None else default_speaker()
+    synth = LLSynth(spkr=spkr)
+    samples_per_frame = synth.spkr.UI
+    out = np.zeros(len(frames) * samples_per_frame, dtype=np.int16)
+    for fi, frame in enumerate(frames):
+        # ll_synthesize requires LLFrame; cast here at the boundary so
+        # callers (ph_draw) don't need to import it themselves.
+        ll_frame = frame if isinstance(frame, LLFrame) else LLFrame(**vars(frame))  # type: ignore[arg-type]
+        ll_synthesize(synth, ll_frame, out[fi * samples_per_frame : (fi + 1) * samples_per_frame])
+    return out
+
+
 def _arpabet_to_us_allophone(name: str) -> int | None:
     """Map an ARPABET phoneme symbol (e.g. ``"AH"``, ``"HH1"``) to a USP code.
 
@@ -284,14 +324,24 @@ def _speak_via_python_full(
         p_dph_t.durfon = p_dph_t.allodurs[nphone] if p_dph_t.allodurs[nphone] > 0 else 40
         phsettar(handle)
 
-    # 6-8. Frame emission + audio synthesis -- the remaining gap.
+    # 6. (TODO) phinton -- F0 contour generation (background agent
+    # claude/port-us-phinton is porting this; will be called here).
+
+    # 7. ph_draw consumes the per-parameter state phsettar wrote and
+    # walks frame-by-frame, producing a sequence of Klatt LLFrames.
+    # Background agent claude/port-phdraw is porting the C body; this
+    # is the next named gap.
     raise NotImplementedError(
-        "DECTALK_FULL_PIPELINE: ph_draw + hlsyn frame synthesis not yet "
-        "wired. phsettar has walked all "
-        f"{nallotot} allophones and populated DphT.param[]; the next step "
-        "is to consume that into a Klatt-frame stream and hand it to "
-        "dectalk.hlsyn.synthesize."
+        "DECTALK_FULL_PIPELINE: ph_draw frame emission not yet wired. "
+        f"phsettar has walked all {nallotot} allophones and populated "
+        "DphT.param[]; the next step is ph_draw to produce a "
+        "list[LLFrame], then _pump_frames_to_samples() to synthesise."
     )
+
+    # 8. (Below — will execute once ph_draw is wired.) Pump the frames
+    # through ll_synthesize to produce int16 samples.
+    # frames = ph_draw(handle)
+    # return _pump_frames_to_samples(frames, voice_preset)
 
 
 def _speak_via_python(

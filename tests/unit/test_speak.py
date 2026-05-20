@@ -78,7 +78,7 @@ def test_full_pipeline_gate_walks_phsettar_then_raises(monkeypatch: pytest.Monke
     """
     monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
     monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
-    with pytest.raises(NotImplementedError, match=r"ph_draw.*hlsyn"):
+    with pytest.raises(NotImplementedError, match=r"ph_draw"):
         _speak_via_python(
             text="hello world",
             rate=1.0,
@@ -120,3 +120,11 @@ def test_full_pipeline_gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> N
         lts_fallback=True,
     )
     assert len(samples) > 0
+
+
+def test_pump_frames_to_samples_empty_returns_zero() -> None:
+    """``_pump_frames_to_samples([], None)`` short-circuits to zero samples."""
+    from dectalk.api.speak import _pump_frames_to_samples
+
+    out = _pump_frames_to_samples([], None)
+    assert len(out) == 0
