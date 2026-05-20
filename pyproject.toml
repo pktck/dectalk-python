@@ -111,4 +111,5 @@ markers = [
     "c_oracle: requires the built DECtalk C oracle (DECTALK_SRC + DECTALK_BIN); skip in fast CI",
     "parity: parity test that re-parses C source; auto-skips when DECTALK_SRC is absent",
     "perf: performance benchmark; run via pytest --benchmark-only",
+    "binary_wav_parity_gate: internal marker used by tests/parity/conftest.py to fail-fast under the stop-hook gate",
 ]

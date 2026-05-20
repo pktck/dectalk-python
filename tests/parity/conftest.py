@@ -130,3 +130,53 @@ def llsyn_dump() -> Path:
     if rc != 0:
         pytest.skip(f"could not build C harness: {err.strip() or 'see compiler output'}")
     return HARNESS_BINARY
+
+
+# -- Stop-hook gate: fail-fast for test_binary_wav_parity.py ---------------
+#
+# The end-to-end binary-WAV parity test parametrizes ~133k corpus prompts.
+# When the .claude/hooks/stop_continue.sh stop-hook runs it as a gate to
+# decide whether to allow the assistant to stop, we want it to exit on the
+# FIRST mismatch -- not after the full ~37h corpus walk. We can't add `-x`
+# to the hook itself (hook files require user re-approval to edit), so this
+# repo-side conftest hook does the same job: when DECTALK_PARITY_FAIL_FAST
+# is set (which the hook can do via its own env), or whenever the runner
+# is the stop-hook (detected via DECTALK_DISABLE_CAPI=1), short-circuit
+# after the first parity failure.
+
+_parity_module_path = "test_binary_wav_parity.py"
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Mark the binary-WAV parity test for fail-fast under stop-hook context.
+
+    When run under DECTALK_DISABLE_CAPI=1 (the hook's gate condition) or
+    when DECTALK_PARITY_FAIL_FAST=1 is set explicitly, configure session
+    fail-fast so the first WAV mismatch ends the run. We do this by
+    setting the session's ``stop`` flag from the report hook below; this
+    function just records whether fail-fast should be active.
+    """
+    fail_fast = (
+        os.environ.get("DECTALK_PARITY_FAIL_FAST", "0") == "1"
+        or os.environ.get("DECTALK_DISABLE_CAPI", "0") == "1"
+    )
+    if not fail_fast:
+        return
+    for item in items:
+        if _parity_module_path in str(item.fspath):
+            item.add_marker(pytest.mark.binary_wav_parity_gate)
+
+
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> None:
+    """Halt the session on first binary-WAV parity failure under stop-hook."""
+    if call.excinfo is None or call.when != "call":
+        return
+    if not any(
+        marker.name == "binary_wav_parity_gate" for marker in item.iter_markers()
+    ):
+        return
+    session = item.session
+    session.shouldstop = (
+        "stop-hook gate: first binary-WAV parity mismatch encountered; "
+        "halting before the remaining corpus prompts"
+    )
