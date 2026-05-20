@@ -67,24 +67,41 @@ def test_capitalisation_is_irrelevant() -> None:
 # -- DECTALK_FULL_PIPELINE gate --------------------------------------------
 
 
-def test_full_pipeline_gate_raises_not_implemented(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Setting ``DECTALK_FULL_PIPELINE=1`` routes through the new wiring path.
+def test_full_pipeline_gate_walks_phsettar_then_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``DECTALK_FULL_PIPELINE=1`` runs init_phclause + phsettar end-to-end.
 
-    Currently the wiring path raises ``NotImplementedError`` (phsort /
-    phalloph / init_phclause / ph_draw aren't wired yet). The test
-    verifies the gate dispatches to that path; future commits will
-    fill it in and update the expected behaviour.
+    The wiring layer tokenizes the text, maps ARPABET to US allophone
+    codes, populates ``DphT``, calls ``init_phclause``, and iterates
+    ``phsettar`` over every nphone. The final ``NotImplementedError``
+    fires at the ph_draw / hlsyn frame-emission boundary -- everything
+    before it executes.
     """
     monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
     monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
-    with pytest.raises(NotImplementedError, match=r"FULL_PIPELINE"):
+    with pytest.raises(NotImplementedError, match=r"ph_draw.*hlsyn"):
         _speak_via_python(
-            text="hello",
+            text="hello world",
             rate=1.0,
             voice=None,
             lang="us",
             lts_fallback=True,
         )
+
+
+def test_full_pipeline_gate_short_circuits_for_empty_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty/un-tokenizable input returns zero samples (no phsettar walk)."""
+    monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+    monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
+    samples = _speak_via_python(
+        text="",
+        rate=1.0,
+        voice=None,
+        lang="us",
+        lts_fallback=True,
+    )
+    assert len(samples) == 0
 
 
 def test_full_pipeline_gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
