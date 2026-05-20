@@ -17,7 +17,12 @@ from pathlib import Path
 
 import pytest
 
+from dectalk.include.defs import TRUE
+from dectalk.kernel.ksd_t import KsdT
+from dectalk.kernel.lang_codes import LANG_english, LANG_german
 from dectalk.ph.all_phsort import all_phsort
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
 from dectalk.ph.tts_handle import TtsHandle
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_sort.c"
@@ -101,17 +106,28 @@ def test_function_is_long() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
+def test_python_unsupported_lang_raises_not_implemented() -> None:
+    """Non-US languages still raise ``NotImplementedError`` (Phase E)."""
+    dph = DphT()
+    dph.symbols = [0] * 8
+    dph.pSTphsettar = DphSettarSt()
+    ksd = KsdT()
+    ksd.lang_curr = LANG_german
+    handle = TtsHandle(p_kernel_share_data=ksd, p_ph_thread_data=dph)
+    with pytest.raises(NotImplementedError, match="Phase E"):
         all_phsort(handle)
 
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError) as exc_info:
-        all_phsort(handle)
-    assert "Phase E" in str(exc_info.value)
-    assert "smooth-hoare" in str(exc_info.value)
+def test_python_us_english_executes_without_error() -> None:
+    """The US-English port returns TRUE for a trivial empty input."""
+    dph = DphT()
+    dph.symbols = [0] * 8
+    dph.user_durs = [0] * 8
+    dph.user_f0 = [0] * 8
+    dph.phonemes = [0] * 8
+    dph.sentstruc = [0] * 8
+    dph.pSTphsettar = DphSettarSt()
+    ksd = KsdT()
+    ksd.lang_curr = LANG_english
+    handle = TtsHandle(p_kernel_share_data=ksd, p_ph_thread_data=dph)
+    assert all_phsort(handle) == TRUE

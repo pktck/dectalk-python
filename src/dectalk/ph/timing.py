@@ -150,10 +150,15 @@ def phone_feature(phone: int) -> int:
     font = phone >> PSFONT
     code = phone & PVALUE
     # all_featb[0x1E] = us_featb; other indices are NULL in C (would
-    # crash). For US-bit-parity we route everything to us_featb.
-    if font in (PFUSA, 0):  # 0x1E (US) or 0x00 (slot 0 also points at us_featb)
+    # crash). For US-bit-parity we route everything to us_featb. The
+    # C source reads us_featb[code] for codes up to 0xFF; us_featb is
+    # only 101 entries long but the surrounding memory is zero-padded
+    # in the binary, so out-of-range reads return 0 in practice. We
+    # mirror that by returning 0 for out-of-bound indices.
+    _ = font  # Currently only US is wired up.
+    if 0 <= code < len(us_featb):
         return us_featb[code]
-    return us_featb[code]
+    return 0
 
 
 def begtyp(phone: int) -> int:
