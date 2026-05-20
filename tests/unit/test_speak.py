@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from dectalk.api import UnknownWordError, speak, text_to_phonemes, to_wav
+from dectalk.api.speak import _speak_via_python
 
 
 def test_text_to_phonemes_hello_world() -> None:
@@ -61,3 +62,44 @@ def test_capitalisation_is_irrelevant() -> None:
     b = text_to_phonemes("hello world")
     c = text_to_phonemes("HELLO WORLD")
     assert a == b == c
+
+
+# -- DECTALK_FULL_PIPELINE gate --------------------------------------------
+
+
+def test_full_pipeline_gate_raises_not_implemented(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Setting ``DECTALK_FULL_PIPELINE=1`` routes through the new wiring path.
+
+    Currently the wiring path raises ``NotImplementedError`` (phsort /
+    phalloph / init_phclause / ph_draw aren't wired yet). The test
+    verifies the gate dispatches to that path; future commits will
+    fill it in and update the expected behaviour.
+    """
+    monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+    monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
+    with pytest.raises(NotImplementedError, match=r"FULL_PIPELINE"):
+        _speak_via_python(
+            text="hello",
+            rate=1.0,
+            voice=None,
+            lang="us",
+            lts_fallback=True,
+        )
+
+
+def test_full_pipeline_gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without ``DECTALK_FULL_PIPELINE=1``, the legacy path runs.
+
+    Tests that the gate is truly opt-in: with the env var unset, the
+    legacy approximate pipeline produces samples without raising.
+    """
+    monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+    monkeypatch.delenv("DECTALK_FULL_PIPELINE", raising=False)
+    samples = _speak_via_python(
+        text="hello",
+        rate=1.0,
+        voice=None,
+        lang="us",
+        lts_fallback=True,
+    )
+    assert len(samples) > 0
