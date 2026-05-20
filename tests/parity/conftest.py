@@ -171,9 +171,7 @@ def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) ->
     """Halt the session on first binary-WAV parity failure under stop-hook."""
     if call.excinfo is None or call.when != "call":
         return
-    if not any(
-        marker.name == "binary_wav_parity_gate" for marker in item.iter_markers()
-    ):
+    if not any(marker.name == "binary_wav_parity_gate" for marker in item.iter_markers()):
         return
     session = item.session
     session.shouldstop = (
