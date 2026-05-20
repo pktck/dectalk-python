@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from dectalk.api import UnknownWordError, speak, text_to_phonemes, to_wav
-from dectalk.api.speak import _speak_via_python
+from dectalk.api.speak import _pump_frames_to_samples, _speak_via_python
 
 
 def test_text_to_phonemes_hello_world() -> None:
@@ -124,7 +124,5 @@ def test_full_pipeline_gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_pump_frames_to_samples_empty_returns_zero() -> None:
     """``_pump_frames_to_samples([], None)`` short-circuits to zero samples."""
-    from dectalk.api.speak import _pump_frames_to_samples
-
     out = _pump_frames_to_samples([], None)
     assert len(out) == 0
