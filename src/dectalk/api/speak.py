@@ -324,13 +324,17 @@ def _speak_via_python_full(
         p_dph_t.durfon = p_dph_t.allodurs[nphone] if p_dph_t.allodurs[nphone] > 0 else 40
         phsettar(handle)
 
-    # 6. (TODO) phinton -- F0 contour generation (background agent
-    # claude/port-us-phinton is porting this; will be called here).
+    # 6. phinton: F0 contour generation. Walks the allophone stream
+    # firing pitch events (hat-rise / stress impulses / comma+question
+    # gestures / continuation rises / baseline reset / dummy schwa).
+    # Writes f0tar / f0type / f0length / f0tim on DphT.
+    from dectalk.ph.phinton import phinton  # noqa: PLC0415
+
+    phinton(handle)
 
     # 7. ph_draw consumes the per-parameter state phsettar wrote and
     # walks frame-by-frame, producing a sequence of Klatt LLFrames.
-    # Background agent claude/port-phdraw is porting the C body; this
-    # is the next named gap.
+    # PR #22 will land a partial port; this is the next named gap.
     raise NotImplementedError(
         "DECTALK_FULL_PIPELINE: ph_draw frame emission not yet wired. "
         f"phsettar has walked all {nallotot} allophones and populated "
