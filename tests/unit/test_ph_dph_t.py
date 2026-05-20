@@ -31,14 +31,24 @@ def _parse_field_names() -> set[str] | None:
     body = re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL)
     body = re.sub(r"//.*", "", body)
     names: set[str] = set()
-    for m in re.finditer(
-        r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s+\*?\s*([a-zA-Z_][a-zA-Z_0-9]*)\s*(\[[^;]+\])?\s*;",
-        body,
+    # Handle: `<type> <name>[<sub>]?, <name2>[<sub>]?, ...;` -- including
+    # multi-var declarations on one line, two-token types like
+    # `unsigned long`, and pointer-modifier `*name`.
+    decl_re = re.compile(
+        r"^\s*(?:unsigned\s+|signed\s+|const\s+|volatile\s+)*"
+        r"[A-Za-z_][A-Za-z_0-9]*\s+"
+        r"((?:\*?\s*[A-Za-z_][A-Za-z_0-9]*\s*(?:\[[^;,]+\])?\s*,\s*)*"
+        r"\*?\s*[A-Za-z_][A-Za-z_0-9]*\s*(?:\[[^;]+\])?)\s*;",
         re.MULTILINE,
-    ):
-        if m.group(1) == "DPH_TAG":
-            continue
-        names.add(m.group(2))
+    )
+    name_re = re.compile(r"\*?\s*([A-Za-z_][A-Za-z_0-9]*)")
+    for m in decl_re.finditer(body):
+        decls = m.group(1)
+        for decl in decls.split(","):
+            name_match = name_re.match(decl.strip())
+            if name_match:
+                names.add(name_match.group(1))
+    names.discard("DPH_TAG")
     return names
 
 
