@@ -102,6 +102,9 @@ class KsdT:
     # Halt flag (volatile short in C). Inner loops poll this to bail
     # out of the synthesis pipeline mid-clause.
     halting: int = 0
+    # Mode flag (MODE_CITATION / MODE_LATIN / ... bits from esc.h).
+    # Read by phalloph and others to decide rule-firing.
+    modeflag: int = 0
 
 
 __all__ = ["KsdT"]
