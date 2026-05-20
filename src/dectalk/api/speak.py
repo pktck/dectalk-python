@@ -146,6 +146,22 @@ def _speak_via_capi(
         return None
 
 
+def _arpabet_to_us_allophone(name: str) -> int | None:
+    """Map an ARPABET phoneme symbol (e.g. ``"AH"``, ``"HH1"``) to a USP code.
+
+    Strips a trailing stress digit, upper-cases, and looks up the name in
+    the :class:`~dectalk.include.phoneme_codes.USPhoneme` enum. Returns
+    ``None`` when the symbol isn't a recognised US allophone.
+    """
+    from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
+
+    bare = name.rstrip("0123456789").upper()
+    try:
+        return (PFUSA << 8) | int(USPhoneme[bare])
+    except KeyError:
+        return None
+
+
 def _speak_via_python_full(
     text: str,
     rate: float,
@@ -158,19 +174,23 @@ def _speak_via_python_full(
     Gated behind ``DECTALK_FULL_PIPELINE=1``. Calls the real translated
     Python modules in the order the C source's ph_claus.c would:
 
-      1. tokenize + LTS to build a phoneme/sentstruc sequence
-      2. (TODO) phsort to split symbols into phonemes + features
-      3. (TODO) phalloph to select allophones
-      4. (TODO) init_phclause + init_timing to set per-phone durations
-      5. For each nphone: phsettar(handle) writes the per-parameter
-         target/transition state on the shared DphT.
-      6. (TODO) ph_draw walks the param trajectory into Klatt frames
-      7. (TODO) hlsyn synthesises samples from the frame stream
+      1. tokenize + LTS to build an ARPABET phoneme sequence (uses
+         the existing dict + ``lts`` fallback path).
+      2. ARPABET symbols -> US allophone codes via the USPhoneme enum.
+      3. Populate ``DphT.allophons`` / ``allofeats`` / ``allodurs`` /
+         ``nallotot`` from the allophone sequence.
+      4. :func:`init_phclause` for per-clause array setup; default
+         durations (40 frames / phone) until ``init_timing`` is wired.
+      5. Per-nphone loop: :func:`phsettar` writes target/transition
+         state into the shared :class:`~dectalk.ph.dph_t.DphT`.
+      6. (TODO) phinton for F0 contour generation.
+      7. (TODO) ph_draw walks ``param`` into Klatt frames.
+      8. (TODO) hlsyn synthesises samples from the frame stream.
 
-    Steps 2-4 and 6-7 still need wiring (see docs/PLAN.md Phase E
-    "wiring layer"). Currently raises :class:`NotImplementedError` to
-    make the gap explicit at the call site -- and to keep the
-    DECTALK_FULL_PIPELINE=0 default path unaffected.
+    Steps 6-8 are still missing. The function currently raises
+    :class:`NotImplementedError` AFTER walking the phsettar loop, so
+    you can verify the wiring up to that point executes without
+    error.
 
     Args:
         text: Speech input string.
@@ -183,15 +203,74 @@ def _speak_via_python_full(
         16-bit PCM samples at the synthesiser's native sample rate.
 
     Raises:
-        NotImplementedError: Always (for now). The phsort / phalloph /
-            init_phclause / ph_draw wiring is still TODO.
+        NotImplementedError: After the phsettar loop completes. ph_draw
+            / hlsyn frame-synthesis is the named gap.
     """
-    del text, rate, voice, lang, lts_fallback
+    from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
+    from dectalk.ph.dph_settar_st import DphSettarSt  # noqa: PLC0415
+    from dectalk.ph.dph_t import DphT  # noqa: PLC0415
+    from dectalk.ph.init_phclause import init_phclause  # noqa: PLC0415
+    from dectalk.ph.phsettar import phsettar  # noqa: PLC0415
+    from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
+    from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
+
+    del rate, voice  # TODO: thread through rate / voice into DphT.sprate etc.
+
+    if lang != "us":
+        raise NotImplementedError(
+            f"DECTALK_FULL_PIPELINE: lang={lang!r} not yet wired; only 'us' is."
+        )
+
+    # 1. Text -> ARPABET phonemes via the existing approximate path.
+    arpabet_phones = _tokens_to_phonemes(
+        tokenize(text),
+        lang=lang,
+        lts_fallback=lts_fallback,
+    )
+    if not arpabet_phones:
+        return np.zeros(0, dtype=np.int16)
+
+    # 2. ARPABET -> US allophone codes.
+    allophons: list[int] = [GEN_SIL]
+    for name in arpabet_phones:
+        code = _arpabet_to_us_allophone(name)
+        if code is not None:
+            allophons.append(code)
+    allophons.append(GEN_SIL)
+    nallotot = len(allophons)
+
+    # 3. Build engine state.
+    p_dph_t = DphT()
+    p_dph_t.allophons = allophons
+    p_dph_t.allofeats = [0] * nallotot  # TODO: phalloph for per-allophone features.
+    p_dph_t.allodurs = [40] * nallotot  # TODO: init_timing for real per-phone durations.
+    p_dph_t.nallotot = nallotot
+    p_dph_t.durfon = 40  # placeholder; phsettar respects per-phone allodurs.
+    p_dph_t.dipspec = [0] * 256
+    p_dph_t.parstochip = [0] * 64
+    p_dph_t.last_lang = 0  # forces gettar to load tables on first call.
+    settar = DphSettarSt()
+    settar.initsw = 1  # Skip the very-first-call getbegtar seeding loop.
+    p_dph_t.pSTphsettar = settar
+    handle = TtsHandle()
+    handle.p_ph_thread_data = p_dph_t
+    handle.p_kernel_share_data = KsdT()
+
+    # 4. Per-clause init.
+    init_phclause(p_dph_t)
+
+    # 5. Per-nphone loop: call phsettar end-to-end.
+    for nphone in range(nallotot):
+        p_dph_t.nphone = nphone
+        phsettar(handle)
+
+    # 6-8. Frame emission + audio synthesis -- the remaining gap.
     raise NotImplementedError(
-        "DECTALK_FULL_PIPELINE: phsort/phalloph/init_phclause/ph_draw wiring "
-        "is not yet implemented. The translated PH modules (phsettar, phinton, "
-        "gettar chain, smooth-rules, etc.) exist but lack a driver. See "
-        "docs/PLAN.md Phase E 'wiring layer'."
+        "DECTALK_FULL_PIPELINE: ph_draw + hlsyn frame synthesis not yet "
+        "wired. phsettar has walked all "
+        f"{nallotot} allophones and populated DphT.param[]; the next step "
+        "is to consume that into a Klatt-frame stream and hand it to "
+        "dectalk.hlsyn.synthesize."
     )
 
 
