@@ -135,30 +135,36 @@ goal is to merge once green.
 
 When the goal is autonomous merge:
 
-1. After pushing, **stay in foreground** until you've merged. The
-   remote-execution container suspends when your turn ends, killing
-   any `run_in_background: true` poll and gating webhook delivery
-   until the next resume — so "subscribed, turn ends" does NOT
-   reliably wake you when CI flips green.
-2. Use a foreground `until` loop with a short sleep (~30 s) that
-   exits when `get_status` returns `success`. Cap it at ~10 min;
-   beyond that, ntfy the user and end the turn.
-   Example: `until [ "$(curl ...)" = success ]; do sleep 30; done`
-   run as a foreground Bash call. The Bash tool blocks long leading
-   sleeps but allows the until-loop pattern.
-3. Once status is green, immediately call `merge_pull_request`
+1. After pushing, kick off a `run_in_background: true` Bash poll
+   that exits when `get_status` returns `success` (an `until` loop
+   with `sleep 30`s). The Bash tool's docs name this as the canonical
+   "one notification when X is ready" pattern — you'll be woken by
+   the completion notification when the loop exits.
+2. **Don't end the turn while the poll is in flight.** The
+   remote-execution container can suspend during long quiet windows,
+   and webhook delivery to a suspended container is best-effort.
+   Stay engaged: review the diff, draft the next port, or just
+   call `get_check_runs` once before ending. The background poll's
+   completion is the most reliable wake — but the more activity in
+   the foreground, the lower the chance of a stale-container race.
+3. Once the poll wakes you, call `merge_pull_request`
    (rebase — linear history is required on `dev` and `main`) and
    `unsubscribe_pr_activity`. The merge is the loop's terminal state.
+
+If a polling loop runs longer than its cap (10 min default) without
+turning green, ntfy the user and end the turn — the rerun-via-API
+trick (`POST /actions/runs/$id/rerun`) clears cancelled-by-flake
+workflow runs without needing a push.
 
 If `enable_pr_auto_merge` is unavailable at the repo level (it is at
 present), do the manual merge yourself — don't tell the user "auto-merge
 unavailable" and then stop.
 
 **Anti-pattern**: pushing + subscribing + ending the turn while
-expecting webhooks to wake you "when CI is green." The container
-suspends, the in-progress webhooks queue, and the user has to nudge.
-This burned the loop on PR #12; see the foreground-until guidance
-above.
+expecting webhooks to wake you. They might; they might not, if the
+container suspended between turn-end and webhook delivery. The
+background-poll completion notification is more reliable because
+it's a direct wake on your session, not a queued external event.
 
 ## CI throttling — do not saturate Actions
 
