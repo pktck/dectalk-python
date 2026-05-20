@@ -207,14 +207,16 @@ def _speak_via_python_full(
             / hlsyn frame-synthesis is the named gap.
     """
     from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
+    from dectalk.kernel.lang_codes import LANG_english  # noqa: PLC0415
     from dectalk.ph.dph_settar_st import DphSettarSt  # noqa: PLC0415
     from dectalk.ph.dph_t import DphT  # noqa: PLC0415
     from dectalk.ph.init_phclause import init_phclause  # noqa: PLC0415
+    from dectalk.ph.init_timing import init_timing  # noqa: PLC0415
     from dectalk.ph.phsettar import phsettar  # noqa: PLC0415
     from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
     from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
 
-    del rate, voice  # TODO: thread through rate / voice into DphT.sprate etc.
+    del voice  # TODO: thread through voice into DphT.curspdef / malfem etc.
 
     if lang != "us":
         raise NotImplementedError(
@@ -240,28 +242,46 @@ def _speak_via_python_full(
     nallotot = len(allophons)
 
     # 3. Build engine state.
+    # Map rate (multiplier; 1.0 == 200 wpm nominal) to DECtalk's
+    # words-per-minute sprate field. init_timing inspects this to
+    # derive timeref / sprat0 / sprat1 / sprat2 etc.
+    wpm = max(75, min(600, round(_DEFAULT_WPM * rate)))
+
     p_dph_t = DphT()
     p_dph_t.allophons = allophons
     p_dph_t.allofeats = [0] * nallotot  # TODO: phalloph for per-allophone features.
-    p_dph_t.allodurs = [40] * nallotot  # TODO: init_timing for real per-phone durations.
+    p_dph_t.allodurs = [0] * nallotot  # init_timing computes per-phone durations.
     p_dph_t.nallotot = nallotot
-    p_dph_t.durfon = 40  # placeholder; phsettar respects per-phone allodurs.
     p_dph_t.dipspec = [0] * 256
     p_dph_t.parstochip = [0] * 64
     p_dph_t.last_lang = 0  # forces gettar to load tables on first call.
+    p_dph_t.sprate = wpm
     settar = DphSettarSt()
     settar.initsw = 1  # Skip the very-first-call getbegtar seeding loop.
     p_dph_t.pSTphsettar = settar
     handle = TtsHandle()
     handle.p_ph_thread_data = p_dph_t
-    handle.p_kernel_share_data = KsdT()
+    p_ksd_t = KsdT()
+    p_ksd_t.sprate = wpm
+    p_ksd_t.lang_curr = LANG_english
+    handle.p_kernel_share_data = p_ksd_t
 
-    # 4. Per-clause init.
+    # 4. Per-clause init: array setup + timing.
     init_phclause(p_dph_t)
+    init_timing(
+        p_dph_t,
+        settar,
+        sprate_ref=[wpm],
+        lang_curr=LANG_english,
+    )
 
     # 5. Per-nphone loop: call phsettar end-to-end.
     for nphone in range(nallotot):
         p_dph_t.nphone = nphone
+        # init_timing populates allodurs lazily for some phones; use it
+        # as the per-phone durfon when available, else fall back to a
+        # default of 40 frames so phsettar's downstream math is sane.
+        p_dph_t.durfon = p_dph_t.allodurs[nphone] if p_dph_t.allodurs[nphone] > 0 else 40
         phsettar(handle)
 
     # 6-8. Frame emission + audio synthesis -- the remaining gap.
