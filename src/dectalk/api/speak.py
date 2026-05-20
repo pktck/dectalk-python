@@ -40,6 +40,11 @@ from dectalk.nt.audio import write_wav
 from dectalk.ph.prosody import split_sentences
 from dectalk.ph.sequencer import synthesize_phonemes
 
+# Forward-declared imports for the experimental full pipeline. These
+# names are only imported lazily inside _speak_via_python_full so the
+# default import path stays cheap.
+_FULL_PIPELINE_ENV: str = "DECTALK_FULL_PIPELINE"
+
 # Nominal speaking rate that maps to ``rate=1.0`` in the public API.
 # DECtalk's TextToSpeechSetRate accepts words-per-minute in [75, 600];
 # 200 wpm is the binary's default.
@@ -141,6 +146,55 @@ def _speak_via_capi(
         return None
 
 
+def _speak_via_python_full(
+    text: str,
+    rate: float,
+    voice: str | VoicePreset | None,
+    lang: str,
+    lts_fallback: bool,
+) -> NDArray[np.int16]:
+    """Real PH-stage pipeline -- walks the translated C call chain.
+
+    Gated behind ``DECTALK_FULL_PIPELINE=1``. Calls the real translated
+    Python modules in the order the C source's ph_claus.c would:
+
+      1. tokenize + LTS to build a phoneme/sentstruc sequence
+      2. (TODO) phsort to split symbols into phonemes + features
+      3. (TODO) phalloph to select allophones
+      4. (TODO) init_phclause + init_timing to set per-phone durations
+      5. For each nphone: phsettar(handle) writes the per-parameter
+         target/transition state on the shared DphT.
+      6. (TODO) ph_draw walks the param trajectory into Klatt frames
+      7. (TODO) hlsyn synthesises samples from the frame stream
+
+    Steps 2-4 and 6-7 still need wiring (see docs/PLAN.md Phase E
+    "wiring layer"). Currently raises :class:`NotImplementedError` to
+    make the gap explicit at the call site -- and to keep the
+    DECTALK_FULL_PIPELINE=0 default path unaffected.
+
+    Args:
+        text: Speech input string.
+        rate: Multiplicative speaking-rate factor; ``1.0`` is nominal.
+        voice: Voice preset (string name, ``VoicePreset``, or ``None``).
+        lang: Language code; only ``"us"`` is wired for the full path.
+        lts_fallback: Allow ``lts()`` for words not in the dictionary.
+
+    Returns:
+        16-bit PCM samples at the synthesiser's native sample rate.
+
+    Raises:
+        NotImplementedError: Always (for now). The phsort / phalloph /
+            init_phclause / ph_draw wiring is still TODO.
+    """
+    del text, rate, voice, lang, lts_fallback
+    raise NotImplementedError(
+        "DECTALK_FULL_PIPELINE: phsort/phalloph/init_phclause/ph_draw wiring "
+        "is not yet implemented. The translated PH modules (phsettar, phinton, "
+        "gettar chain, smooth-rules, etc.) exist but lack a driver. See "
+        "docs/PLAN.md Phase E 'wiring layer'."
+    )
+
+
 def _speak_via_python(
     text: str,
     rate: float,
@@ -150,10 +204,19 @@ def _speak_via_python(
 ) -> NDArray[np.int16]:
     """Approximate-Python audio pipeline (pre-Phase-B implementation).
 
+    When ``DECTALK_FULL_PIPELINE=1`` is set, dispatches to the
+    work-in-progress :func:`_speak_via_python_full` that calls the
+    real translated PH modules. Otherwise falls back to the legacy
+    approximate path (parse -> tokenize -> LTS -> sequencer) used
+    for languages other than US English and when the C library is
+    unavailable.
+
     Used as the fallback when the C library isn't available, and for
     languages other than US English. Output is intelligible but not
     byte-identical to the DECtalk binary.
     """
+    if os.environ.get(_FULL_PIPELINE_ENV) == "1":
+        return _speak_via_python_full(text, rate, voice, lang, lts_fallback)
     initial_voice = voice if isinstance(voice, str) else None
     initial_state = SpeechState(voice=initial_voice, rate=rate)
     segments = parse(text, initial_state=initial_state)
