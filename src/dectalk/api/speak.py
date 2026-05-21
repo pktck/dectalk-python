@@ -26,11 +26,15 @@ import os
 import wave
 from collections.abc import Iterable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
 
 from dectalk._capi import CAPI, CAPIError
+
+if TYPE_CHECKING:
+    from dectalk.include.phoneme_codes import USPhoneme
 from dectalk.cmd import SpeechState, parse
 from dectalk.data.voices import PRESETS, VoicePreset, get_preset
 from dectalk.dic import lookup
@@ -190,16 +194,67 @@ def _arpabet_to_us_allophone(name: str) -> int | None:
     """Map an ARPABET phoneme symbol (e.g. ``"AH"``, ``"HH1"``) to a USP code.
 
     Strips a trailing stress digit, upper-cases, and looks up the name in
-    the :class:`~dectalk.include.phoneme_codes.USPhoneme` enum. Returns
-    ``None`` when the symbol isn't a recognised US allophone.
+    the :class:`~dectalk.include.phoneme_codes.USPhoneme` enum. Several
+    CMU-ARPABET symbols don't share their name with the FONIX/DECtalk
+    allophone enum (e.g. ARPABET ``HH`` is named ``HX`` in the DECtalk
+    table); :data:`_ARPABET_ALIAS` covers those before falling back to a
+    bare-name lookup. Returns ``None`` when the symbol isn't a recognised
+    US allophone.
+
+    The alias table follows the audit in
+    ``docs/parity-divergence-audit.md`` (issue #58); see also
+    ``${DECTALK_SRC}/src/dapi/src/include/l_us_ph.h`` for the
+    authoritative DECtalk allophone names.
     """
     from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
 
     bare = name.rstrip("0123456789").upper()
-    try:
-        return (PFUSA << 8) | int(USPhoneme[bare])
-    except KeyError:
-        return None
+    member = _ARPABET_ALIAS.get(bare)
+    if member is None:
+        try:
+            member = USPhoneme[bare]
+        except KeyError:
+            return None
+    return (PFUSA << 8) | int(member)
+
+
+def _build_arpabet_alias() -> dict[str, USPhoneme]:
+    """Build the ARPABET→USPhoneme alias table consulted by
+    :func:`_arpabet_to_us_allophone`.
+
+    The keys are CMU-ARPABET symbols (already stress-stripped, upper-
+    cased) that do *not* share their name with the DECtalk
+    :class:`~dectalk.include.phoneme_codes.USPhoneme` enum. The values
+    point at the DECtalk allophone the front-end should emit for that
+    ARPABET input.
+
+    Sources:
+
+    * ``docs/parity-divergence-audit.md`` (issue #58) — names the
+      three high-impact aliases ``HH→HX``, ``L→LL``, ``NG→NX`` whose
+      absence drops 38% of phones on ``"hello world"``.
+    * ``${DECTALK_SRC}/src/dapi/src/include/l_us_ph.h`` — authoritative
+      DECtalk allophone names (FONIX scheme).
+
+    The remaining CMU-39 ARPABET symbols share names with their
+    DECtalk counterparts and resolve via the bare-name fallback in
+    :func:`_arpabet_to_us_allophone`.
+    """
+    from dectalk.include.phoneme_codes import USPhoneme  # noqa: PLC0415
+
+    return {
+        # CMU ARPABET → DECtalk FONIX allophone.
+        "HH": USPhoneme.HX,  # /h/ allophone
+        "L": USPhoneme.LL,  # light L (DECtalk's default L allophone)
+        "NG": USPhoneme.NX,  # 'sing'
+    }
+
+
+# Module-level cache. Initialised lazily on first lookup so an import-time
+# circular reference into ``dectalk.include.phoneme_codes`` is avoided
+# (the include module already imports cleanly today but keeping the
+# closure local matches the rest of this file's style).
+_ARPABET_ALIAS: dict[str, USPhoneme] = _build_arpabet_alias()
 
 
 def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically long
