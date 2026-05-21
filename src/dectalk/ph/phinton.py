@@ -479,6 +479,11 @@ def phinton(phTTS: TtsHandle) -> None:
                         pDphsettar.nrises_sofar = 1
 
                 # ---- Rule 3: hat fall when end-of-hat is pending ----
+                # The C source nests Rule 4 inside this ``if (had_hatend)``
+                # block (ph_inton2.c lines 1354-1591). Both rules clear
+                # ``had_hatend`` once and share a single boundary-driven
+                # f0fall/comma-impulse dispatch — see the brace tracing
+                # in the parity test.
                 if pDph_t.had_hatend:
                     pDph_t.had_hatend = 0
                     pDph_t.had_in_phrase_final = 1
@@ -533,50 +538,59 @@ def phinton(phTTS: TtsHandle) -> None:
                     _f0(GLIDE, 3, -f0fall, delayf0, length)
                     pDphsettar.hat_loc_re_baseline -= f0fall
 
-                # ---- Rule 4: positive pulse for non-terminal fall-rise ----
-                # ``NotQuest`` is set here but only consumed inside
-                # dead-code branches; we elide the assignments.
+                    # ---- Rule 4: positive pulse for non-terminal fall-rise ----
+                    # C ph_inton2.c lines 1499-1590 -- this whole block
+                    # sits at depth 5 (inside ``if (had_hatend)``), NOT
+                    # at the syllable-loop scope. A prior revision of
+                    # the port had it un-nested, which made the comma-
+                    # impulse pair fire on every FCBNEXT phone whether
+                    # or not a hat-fall was pending. The C only walks
+                    # this path when ``had_hatend`` was just cleared.
+                    #
+                    # ``NotQuest`` is set at line 1505/1510 but only
+                    # consumed inside dead-code branches; we elide the
+                    # assignments.
 
-                # C precedence (faithful): &&-chain || boundary==FQUENEXT.
-                rule4_a = (
-                    pDph_t.clausetype != DECLARATIVE
-                    and stresscur != 0
-                    and (struccur & FBOUNDARY) == FCBNEXT
-                )
-                rule4_b = (struccur & FBOUNDARY) == FQUENEXT
-                if rule4_a or rule4_b:
-                    delayf0 = pDph_t.allodurs[nphon] - NF80MS
-                    pDph_t.delta_special = 0
-
-                    if (struccur & FBOUNDARY) == FQUENEXT:
-                        # Spanish / LA / German Q-impulse calls don't
-                        # fire on US English path.
+                    # C precedence (faithful): &&-chain || boundary==FQUENEXT.
+                    rule4_a = (
+                        pDph_t.clausetype != DECLARATIVE
+                        and stresscur != 0
+                        and (struccur & FBOUNDARY) == FCBNEXT
+                    )
+                    rule4_b = (struccur & FBOUNDARY) == FQUENEXT
+                    if rule4_a or rule4_b:
+                        delayf0 = pDph_t.allodurs[nphon] - NF80MS
                         pDph_t.delta_special = 0
-                    else:
-                        pDph_t.delta_special = -50
-                        delayf0 -= NF20MS
 
-                        # BATS#709: first comma in a clause uses one
-                        # timing; subsequent ones use another.
-                        if pDph_t.commacnt == 0:
-                            _f0(IMPULSE, 42, F0_CGesture1, 3, 22)
-                            _f0(
-                                IMPULSE,
-                                42,
-                                F0_CGesture2,
-                                pDph_t.allodurs[nphon] >> 1,
-                                18,
-                            )
+                        if (struccur & FBOUNDARY) == FQUENEXT:
+                            # Spanish / LA / German Q-impulse calls don't
+                            # fire on US English path.
+                            pDph_t.delta_special = 0
                         else:
-                            _f0(IMPULSE, 420, F0_CGesture1, delayf0, 24)
-                            _f0(
-                                IMPULSE,
-                                420,
-                                F0_CGesture2,
-                                pDph_t.allodurs[nphon] >> 1,
-                                24,
-                            )
-                        pDph_t.commacnt += 1
+                            pDph_t.delta_special = -50
+                            delayf0 -= NF20MS
+
+                            # BATS#709: first comma in a clause uses one
+                            # timing; subsequent ones use another.
+                            if pDph_t.commacnt == 0:
+                                _f0(IMPULSE, 42, F0_CGesture1, 3, 22)
+                                _f0(
+                                    IMPULSE,
+                                    42,
+                                    F0_CGesture2,
+                                    pDph_t.allodurs[nphon] >> 1,
+                                    18,
+                                )
+                            else:
+                                _f0(IMPULSE, 420, F0_CGesture1, delayf0, 24)
+                                _f0(
+                                    IMPULSE,
+                                    420,
+                                    F0_CGesture2,
+                                    pDph_t.allodurs[nphon] >> 1,
+                                    24,
+                                )
+                            pDph_t.commacnt += 1
 
             # Rule 31 (lines 1604-1731): "code still being hit" debug
             # branch. Only fires when had_hatend was just re-armed and
