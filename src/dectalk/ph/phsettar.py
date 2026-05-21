@@ -53,7 +53,7 @@ from dectalk.ph.make_dip import make_dip
 from dectalk.ph.math_helpers import mlsh1
 from dectalk.ph.numeric_constants import AREAB, AREAL, F1, F2, TILT
 from dectalk.ph.parameter_tables import divtab, partyp
-from dectalk.ph.q14_percent_constants import N15PRCNT, N25PRCNT
+from dectalk.ph.q14_percent_constants import N10PRCNT, N15PRCNT, N25PRCNT
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.us_back_smooth_rules import us_back_smooth_rules
 from dectalk.ph.us_forw_smooth_rules import us_forw_smooth_rules
@@ -157,6 +157,27 @@ def phsettar(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915
                 np_param.tarcur += mlsh1(p_dph_t.arg1, p_dph_t.arg2)
 
             np_param.tarend = np_param.tarcur
+
+            # 4b. Companion tarnex coarticulation -- mirrors ph_setar.c
+            # lines 848-995 ("Compute (approx.) general coartic of
+            # tarnex with tarend"). After tarend has been adjusted by
+            # block 4 above, this block pulls tarnex toward tarend by
+            # N10PRCNT (default) or N15PRCNT (unstressed F1/F3) or
+            # N25PRCNT (unstressed F2). The C source comment calls
+            # this "BAD, FIX IT IF POSSIBLE" but the rule fires in
+            # the production HLSYN build, so the port preserves it
+            # verbatim.
+            if p_dphsettar.par_type == _PARTYPE_FORM_FREQ:
+                p_dph_t.arg2 = N10PRCNT
+                if (struccur & FSTRESS) == 0:
+                    p_dph_t.arg2 = N15PRCNT
+                    if p_dphsettar.np == F2:
+                        p_dph_t.arg2 = N25PRCNT
+                if np_param.tarnex <= 0:
+                    p_dph_t.arg1 = np_param.tarend
+                else:
+                    p_dph_t.arg1 = np_param.tarend - np_param.tarnex
+                np_param.tarnex += mlsh1(p_dph_t.arg1, p_dph_t.arg2)
 
         # 5a. Forward-smooth default bouval / durtran -- mirrors
         # ph_setar.c lines 1003-1004:
