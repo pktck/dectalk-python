@@ -34,10 +34,12 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
+from dectalk.include.phoneme_codes import PFUSA, USPhoneme
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import (
     FBOUNDARY,
@@ -50,6 +52,7 @@ from dectalk.ph.feature_bits import (
     FWBNEXT,
 )
 from dectalk.ph.ph_setallofeats import ph_setallofeats
+from dectalk.ph.utterance_constants import GEN_SIL
 
 _SRC_ROOT = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src"))
 _C_ALOPH2 = _SRC_ROOT / "src/dapi/src/ph/ph_aloph2.c"
@@ -186,11 +189,8 @@ def test_sentence_final_word_gets_pernext_sentends() -> None:
     """
     # "buy" -> [SIL, B, AY1, SIL]. B and AY both have direct
     # USPhoneme entries (unlike HH/L/NG -- issue #61's alias gap).
-    from dectalk.include.phoneme_codes import PFUSA, USPhoneme
-    from dectalk.ph.utterance_constants import GEN_SIL
-
-    B = (PFUSA << 8) | int(USPhoneme.B)
-    AY = (PFUSA << 8) | int(USPhoneme.AY)
+    B = (PFUSA << 8) | int(USPhoneme.B)  # noqa: N806
+    AY = (PFUSA << 8) | int(USPhoneme.AY)  # noqa: N806
     allophons = [GEN_SIL, B, AY, GEN_SIL]
     p_dph_t = _make_dph_t_with_allophons(allophons)
 
@@ -212,14 +212,11 @@ def test_sentence_final_word_gets_pernext_sentends() -> None:
 
 def test_mid_clause_word_gets_fwbnext() -> None:
     """Non-final words get ``FWBNEXT`` on the last syllabic phone."""
-    from dectalk.include.phoneme_codes import PFUSA, USPhoneme
-    from dectalk.ph.utterance_constants import GEN_SIL
-
     # "go now" -> [SIL, G, OW1, N, AW1, SIL].
-    G = (PFUSA << 8) | int(USPhoneme.G)
-    OW = (PFUSA << 8) | int(USPhoneme.OW)
-    N = (PFUSA << 8) | int(USPhoneme.N)
-    AW = (PFUSA << 8) | int(USPhoneme.AW)
+    G = (PFUSA << 8) | int(USPhoneme.G)  # noqa: N806
+    OW = (PFUSA << 8) | int(USPhoneme.OW)  # noqa: N806
+    N = (PFUSA << 8) | int(USPhoneme.N)  # noqa: N806
+    AW = (PFUSA << 8) | int(USPhoneme.AW)  # noqa: N806
     allophons = [GEN_SIL, G, OW, N, AW, GEN_SIL]
     p_dph_t = _make_dph_t_with_allophons(allophons)
 
@@ -240,10 +237,7 @@ def test_mid_clause_word_gets_fwbnext() -> None:
 
 def test_unstressed_arpabet_decodes_to_fnostress() -> None:
     """Unstressed vowels (``AH0``) decode to ``FNOSTRESS``."""
-    from dectalk.include.phoneme_codes import PFUSA, USPhoneme
-    from dectalk.ph.utterance_constants import GEN_SIL
-
-    AH = (PFUSA << 8) | int(USPhoneme.AH)
+    AH = (PFUSA << 8) | int(USPhoneme.AH)  # noqa: N806
     allophons = [GEN_SIL, AH, GEN_SIL]
     p_dph_t = _make_dph_t_with_allophons(allophons)
 
@@ -257,10 +251,7 @@ def test_unstressed_arpabet_decodes_to_fnostress() -> None:
 
 def test_secondary_stress_decodes_to_fstress_2() -> None:
     """``AH2`` decodes to ``FSTRESS_2``."""
-    from dectalk.include.phoneme_codes import PFUSA, USPhoneme
-    from dectalk.ph.utterance_constants import GEN_SIL
-
-    AH = (PFUSA << 8) | int(USPhoneme.AH)
+    AH = (PFUSA << 8) | int(USPhoneme.AH)  # noqa: N806
     allophons = [GEN_SIL, AH, GEN_SIL]
     p_dph_t = _make_dph_t_with_allophons(allophons)
 
@@ -280,24 +271,23 @@ def test_phinton_produces_nf0tot_gt_zero_on_hello_world() -> None:
     ``allofeats[]``, ``phinton`` saw all-zero feature words and
     emitted nothing.
     """
-    import os as _os
-    import sys
-
     # Run via the actual speak() entry point with the full pipeline
     # gated on. Snapshot nf0tot by monkey-patching phinton.
-    _saved_disable = _os.environ.get("DECTALK_DISABLE_CAPI")
-    _saved_full = _os.environ.get("DECTALK_FULL_PIPELINE")
-    _os.environ["DECTALK_DISABLE_CAPI"] = "1"
-    _os.environ["DECTALK_FULL_PIPELINE"] = "1"
+    _saved_disable = os.environ.get("DECTALK_DISABLE_CAPI")
+    _saved_full = os.environ.get("DECTALK_FULL_PIPELINE")
+    os.environ["DECTALK_DISABLE_CAPI"] = "1"
+    os.environ["DECTALK_FULL_PIPELINE"] = "1"
 
     # Force a fresh import so the env vars take effect.
     for mod in [m for m in list(sys.modules) if m.startswith("dectalk")]:
         del sys.modules[mod]
 
     try:
-        import dectalk
-        import dectalk.api.speak as speak_mod
-        import dectalk.ph.phinton as phinton_mod
+        # Late imports intentional: env vars above must take effect on
+        # a fresh dectalk import (sys.modules was just cleared).
+        import dectalk  # noqa: PLC0415
+        import dectalk.api.speak as speak_mod  # noqa: PLC0415
+        import dectalk.ph.phinton as phinton_mod  # noqa: PLC0415
 
         captured: dict[str, int] = {"nf0tot": -1}
         _orig = phinton_mod.phinton
@@ -321,10 +311,10 @@ def test_phinton_produces_nf0tot_gt_zero_on_hello_world() -> None:
     finally:
         # Restore env vars so other tests aren't affected.
         if _saved_disable is None:
-            _os.environ.pop("DECTALK_DISABLE_CAPI", None)
+            os.environ.pop("DECTALK_DISABLE_CAPI", None)
         else:
-            _os.environ["DECTALK_DISABLE_CAPI"] = _saved_disable
+            os.environ["DECTALK_DISABLE_CAPI"] = _saved_disable
         if _saved_full is None:
-            _os.environ.pop("DECTALK_FULL_PIPELINE", None)
+            os.environ.pop("DECTALK_FULL_PIPELINE", None)
         else:
-            _os.environ["DECTALK_FULL_PIPELINE"] = _saved_full
+            os.environ["DECTALK_FULL_PIPELINE"] = _saved_full
