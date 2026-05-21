@@ -15,7 +15,6 @@ from __future__ import annotations
 # ruff: noqa: PLR2004, SIM102 -- C-literal magic numbers and nested ifs kept
 from typing import cast
 
-from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.usp_codes import (
     USP_CH,
     USP_DH,
@@ -24,7 +23,6 @@ from dectalk.include.usp_codes import (
     USP_HX,
     USP_JH,
     USP_LL,
-    USP_M,
     USP_N,
     USP_P,
     USP_S,
@@ -61,13 +59,11 @@ from dectalk.ph.numeric_constants import (
     B2,
     B3,
     F1,
-    F2,
     F3,
     FEMALE,
     TILT,
 )
 from dectalk.ph.phoneme_features import (
-    F2BACKI,
     FNASAL,
     FOBST,
     FPLOSV,
@@ -77,7 +73,6 @@ from dectalk.ph.phoneme_features import (
     FSYLL,
     FVOICD,
 )
-from dectalk.ph.rom_tables import us_place
 from dectalk.ph.setloc import setloc
 from dectalk.ph.timing import begtyp, endtyp
 from dectalk.ph.tts_handle import TtsHandle
@@ -165,29 +160,21 @@ def us_back_smooth_rules(  # noqa: PLR0912, PLR0915
                     p_dphsettar.durtran = NF20MS
                 if (feacur & FPLOSV) != 0:
                     p_dphsettar.durtran = p_dph_t.durfon
-                    if p_dphsettar.np == F1 and (feacur & FVOICD) == 0:
-                        p_dphsettar.bouval += 100
+                    # F1 += 100 at offset of voiceless plosive.
+                    # SKIPPED on the libtts_us.so build target: the C source
+                    # at p_us_st1.c lines 975-980 guards this block with
+                    # ``#if (defined FAKE_HLSYN || !defined HLSYN)``, so the
+                    # HLSYN build (ours) compiles it out.
 
             # Higher formant transitions slow inside a nasal.
-            if (feacur & FNASAL) != 0:
-                p_dphsettar.durtran = p_dph_t.durfon
-                if p_dphsettar.np == F1:
-                    p_dphsettar.durtran = 0
-                # Lower F2 & F3 of [n] nasal murmur before front vowels.
-                elif p_dphsettar.phcur in (USP_N, USP_EN) and begtyp(p_dphsettar.phonex) == 1:
-                    if p_dphsettar.np == F2:
-                        p_dphsettar.bouval -= 100
-                        if (us_place[p_dphsettar.phonex & PVALUE] & F2BACKI) != 0:
-                            p_dphsettar.bouval -= 100
-                    if p_dphsettar.np == F3:
-                        p_dphsettar.bouval -= 100
-                # Lower F2 of [m] murmur near [i,y,yu,ir].
-                elif (
-                    p_dphsettar.np == F2
-                    and p_dphsettar.phcur == USP_M
-                    and (us_place[p_dphsettar.phonex & PVALUE] & F2BACKI) != 0
-                ):
-                    p_dphsettar.bouval -= 150
+            # SKIPPED entirely on the libtts_us.so build target: the C source
+            # at p_us_st1.c lines 984-1015 wraps the whole block (including
+            # the outer ``if (feacur & FNASAL)``, durtran=durfon, the F1 jump
+            # to 0, and all F2/F3/M sub-branches) in
+            # ``#if (defined FAKE_HLSYN || !defined HLSYN)``, so the HLSYN
+            # build (ours) compiles it out. The HLSyn-area-based formant
+            # adjustment in hlframe.c (un-ported; wait for Phase E) is the
+            # HLSYN replacement for these rules.
 
         # Shrink tran dur inside sonor if sonor short.
         if (feacur & FOBST) == 0 and begtyp(p_dphsettar.phonex) != 4 and p_dphsettar.durtran > 0:
