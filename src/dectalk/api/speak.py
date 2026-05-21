@@ -332,20 +332,29 @@ def _speak_via_python_full(
 
     phinton(handle)
 
-    # 7. ph_draw consumes the per-parameter state phsettar wrote and
-    # walks frame-by-frame, producing a sequence of Klatt LLFrames.
-    # PR #22 will land a partial port; this is the next named gap.
-    raise NotImplementedError(
-        "DECTALK_FULL_PIPELINE: ph_draw frame emission not yet wired. "
-        f"phsettar has walked all {nallotot} allophones and populated "
-        "DphT.param[]; the next step is ph_draw to produce a "
-        "list[LLFrame], then _pump_frames_to_samples() to synthesise."
-    )
+    # 7. ph_draw: walk the per-parameter state phsettar wrote into a
+    # Klatt-frame stream. The port is partial -- the outer skeleton
+    # (F1..B3 / AV..TILT trajectories + spectral tilt + formant
+    # scaling) is real, but the four big un-translated chunks
+    # (HLSyn area loop / initial-silence anticipation / per-frame
+    # HLSyn state machine / F0 modulation) each raise
+    # NotImplementedError with a named tag.
+    from dectalk.ph.phdraw import phdraw  # noqa: PLC0415
 
-    # 8. (Below — will execute once ph_draw is wired.) Pump the frames
-    # through ll_synthesize to produce int16 samples.
-    # frames = ph_draw(handle)
-    # return _pump_frames_to_samples(frames, voice_preset)
+    phdraw(handle)
+
+    # 8. (Pending.) phdraw populates DphT.parstochip with raw param
+    # words rather than emitting list[LLFrame] directly. Once the
+    # four phdraw chunks land plus a parstochip->LLFrame adapter,
+    # the call below pumps frames through ll_synthesize. For now
+    # we surface the named gap.
+    raise NotImplementedError(
+        "DECTALK_FULL_PIPELINE: phdraw completed its outer skeleton "
+        f"for {nallotot} allophones, populating DphT.parstochip. The "
+        "remaining work is (a) finish the four named ph_draw chunks "
+        "and (b) write a parstochip -> LLFrame adapter so "
+        "_pump_frames_to_samples() can synthesise audio."
+    )
 
 
 def _speak_via_python(
