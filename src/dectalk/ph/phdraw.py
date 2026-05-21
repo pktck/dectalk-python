@@ -139,7 +139,6 @@ from dectalk.ph.phoneme_features import (
     BLADEAFFECTED,
     FBURST,
     FCONSON,
-    FGLOTTAL,
     FLABIAL,
     FNASAL,
     FOBST,
@@ -153,8 +152,8 @@ from dectalk.ph.phoneme_features import (
     FVOWEL,
 )
 from dectalk.ph.timing import begtyp, phone_feature, place
-from dectalk.ph.utterance_constants import GEN_SIL
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.utterance_constants import GEN_SIL
 from dectalk.vtm.frac import frac4mul
 
 # ---- HLSyn area loop constants (ph_draw.c lines 761-907). ------------------
@@ -952,7 +951,6 @@ def _phdraw_initial_silence_anticipation_unported() -> None:
     return None
 
 
-
 def _phdraw_gen_sil_ending(  # noqa: PLR0912 — branches mirror C body
     p_dph_t: DphT,
 ) -> None:
@@ -1158,9 +1156,7 @@ def _phdraw_regular_phoneme_branch(  # noqa: PLR0912, PLR0915 — branches mirro
         if cur_feat & FVOICD:
             if cur_feat & FOBST:
                 # Voiced obstruent.
-                if p_dph_t.dcstep > 0 and p_dph_t.tcum >= (
-                    p_dph_t.allodurs[p_dph_t.nphone] - 4
-                ):
+                if p_dph_t.dcstep > 0 and p_dph_t.tcum >= (p_dph_t.allodurs[p_dph_t.nphone] - 4):
                     # C lines 1370-1380: decrement dcstep at the tail of
                     # a voiced obstruent.
                     p_dph_t.dcstep -= 1
@@ -1178,22 +1174,18 @@ def _phdraw_regular_phoneme_branch(  # noqa: PLR0912, PLR0915 — branches mirro
             elif not (cur_feat & FOBST) or p_dph_t.area_n != 0:
                 # Non-obstruent or open velum -> decay toward zero.
                 p_dph_t.dcstep -= 2
-                if p_dph_t.dcstep < 0:
-                    p_dph_t.dcstep = 0
-        else:
-            # C lines 1445-1480: unvoiced current phone, dcstep != 0.
-            if (cur_feat & FOBST) and p_dph_t.area_n == 0:
-                # Unvoiced obstruent on dcstep<0 path.
-                if p_dph_t.dcstep > 0:
-                    p_dph_t.dcstep -= 1
-                if p_dph_t.dcstep > -9:
-                    p_dph_t.dcstep -= 1
-            elif not (cur_feat & FOBST) or p_dph_t.area_n != 0:
-                # Non-obstruent or open velum on unvoiced path
-                # -> decay toward zero from below.
-                p_dph_t.dcstep += 2
-                if p_dph_t.dcstep > 0:
-                    p_dph_t.dcstep = 0
+                p_dph_t.dcstep = max(p_dph_t.dcstep, 0)
+        elif (cur_feat & FOBST) and p_dph_t.area_n == 0:
+            # Unvoiced obstruent on dcstep<0 path.
+            if p_dph_t.dcstep > 0:
+                p_dph_t.dcstep -= 1
+            if p_dph_t.dcstep > -9:
+                p_dph_t.dcstep -= 1
+        elif not (cur_feat & FOBST) or p_dph_t.area_n != 0:
+            # Non-obstruent or open velum on unvoiced path
+            # -> decay toward zero from below.
+            p_dph_t.dcstep += 2
+            p_dph_t.dcstep = min(p_dph_t.dcstep, 0)
 
         # C lines 1492-1503: write OUT_DC / OUT_UE from the lookup
         # tables. The C source dispatches on FLABIAL place but both
@@ -1240,6 +1232,7 @@ def _phdraw_regular_phoneme_branch(  # noqa: PLR0912, PLR0915 — branches mirro
     else:
         # C line 1590: non-emphasized -> reset.
         p_dph_t.stress_pulse = 0
+
 
 def _phdraw_per_frame_hlsyn_state_machine(  # noqa: PLR0912,PLR0915 — mirrors C body
     p_dph_t: DphT,
