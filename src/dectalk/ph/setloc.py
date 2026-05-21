@@ -17,8 +17,7 @@ Flow:
    obstruent isn't actually an obstruent, or the sonorant is one.
 4. Pick a per-language locus table (``us_maleloc``/``us_femloc`` /
    ``uk_*`` / ``gr_*`` / ``la_*`` / ``sp_*`` / ``fr_*``) via the
-   font byte and ``malfem`` toggle. The Python port currently only
-   wires up the US path.
+   font byte and ``malfem`` toggle.
 5. Read ``locus`` / ``prcnt`` / ``durtran`` triple from the locus
    table.
 6. Apply F2-back / palatal-dental tweaks.
@@ -53,9 +52,12 @@ from dectalk.include.phoneme_codes import (
 )
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
+from dectalk.ph.fr_locus_tables import fr_femloc, fr_maleloc
 from dectalk.ph.get_phone import get_phone
 from dectalk.ph.getbegtar import getbegtar
 from dectalk.ph.getendtar import getendtar
+from dectalk.ph.gr_locus_tables import gr_femloc, gr_maleloc
+from dectalk.ph.la_locus_tables import la_femloc, la_maleloc
 from dectalk.ph.math_helpers import muldv
 from dectalk.ph.numeric_constants import F1, F2, F3, MALE
 from dectalk.ph.phoneme_features import F2BACKF, F2BACKI, FDENTAL, FPALATL, FVOWEL
@@ -65,9 +67,11 @@ from dectalk.ph.sonor_classes import (
     OBSTRUENT,
     ROUNDED_SONOR_CONS,
 )
+from dectalk.ph.sp_locus_tables import sp_femloc, sp_maleloc
 from dectalk.ph.task_helpers import mstofr
 from dectalk.ph.timing import begtyp, endtyp, phone_feature, place, plocu
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.uk_locus_tables import uk_femloc, uk_maleloc
 from dectalk.ph.vv_coartic_across_c import vv_coartic_across_c
 
 _FONT_USA: int = PFUSA << PSFONT
@@ -152,26 +156,36 @@ def setloc(  # noqa: PLR0912, PLR0915 -- faithful translation of 260-line C func
         else:
             p_dph_t.p_locus = list(us_femloc)
     elif tmp == _FONT_UK:
-        # Kept for parity with the C source; pending uk_*loc tables.
-        _ = UK_TOT_ALLOPHONES
-        raise NotImplementedError(
-            "setloc: UK locus tables (uk_maleloc / uk_femloc) not yet ported."
-        )
+        ploc = plocu(fonobst + (UK_TOT_ALLOPHONES * (sontyx - 1)))
+        if p_dph_t.malfem == MALE:
+            p_dph_t.p_locus = list(uk_maleloc)
+        else:
+            p_dph_t.p_locus = list(uk_femloc)
     elif tmp == _FONT_GR:
-        _ = GR_TOT_ALLOPHONES
-        raise NotImplementedError(
-            "setloc: German locus tables (gr_maleloc / gr_femloc) not yet ported."
-        )
+        ploc = plocu(fonobst + (GR_TOT_ALLOPHONES * (sontyx - 1)))
+        if p_dph_t.malfem == MALE:
+            p_dph_t.p_locus = list(gr_maleloc)
+        else:
+            p_dph_t.p_locus = list(gr_femloc)
     elif tmp == _FONT_LA:
-        _ = LA_TOT_ALLOPHONES
-        raise NotImplementedError("setloc: Latin-American Spanish locus tables not yet ported.")
+        ploc = plocu(fonobst + (LA_TOT_ALLOPHONES * (sontyx - 1)))
+        if p_dph_t.malfem == MALE:
+            p_dph_t.p_locus = list(la_maleloc)
+        else:
+            p_dph_t.p_locus = list(la_femloc)
     elif tmp == _FONT_SP:
-        _ = SP_TOT_ALLOPHONES
-        raise NotImplementedError("setloc: Castilian Spanish locus tables not yet ported.")
+        ploc = plocu(fonobst + (SP_TOT_ALLOPHONES * (sontyx - 1)))
+        if p_dph_t.malfem == MALE:
+            p_dph_t.p_locus = list(sp_maleloc)
+        else:
+            p_dph_t.p_locus = list(sp_femloc)
     elif tmp == _FONT_FR:
-        raise NotImplementedError(
-            "setloc: French locus tables not yet ported (C uses literal 40 here)."
-        )
+        # C uses literal 40 as the stride for FR (not FR_TOT_ALLOPHONES).
+        ploc = plocu(fonobst + (40 * (sontyx - 1)))
+        if p_dph_t.malfem == MALE:
+            p_dph_t.p_locus = list(fr_maleloc)
+        else:
+            p_dph_t.p_locus = list(fr_femloc)
 
     if ploc == 0:
         # No locus entry; caller falls back to the default smooth calc.

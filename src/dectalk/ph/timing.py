@@ -291,18 +291,40 @@ def plocu(index: int) -> int:
             return all_plocu[index>>8][index&0xFF];
         }
 
-    The ``plocu`` table maps a phone code to an index into the
-    ``flocu`` / ``malamp`` / ``femamp`` parallel-formant arrays.
-    Used in ph_setar.c when assigning fricative friction targets.
+    The ``plocu`` table maps a phone code to an index into the locus
+    tables (``{lang}_maleloc`` / ``{lang}_femloc``).  The C source
+    dispatches via ``all_plocu[index>>8]`` — the upper byte selects the
+    per-language table, the lower byte is the allophone code.
 
     Args:
-        index: 16-bit font-encoded phone code.
+        index: 16-bit font-encoded phone code.  The upper byte encodes
+            the font (PFUSA=0x1E, PFUK=0x1D, PFGR=0x1C, PFSP=0x1B,
+            PFLA=0x1A, PFFR=0x19); the lower byte is the allophone index.
 
     Returns:
-        Index into the per-language locus tables (``us_plocu[code]``).
+        Index into the per-language locus tables.  Returns ``0`` (no
+        locus entry) for fonts without a ``plocu`` table.
     """
+    # Lazy imports to avoid circular deps; these modules only exist on
+    # branches that include the non-US locus tables (this one).
+    from dectalk.ph.fr_locus_tables import fr_plocu  # noqa: PLC0415
+    from dectalk.ph.gr_locus_tables import gr_plocu  # noqa: PLC0415
+    from dectalk.ph.la_locus_tables import la_plocu  # noqa: PLC0415
+    from dectalk.ph.sp_locus_tables import sp_plocu  # noqa: PLC0415
+    from dectalk.ph.uk_locus_tables import uk_plocu  # noqa: PLC0415
+
+    _all_plocu: dict[int, tuple[int, ...]] = {
+        0x1E: us_plocu,  # PFUSA
+        0x1D: uk_plocu,  # PFUK
+        0x1C: gr_plocu,  # PFGR
+        0x1B: sp_plocu,  # PFSP
+        0x1A: la_plocu,  # PFLA
+        0x19: fr_plocu,  # PFFR
+    }
+    font = index >> 8
     code = index & 0xFF
-    return us_plocu[code]
+    table = _all_plocu.get(font, us_plocu)
+    return table[code] if code < len(table) else 0
 
 
 __all__ = [
