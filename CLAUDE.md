@@ -10,6 +10,55 @@ repository. Read this at the start of every session.
 - `docs/TASKS.md` — current open port targets (auto-generated from
   `NotImplementedError` shims).
 
+## Orchestrator role (top-level session)
+
+**The top-level session is an orchestrator, not a coder.** Its job
+is to plan work, create GitHub issues for each port milestone,
+spawn coding agents pointed at those issues, review the resulting
+PRs, manage CI, and merge into `dev`. Do not write code directly
+from this session; delegate every coding task to a sub-agent via
+`Agent(...)`.
+
+This rule keeps the orchestrator's context clean and lets parallel
+agents work without the orchestrator stomping on hot files.
+
+## Issue-driven agent dispatch
+
+**Every coding agent task must be scoped by a GitHub issue.**
+Before spawning a coding agent:
+
+1. Create a GitHub issue via `mcp__github__issue_write` with:
+   - A clear, scoped title (e.g. "Port `us_phtiming` from p_us_tim.c").
+   - A description of what to port, which C file/lines, the
+     acceptance criteria (gates / smoke tests), and a pointer
+     to `docs/PORTING.md` for the per-task playbook.
+   - Labels indicating subsystem (`area/ph`, `area/hlsyn`, etc.)
+     and rough size (`size/small`, `size/medium`, `size/large`).
+2. Spawn the agent with a prompt that **references the issue
+   number** (e.g. "Working on #42: port `us_phtiming` from
+   `p_us_tim.c` ..."). The agent's PR description should also
+   reference the issue with a `Closes #42` line so the merge
+   auto-closes the issue.
+3. Every commit the agent makes should reference the issue in
+   the commit body's trailer: `Refs: #42` (or `Closes: #42` on
+   the final commit).
+
+This requirement does **not** apply retroactively to in-progress
+agent tasks spawned before this rule was added; let those finish
+without forcing them through the issue gate.
+
+The orchestrator's coding-agent prompts should be short -- the
+issue body carries the detail. A prompt like:
+
+```
+Issue: pktck/dectalk-python#42
+Branch: claude/port-us-phtiming-issue-42
+Read the issue body for full scope. Push the branch when done;
+do not open a PR (orchestrator handles that).
+```
+
+is the right shape.
+
 ## Agent attribution
 
 This repo is co-authored by humans and AI agents, all surfacing on
