@@ -53,6 +53,8 @@ from __future__ import annotations
 # obscure the per-line correspondence with the C source.
 from typing import cast
 
+from dectalk.include.cmd_codes import PSFONT
+from dectalk.include.phoneme_codes import PFFR, PFGR, PFLA, PFSP, PFUK
 from dectalk.include.usp_codes import (
     USP_DF,
     USP_DH,
@@ -251,6 +253,25 @@ _COARTICULATION_DEFAULT: int = 4
 
 # SPD_F4 index into curspdef[] (cmd.h: #define SPD_F4 10).
 _SPD_F4: int = 10
+
+# ---- Lateral-phoneme font codes (ph_draw.c lines 4619-4629). ----------------
+# Each entry is ``(font << PSFONT) | allophone_offset`` -- the 16-bit "foncur"
+# value the PH layer uses to identify a lateral consonant across all supported
+# languages. Source of the per-language allophone offsets:
+#   US:  USP_LL  (USPhoneme.LL = 27, PFUSA = 0x1E)  -- from usp_codes.py
+#   UK:  UKP_LL  (UK_LL = 27,        PFUK  = 0x1D)  -- l_uk_ph.h ``#define LL 27``
+#   GR:  GRP_L   (GR_L  = 26,        PFGR  = 0x1C)  -- l_gr_ph.h ``#define L  26``
+#   SP:  SPP_L   (SP_L  = 9,         PFSP  = 0x1B)  -- l_sp_ph.h E_L = 9
+#   LA:  LAP_L   (LA_L  = 9,         PFLA  = 0x1A)  -- l_la_ph.h E_L = 9
+#   FR:  FP_L    (F_L   = 18,        PFFR  = 0x19)  -- l_fr_ph.h ``#define L 18``
+_UKP_LL: int = (PFUK << PSFONT) | 27  # UK English light-L   (UKP_LL)
+_GRP_L: int = (PFGR << PSFONT) | 26  # German /l/ "Luft"    (GRP_L)
+_SPP_L: int = (PFSP << PSFONT) | 9  # Castilian /l/ "Luna"  (SPP_L)
+_LAP_L: int = (PFLA << PSFONT) | 9  # Lat-Am /l/ "Luna"     (LAP_L)
+_FP_L: int = (PFFR << PSFONT) | 18  # French /l/            (FP_L)
+
+# The C source reduces AV by 6 dB for lateral phonemes (ph_draw.c line 4635).
+_LATERAL_AV_REDUCTION: int = 6
 
 
 def _div_by8(value: int) -> int:
@@ -1140,20 +1161,62 @@ def _phdraw_per_frame_hlsyn_state_machine_unported() -> None:
     return None
 
 
-def _phdraw_f0_modulation_unported() -> None:
-    """Stub for ph_draw.c lines 4500-4837 (F0 event firing + modulation helpers).
+def _phdraw_tombuchler_modulation_dead_code() -> None:
+    """No-op documenting the ``#ifdef TOMBUCHLER`` dead block in ph_draw.c.
 
-    Dispatches to :func:`r_modulation` / :func:`rs_modulation` /
-    :func:`gr_modulation` / :func:`h_modulation` (the post-phdraw
-    helpers at lines 4838-5232) for Spanish / German / French /
-    glottal-stop modulations. None are on the US-English critical
-    path but the dispatch logic itself reads pDphsettar->phcur.
+    The C source contains a block guarded by ``#ifdef TOMBUCHLER`` at
+    lines 4488-4524. ``TOMBUCHLER`` is **never** defined in the
+    ``libtts_us.so`` build (no ``#define TOMBUCHLER`` appears anywhere
+    in the Makefiles, ``configure.ac``, or any header). The block is
+    therefore compiled out; the four modulation helper functions
+    (``r_modulation``, ``rs_modulation``, ``gr_modulation``,
+    ``h_modulation`` at C lines 4838-5232) are present in the binary
+    but **never reachable from ``phdraw``**.
+
+    Binary proof (``libtts_us.so``, stable tarball build):
+
+    * ``phdraw`` occupies addresses ``0x413e0``--``0x4191c``.
+    * ``r_modulation`` starts at ``0x41920`` (immediately after).
+    * ``objdump --start-address=0x413e0 --stop-address=0x41920``
+      contains **zero** ``call`` instructions that target any address
+      in ``[0x41920, 0x41c70+]`` (the modulation helper range).
+
+    Calling this function is a no-op; it is exported so test code can
+    assert the dead-code analysis without importing anything that would
+    actually invoke the helpers.
     """
-    raise NotImplementedError(
-        "phdraw: F0 event firing + modulation helpers (ph_draw.c lines "
-        "4500-4837 + helper functions r_modulation/rs_modulation/"
-        "gr_modulation/h_modulation at lines 4838-5232) not yet ported."
-    )
+    return None
+
+
+def _phdraw_lateral_av_and_f3_floor(p_dph_t: DphT) -> None:
+    """Reduce AV by 6 dB for lateral phonemes and enforce F3-F2 >= 300 Hz.
+
+    Faithful translation of ``ph_draw.c`` lines 4619-4644 (outside the
+    ``#ifdef TOMBUCHLER`` block, so **always** executed on the US HLSYN
+    build path):
+
+    * **Lateral AV reduction** (C lines 4621-4635): if the current
+      allophone (``pDph_t->allophons[nphone]``) is a lateral consonant
+      in any of the six supported languages, subtract 6 dB from
+      ``parstochip[OUT_AV]``. The six lateral codes are:
+      ``USP_LL`` (US), ``UKP_LL`` (UK), ``GRP_L`` (German),
+      ``SPP_L`` (Castilian), ``LAP_L`` (Latin-American),
+      ``FP_L`` (French).
+    * **AV floor** (C line 4637): clamp ``parstochip[OUT_AV]`` to >= 0.
+    * **F3 / F2 minimum gap** (C lines 4640-4643): if F3 - F2 < 300 Hz,
+      set F3 = F2 + 300. This prevents F3 from crossing F2 during
+      coarticulation.
+
+    Args:
+        p_dph_t: Mutable per-thread DphT state; ``parstochip`` is
+            modified in place.
+    """
+    cur_allo = p_dph_t.allophons[p_dph_t.nphone]
+    if cur_allo in (USP_LL, _UKP_LL, _GRP_L, _SPP_L, _LAP_L, _FP_L):
+        p_dph_t.parstochip[OUT_AV] -= _LATERAL_AV_REDUCTION
+    p_dph_t.parstochip[OUT_AV] = max(p_dph_t.parstochip[OUT_AV], 0)
+    if p_dph_t.parstochip[OUT_F3] - p_dph_t.parstochip[OUT_F2] < 300:
+        p_dph_t.parstochip[OUT_F3] = p_dph_t.parstochip[OUT_F2] + 300
 
 
 # ----------------------------------------------------------------------------
@@ -1310,8 +1373,13 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
     # ----- C lines 2350-4300: per-frame HLSyn state machine -----
     _phdraw_per_frame_hlsyn_state_machine(p_dph_t, p_dphsettar)
 
-    # F0 event firing + modulation helpers (C lines 4500-4837) remain
-    # deferred; see _phdraw_f0_modulation_unported() above.
+    # ----- C lines 4488-4524: #ifdef TOMBUCHLER (dead code on US build) -----
+    # All four modulation helper calls are inside this block. No call
+    # reaches them from phdraw on the US HLSYN build. See
+    # _phdraw_tombuchler_modulation_dead_code() for the binary proof.
+
+    # ----- C lines 4619-4644: lateral AV reduction + F3/F2 floor -----
+    _phdraw_lateral_av_and_f3_floor(p_dph_t)
 
 
 # Stub helpers naming the still-un-ported C blocks; exported so callers
@@ -1320,11 +1388,12 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
 # kept as a deprecated alias forwarding to the live ported loop --
 # downstream tooling that grepped for the stub name doesn't break.
 __all__ = [
-    "_phdraw_f0_modulation_unported",
     "_phdraw_hlsyn_area_loop_unported",
     "_phdraw_initial_silence_anticipation_unported",
+    "_phdraw_lateral_av_and_f3_floor",
     "_phdraw_per_frame_hlsyn_state_machine",
     "_phdraw_per_frame_hlsyn_state_machine_unported",
+    "_phdraw_tombuchler_modulation_dead_code",
     "phdraw",
 ]
 

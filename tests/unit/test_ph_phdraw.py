@@ -754,3 +754,166 @@ def test_state_machine_non_flap_phone_sets_area_flap_1200() -> None:
     p_dph_t.area_flap = 42
     phdraw(handle)
     assert p_dph_t.area_flap == 1200
+
+
+# ----- Lateral AV reduction + F3/F2 floor (ph_draw.c lines 4619-4644) -------
+# These two unconditional rules are active on the US HLSYN build and are
+# ported by _phdraw_lateral_av_and_f3_floor(), called at the end of phdraw().
+
+
+def test_lateral_av_reduction_fires_for_usp_ll() -> None:
+    """USP_LL allophone triggers the -6 dB AV reduction (ph_draw.c line 4629)."""
+    from dectalk.include.usp_codes import USP_LL  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p = p_dph_t.param[AV]
+    p.tarcur = 40
+    p.ftran = 0
+    p.btran = 0
+    p.tbacktr = 1000
+    p.tspesh = 0
+    p_dph_t.avglstop = 0  # Disable glottal-stop reduction.
+    p_dph_t.allophons = [0, USP_LL, 0]
+    p_dph_t.nphone = 1
+    phdraw(handle)
+    # AV from trajectory = 40; lateral reduction -6 = 34.
+    assert p_dph_t.parstochip[OUT_AV] == 34
+
+
+def test_lateral_av_reduction_clamps_to_zero() -> None:
+    """Lateral AV reduction never takes AV below zero (ph_draw.c line 4633)."""
+    from dectalk.include.usp_codes import USP_LL  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p = p_dph_t.param[AV]
+    p.tarcur = 3  # After -6 would be -3 -> clamped to 0.
+    p.ftran = 0
+    p.btran = 0
+    p.tbacktr = 1000
+    p.tspesh = 0
+    p_dph_t.avglstop = 0
+    p_dph_t.allophons = [0, USP_LL, 0]
+    p_dph_t.nphone = 1
+    phdraw(handle)
+    assert p_dph_t.parstochip[OUT_AV] == 0
+
+
+def test_lateral_av_reduction_skipped_for_non_lateral() -> None:
+    """A non-lateral allophone does not trigger the AV reduction."""
+    from dectalk.include.usp_codes import USP_R  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p = p_dph_t.param[AV]
+    p.tarcur = 40
+    p.ftran = 0
+    p.btran = 0
+    p.tbacktr = 1000
+    p.tspesh = 0
+    p_dph_t.avglstop = 0
+    p_dph_t.allophons = [0, USP_R, 0]
+    p_dph_t.nphone = 1
+    phdraw(handle)
+    # No lateral reduction; AV trajectory result is 40.
+    assert p_dph_t.parstochip[OUT_AV] == 40
+
+
+def test_f3_f2_floor_enforces_300hz_gap() -> None:
+    """When F3 - F2 < 300, F3 is raised to F2 + 300 (ph_draw.c lines 4635-4638)."""
+    from dectalk.ph.param_indices import OUT_F2, OUT_F3  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    # F2 = 1500, F3 = 1600 (gap = 100, below the 300-Hz floor).
+    p_f2 = p_dph_t.param[F2]
+    p_f2.tarcur = 1500
+    p_f2.ftran = 0
+    p_f2.btran = 0
+    p_f2.tbacktr = 1000
+    p_f2.tspesh = 0
+    p_f2.dipcum = 0
+    p_f2.deldip = 0
+    p_f2.durlin = -1
+    p_f3 = p_dph_t.param[3]  # F3 param index
+    p_f3.tarcur = 1600
+    p_f3.ftran = 0
+    p_f3.btran = 0
+    p_f3.tbacktr = 1000
+    p_f3.tspesh = 0
+    p_f3.dipcum = 0
+    p_f3.deldip = 0
+    p_f3.durlin = -1
+    phdraw(handle)
+    f2 = p_dph_t.parstochip[OUT_F2]
+    f3 = p_dph_t.parstochip[OUT_F3]
+    assert f3 == f2 + 300, f"Expected F3={f2 + 300}, got F3={f3} (F2={f2})"
+
+
+def test_f3_f2_floor_not_applied_when_gap_sufficient() -> None:
+    """When F3 - F2 >= 300, F3 is left unchanged (ph_draw.c lines 4635-4638)."""
+    from dectalk.ph.param_indices import OUT_F2, OUT_F3  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    # F2 = 1200, F3 = 2500 (gap = 1300 >> 300).
+    p_f2 = p_dph_t.param[F2]
+    p_f2.tarcur = 1200
+    p_f2.ftran = 0
+    p_f2.btran = 0
+    p_f2.tbacktr = 1000
+    p_f2.tspesh = 0
+    p_f2.dipcum = 0
+    p_f2.deldip = 0
+    p_f2.durlin = -1
+    p_f3 = p_dph_t.param[3]  # F3 param index
+    p_f3.tarcur = 2500
+    p_f3.ftran = 0
+    p_f3.btran = 0
+    p_f3.tbacktr = 1000
+    p_f3.tspesh = 0
+    p_f3.dipcum = 0
+    p_f3.deldip = 0
+    p_f3.durlin = -1
+    phdraw(handle)
+    f2 = p_dph_t.parstochip[OUT_F2]
+    f3 = p_dph_t.parstochip[OUT_F3]
+    assert f3 - f2 >= 300
+
+
+def test_tombuchler_block_is_callable_no_op() -> None:
+    """``_phdraw_tombuchler_modulation_dead_code`` is a callable no-op."""
+    from dectalk.ph.phdraw import _phdraw_tombuchler_modulation_dead_code  # noqa: PLC0415
+
+    result = _phdraw_tombuchler_modulation_dead_code()
+    assert result is None
+
+
+@pytest.mark.skipif(
+    not _C_FILE.exists(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
+def test_c_body_has_tombuchler_dead_block() -> None:
+    """C body has the ``#ifdef TOMBUCHLER`` guard (dead code on US HLSYN build)."""
+    body = _extract_body()
+    assert "TOMBUCHLER" in body
+
+
+@pytest.mark.skipif(
+    not _C_FILE.exists(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
+def test_c_body_has_lateral_av_reduction() -> None:
+    """C body has USP_LL in the lateral AV reduction check (ph_draw.c lines 4621-4629)."""
+    body = _extract_body()
+    assert "USP_LL" in body
+    assert re.search(r"parstochip\[OUT_AV\]\s*-=\s*6", body)
+
+
+@pytest.mark.skipif(
+    not _C_FILE.exists(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
+def test_c_body_has_f3_f2_floor() -> None:
+    """C body has the 300-Hz F3/F2 floor rule (ph_draw.c lines 4635-4638)."""
+    body = _extract_body()
+    assert re.search(
+        r"parstochip\[OUT_F3\]\s*-\s*pDph_t->parstochip\[OUT_F2\]\s*<\s*300",
+        body,
+    )
