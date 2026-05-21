@@ -229,8 +229,11 @@ def test_setloc_happy_path_us_s_iy_writes_bouval(
     # Stub getbegtar/getendtar to return a deterministic curval so we
     # don't have to set up the whole gettar/diph chain.
     fake_curval = 700
-    monkeypatch.setattr(setloc_module, "getbegtar", lambda _h, _n: fake_curval)
-    monkeypatch.setattr(setloc_module, "getendtar", lambda _h, _n: fake_curval)
+    def _stub_curval(_h: TtsHandle, _n: int) -> int:
+        return fake_curval
+
+    monkeypatch.setattr(setloc_module, "getbegtar", _stub_curval)
+    monkeypatch.setattr(setloc_module, "getendtar", _stub_curval)
 
     fonobst_us_s = (PFUSA << PSFONT) | int(USPhoneme.S)
     fonsonor_us_iy = (PFUSA << PSFONT) | int(USPhoneme.IY)
@@ -272,8 +275,12 @@ def test_setloc_returns_zero_when_np_above_f3(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Filter rejects when ``np > F3`` -- only F1/F2/F3 get a locus."""
+
     # Even with valid obstruent/sonorant, np > F3 should bail with 0.
-    monkeypatch.setattr(setloc_module, "getbegtar", lambda _h, _n: 500)
+    def _stub_curval(_h: TtsHandle, _n: int) -> int:
+        return 500
+
+    monkeypatch.setattr(setloc_module, "getbegtar", _stub_curval)
     fonobst_us_s = (PFUSA << PSFONT) | int(USPhoneme.S)
     fonsonor_us_iy = (PFUSA << PSFONT) | int(USPhoneme.IY)
     p_dph_t = DphT()
