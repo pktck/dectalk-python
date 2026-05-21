@@ -229,6 +229,7 @@ def test_setloc_happy_path_us_s_iy_writes_bouval(
     # Stub getbegtar/getendtar to return a deterministic curval so we
     # don't have to set up the whole gettar/diph chain.
     fake_curval = 700
+
     def _stub_curval(_h: TtsHandle, _n: int) -> int:
         return fake_curval
 
