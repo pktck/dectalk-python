@@ -325,11 +325,18 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
         )
 
     # 1. Text -> ARPABET phonemes via the existing approximate path.
-    arpabet_phones = _tokens_to_phonemes(
+    # Capture the per-word grouping (rather than a flat phone list) so
+    # ph_setallofeats below can attach FWBNEXT to the last syllabic
+    # allophone of each non-final word and FPERNEXT|FSENTENDS to the
+    # final word -- without those boundary markers, phinton's nextwrdbou
+    # / nextphrbou lookahead never resolves and Rule 4 (final fall)
+    # never fires (issue #63).
+    arpabet_words = _tokens_to_phoneme_words(
         tokenize(text),
         lang=lang,
         lts_fallback=lts_fallback,
     )
+    arpabet_phones = [name for word in arpabet_words for name in word]
     if not arpabet_phones:
         return np.zeros(0, dtype=np.int16)
 
@@ -394,6 +401,21 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     for i, code in enumerate(allophons):
         p_dph_t.allophons[i] = code
     p_dph_t.nallotot = nallotot
+
+    # 4a. Populate allofeats[] from the ARPABET stream (issue #63).
+    # In the C reference, phalloph2/make_out_phonol writes the
+    # per-allophone feature word at the same time it emits each
+    # allophone. The Python pipeline skips phalloph for now, so we
+    # derive the minimum feature set phinton needs (FSTRESS from the
+    # ARPABET stress digit, FWBNEXT / FPERNEXT from word/sentence
+    # boundaries) directly from the front-end data. Must run after
+    # init_phclause (which zeroes allofeats) and the allophons copy
+    # above, but before us_phtiming (which reads FSTRESS for
+    # stressed-vowel duration bumps).
+    from dectalk.ph.ph_setallofeats import ph_setallofeats  # noqa: PLC0415
+
+    ph_setallofeats(p_dph_t, arpabet_words, is_sentence_final=True)
+
     init_timing(
         p_dph_t,
         settar,
@@ -1894,6 +1916,38 @@ def _tokens_to_phonemes(tokens: Iterable[Token], *, lang: str, lts_fallback: boo
         elif token.kind in (TokenKind.PAUSE_SHORT, TokenKind.PAUSE_LONG):
             phonemes.append("SIL")
     return phonemes
+
+
+def _tokens_to_phoneme_words(
+    tokens: Iterable[Token], *, lang: str, lts_fallback: bool
+) -> list[list[str]]:
+    """Internal helper: tokenise into per-word ARPABET groups.
+
+    Variant of :func:`_tokens_to_phonemes` that preserves the per-word
+    grouping. Used by ``_speak_via_python_full`` to thread word-
+    boundary information into ``ph_setallofeats`` so it can attach
+    :data:`~dectalk.ph.feature_bits.FWBNEXT` /
+    :data:`~dectalk.ph.feature_bits.FPERNEXT` to the right allophones.
+
+    Pause tokens (``PAUSE_SHORT`` / ``PAUSE_LONG``) become single-
+    element groups (``["SIL"]``); empty word groups (lookup returned
+    an empty phoneme list -- unusual) are dropped so they don't
+    confuse the word-counting in ``ph_setallofeats``.
+    """
+    words: list[list[str]] = []
+    for token in tokens:
+        if token.kind is TokenKind.WORD:
+            phones = lookup(token.text, lang=lang)
+            if phones is None:
+                if not lts_fallback:
+                    raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
+                phones = lts(token.text)
+            phones_list = list(phones)
+            if phones_list:
+                words.append(phones_list)
+        elif token.kind in (TokenKind.PAUSE_SHORT, TokenKind.PAUSE_LONG):
+            words.append(["SIL"])
+    return words
 
 
 # Re-export the approximate-path symbols so existing imports still resolve.
