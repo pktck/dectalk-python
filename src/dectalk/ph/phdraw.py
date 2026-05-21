@@ -788,19 +788,18 @@ def _phdraw_initial_silence_anticipation(  # noqa: PLR0912, PLR0915 — branches
                     p_dph_t.area_tb = 0
                     p_dph_t.bstep = 0
                     p_dph_t.lstep = 0
-            else:
-                # C lines 1071-1097: obstruent without a burst.
-                if next_place & BLADEAFFECTED:
-                    p_dph_t.in_bclosure = 0
-                    p_dph_t.target_b = _NOM_FRICATIVE_OPENING + 300
-                    p_dph_t.area_b = _NOM_FRICATIVE_OPENING + 300
-                    p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
-                    p_dph_t.area_g = _NOM_VOIC_GLOT_AREA
-                    p_dph_t.agspeed = 3
-                    p_dph_t.target_l = 1000
-                    p_dph_t.target_narea = 0
-                    p_dph_t.bstep = 0
-                    p_dph_t.pressure = 200
+            # C lines 1071-1097: obstruent without a burst.
+            elif next_place & BLADEAFFECTED:
+                p_dph_t.in_bclosure = 0
+                p_dph_t.target_b = _NOM_FRICATIVE_OPENING + 300
+                p_dph_t.area_b = _NOM_FRICATIVE_OPENING + 300
+                p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+                p_dph_t.area_g = _NOM_VOIC_GLOT_AREA
+                p_dph_t.agspeed = 3
+                p_dph_t.target_l = 1000
+                p_dph_t.target_narea = 0
+                p_dph_t.bstep = 0
+                p_dph_t.pressure = 200
 
     # NOTE: the next chunks (lines 1107-1224 and 1226-1242) are
     # **outside** the ``nphone != nphonelast`` once-per-phone guard
