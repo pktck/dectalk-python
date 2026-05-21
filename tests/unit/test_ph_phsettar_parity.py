@@ -334,8 +334,7 @@ def test_phsettar_ftran_normalised_to_dftran_times_durtran() -> None:
 
     handle = _make_phsettar_handle()
     p_dph_t = cast(DphT, handle.p_ph_thread_data)
-    p_dphsettar = p_dph_t.pSTphsettar
-    assert p_dphsettar is not None
+    p_dphsettar = cast(DphSettarSt, p_dph_t.pSTphsettar)
     phsettar(handle)
     p = p_dph_t.param[AV]
     if p.dftran != 0 and p_dphsettar.durtran > 0:
@@ -354,8 +353,7 @@ def test_phsettar_back_smooth_dbtran_uses_bouval_minus_tarend() -> None:
 
     handle = _make_phsettar_handle()
     p_dph_t = cast(DphT, handle.p_ph_thread_data)
-    p_dphsettar = p_dph_t.pSTphsettar
-    assert p_dphsettar is not None
+    p_dphsettar = cast(DphSettarSt, p_dph_t.pSTphsettar)
     phsettar(handle)
     p = p_dph_t.param[AV]
     if p.dbtran != 0:
