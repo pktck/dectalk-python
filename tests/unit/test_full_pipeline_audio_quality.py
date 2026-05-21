@@ -74,3 +74,43 @@ def test_full_pipeline_signal_has_variation(monkeypatch: pytest.MonkeyPatch) -> 
     samples = _speak("hello world", monkeypatch)
     std = int(samples.std())
     assert std > 1000, f"std {std} -- signal stuck near DC?"
+
+
+def test_full_pipeline_inline_command_is_stripped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``[:rate N]`` no longer emits spelled-out command audio (issue #64).
+
+    Before the parse-routing fix, ``[:rate 250] testing one two three``
+    produced ~34540 samples because the full pipeline tokenised the
+    literal ``[:``, ``rate``, ``250``, ``]`` as words and LTS-spelled
+    them ("rate two hundred and fifty …"). After the fix, the directive
+    mutates per-segment state and the rendered audio is only the
+    content phrase (much shorter — the rate=2.5x WPM also compresses
+    duration in the full pipeline's current wiring).
+    """
+    samples = _speak("[:rate 250] testing one two three", monkeypatch)
+    # Bare "testing one two three" at rate=1.0 produces ~11-22k samples
+    # (see parametrize bounds above for similar prompts). With the
+    # spelled-out "rate two hundred and fifty" stripped out, the rendered
+    # audio is strictly under that — and far less than the pre-fix 34540.
+    assert samples.size < 20_000, (
+        f"inline [:rate 250] not stripped — got {samples.size} samples "
+        "(suggests command words leaked into LTS as in issue #64)"
+    )
+    # Non-empty: the content phrase still synthesises.
+    assert samples.size > 1500, f"content phrase missing — got {samples.size} samples"
+
+
+def test_full_pipeline_inline_voice_change_synthesises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``[:dv NAME]`` selects a voice without spelling out ``dv``/``NAME``."""
+    samples = _speak("[:dv betty] hello", monkeypatch)
+    # Should be similar in size to plain "hello" — the ``[:dv betty]``
+    # directive mutates state without emitting phones.
+    plain = _speak("hello", monkeypatch)
+    # Within 50% of plain "hello" size (allow some slack for voice
+    # parameter differences once those are threaded through).
+    assert 0.5 * plain.size <= samples.size <= 1.5 * plain.size, (
+        f"[:dv betty] hello={samples.size}, plain hello={plain.size} -- "
+        "the command may have leaked into the phone stream"
+    )
