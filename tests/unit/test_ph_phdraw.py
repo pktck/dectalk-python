@@ -1101,3 +1101,281 @@ def test_c_body_has_initial_silence_nom_constants() -> None:
     assert "NOM_Open_Glottis" in body
     assert "NOM_VOICED_OBSTRUENT" in body
     assert "NOM_Fricative_Opening" in body
+
+
+# ----- GEN_SIL ending-silence tests (ph_draw.c lines 1245-1332) ---------------
+# These exercise :func:`_phdraw_gen_sil_ending`, which fires only when
+# the current allophone is the special ``GEN_SIL`` filler.
+
+
+def _build_gen_sil_handle(
+    prev_allo: int,
+    *,
+    pressure: int = 500,
+    pressure_drop: int = 0,
+) -> tuple[TtsHandle, DphT, DphSettarSt]:
+    """Construct a handle with ``allophons[nphone] == GEN_SIL``."""
+    from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
+
+    handle, p_dph_t, p_dphsettar = _build_handle()
+    p_dph_t.nphone = 2
+    p_dph_t.nphonelast = 1  # First frame of the ending silence.
+    p_dph_t.allophons = [0, prev_allo, GEN_SIL, 0]
+    p_dph_t.allofeats = [0, 0, 0, 0]
+    p_dph_t.allodurs = [40, 40, 40, 40]
+    p_dph_t.pressure = pressure
+    p_dph_t.pressure_drop = pressure_drop
+    return handle, p_dph_t, p_dphsettar
+
+
+def test_gen_sil_skipped_when_not_gen_sil() -> None:
+    """No mutation when current allophone is not ``GEN_SIL``."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.nphone = 1
+    p_dph_t.allophons = [USP_AA, USP_AA, USP_AA]
+    p_dph_t.pressure = 500
+    p_dph_t.pressure_drop = 0
+    _phdraw_gen_sil_ending(p_dph_t)
+    # pressure_drop must not have ramped.
+    assert p_dph_t.pressure_drop == 0
+
+
+def test_gen_sil_pressure_drop_ramps_when_pressure_above_gate() -> None:
+    """Pressure drop ramps by 150 when pressure > 100 (C lines 1249-1259)."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
+
+    _handle, p_dph_t, _ = _build_gen_sil_handle(
+        USP_AA, pressure=500, pressure_drop=0
+    )
+    p_dph_t.nphonelast = p_dph_t.nphone  # Skip first-frame block.
+    _phdraw_gen_sil_ending(p_dph_t)
+    assert p_dph_t.pressure_drop == 150
+
+
+def test_gen_sil_pressure_drop_saturates_at_2000() -> None:
+    """Pressure drop saturates at the 2000 cap (C lines 1250-1259)."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
+
+    _handle, p_dph_t, _ = _build_gen_sil_handle(
+        USP_AA, pressure=500, pressure_drop=2000
+    )
+    p_dph_t.nphonelast = p_dph_t.nphone
+    _phdraw_gen_sil_ending(p_dph_t)
+    assert p_dph_t.pressure_drop == 2000  # Did not increment further.
+
+
+def test_gen_sil_pressure_drop_gated_below_100() -> None:
+    """Pressure ≤ 100 -> pressure_drop is not incremented (C line 1249)."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
+
+    _handle, p_dph_t, _ = _build_gen_sil_handle(
+        USP_AA, pressure=50, pressure_drop=0
+    )
+    p_dph_t.nphonelast = p_dph_t.nphone
+    _phdraw_gen_sil_ending(p_dph_t)
+    assert p_dph_t.pressure_drop == 0  # Gate kept the increment off.
+
+
+def test_gen_sil_first_frame_opens_lips_for_non_labial_previous() -> None:
+    """Non-labial previous phone opens lips (target_l = 1000) (C line 1295)."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
+
+    _handle, p_dph_t, _ = _build_gen_sil_handle(USP_AA)
+    p_dph_t.target_l = 0
+    _phdraw_gen_sil_ending(p_dph_t)
+    assert p_dph_t.target_l == 1000
+
+
+def test_gen_sil_first_frame_closes_blade_for_blade_affected_previous() -> None:
+    """Blade-affected previous closes blade (target_b = 0) (C lines 1296-1308)."""
+    from dectalk.include.usp_codes import USP_S  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
+
+    _handle, p_dph_t, _ = _build_gen_sil_handle(USP_S)
+    p_dph_t.target_b = 1000
+    _phdraw_gen_sil_ending(p_dph_t)
+    # USP_S is FALVEL (blade-affected) -> close blade.
+    assert p_dph_t.target_b == 0
+    assert p_dph_t.in_lclosure == 0
+
+
+def test_gen_sil_obstruent_previous_sets_wide_target_ag() -> None:
+    """Obstruent previous sets target_ag = 2500 (C line 1321)."""
+    from dectalk.include.usp_codes import USP_S  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
+
+    _handle, p_dph_t, _ = _build_gen_sil_handle(USP_S)
+    _phdraw_gen_sil_ending(p_dph_t)
+    # USP_S is unvoiced obstruent -> target_ag widened then narrowed
+    # (line 1321 then 1326). Final value is 1800 from the unvoiced
+    # branch.
+    assert p_dph_t.target_ag == 1800
+
+
+# ----- Regular-phoneme branch tests (ph_draw.c lines 1333-2398) ---------------
+# These exercise :func:`_phdraw_regular_phoneme_branch`, which is the
+# partial port covering dcstep / pressure / stress_pulse only.
+
+
+def test_regular_branch_skipped_at_nphone_zero() -> None:
+    """No mutation when ``nphone == 0`` (the initial-silence branch handles it)."""
+    from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.nphone = 0
+    p_dph_t.dcstep = 0
+    p_dph_t.pressure = 100
+    _phdraw_regular_phoneme_branch(p_dph_t)
+    assert p_dph_t.pressure == 100  # Pressure build skipped.
+
+
+def test_regular_branch_skipped_for_gen_sil() -> None:
+    """No mutation when current allo is ``GEN_SIL`` (handled elsewhere)."""
+    from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
+    from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.nphone = 1
+    p_dph_t.allophons = [0, GEN_SIL, 0]
+    p_dph_t.pressure = 100
+    _phdraw_regular_phoneme_branch(p_dph_t)
+    assert p_dph_t.pressure == 100
+
+
+def test_regular_branch_pressure_build_subsumed_by_state_machine() -> None:
+    """The pressure-build sub-block (C lines 1525-1538) is intentionally
+    commented out in the regular-phoneme branch port because the per-frame
+    HLSyn state machine already does the voiced +70 pressure build at
+    C lines ~2858-2867. Porting it twice would double-count.
+    """
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.nphone = 1
+    p_dph_t.allophons = [USP_AA, USP_AA, USP_AA]
+    p_dph_t.allofeats = [0, 0, 0]
+    p_dph_t.allodurs = [40, 40, 40]
+    p_dph_t.pressure = 100
+    p_dph_t.dcstep = 0
+    p_dph_t.area_n = 0
+    _phdraw_regular_phoneme_branch(p_dph_t)
+    # Pressure must NOT be incremented here -- the state machine does it.
+    assert p_dph_t.pressure == 100
+
+
+def test_regular_branch_dcstep_init_for_voiced_obstruent() -> None:
+    """Voiced obstruent with phonestep≥1 inits dcstep=1 (C lines 1341-1350)."""
+    from dectalk.include.usp_codes import USP_Z  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.nphone = 1
+    p_dph_t.allophons = [USP_Z, USP_Z, USP_Z]
+    p_dph_t.allofeats = [0, 0, 0]
+    p_dph_t.allodurs = [40, 40, 40]
+    p_dph_t.pressure = 100
+    p_dph_t.dcstep = 0
+    p_dph_t.uestep = 0
+    p_dph_t.area_n = 0
+    p_dph_t.phonestep = 2
+    _phdraw_regular_phoneme_branch(p_dph_t)
+    # USP_Z is FOBST & FVOICD -> dcstep init to +1.
+    # Then advances on the dcstep > 0 path via the (in-condition)
+    # write at C line ~1380. Acceptable end values are 1 or 2.
+    assert p_dph_t.dcstep > 0
+
+
+def test_regular_branch_dcstep_init_for_unvoiced_obstruent() -> None:
+    """Unvoiced obstruent with phonestep≥1 inits dcstep=-1 (C lines 1351-1357)."""
+    from dectalk.include.usp_codes import USP_S  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.nphone = 1
+    p_dph_t.allophons = [USP_S, USP_S, USP_S]
+    p_dph_t.allofeats = [0, 0, 0]
+    p_dph_t.allodurs = [40, 40, 40]
+    p_dph_t.pressure = 100
+    p_dph_t.dcstep = 0
+    p_dph_t.uestep = 0
+    p_dph_t.area_n = 0
+    p_dph_t.phonestep = 2
+    _phdraw_regular_phoneme_branch(p_dph_t)
+    # USP_S is FOBST & !FVOICD -> dcstep init to -1.
+    # The dcstep<0 unvoiced-obstruent path then advances it negative.
+    assert p_dph_t.dcstep < 0
+
+
+def test_regular_branch_emphasis_stress_pulse_ramps_up() -> None:
+    """Emphasized syllable ramps stress_pulse up at end (C lines 1571-1577)."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.feature_bits import FEMPHASIS  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.nphone = 1
+    p_dph_t.allophons = [USP_AA, USP_AA, USP_AA]
+    p_dph_t.allofeats = [0, FEMPHASIS, 0]
+    p_dph_t.allodurs = [40, 40, 40]
+    p_dph_t.tcum = 35  # Past the (allodurs - NF130MS=20) gate.
+    p_dph_t.dcstep = 0
+    p_dph_t.area_n = 0
+    p_dph_t.stress_pulse = 0
+    p_dph_t.pressure = 100
+    _phdraw_regular_phoneme_branch(p_dph_t)
+    # Late part of an emphasized syllable -> stress_pulse += 10.
+    assert p_dph_t.stress_pulse == 10
+
+
+def test_regular_branch_non_emphasis_resets_stress_pulse() -> None:
+    """Non-emphasized syllable resets stress_pulse to 0 (C line ~1590)."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.nphone = 1
+    p_dph_t.allophons = [USP_AA, USP_AA, USP_AA]
+    p_dph_t.allofeats = [0, 0, 0]  # No FEMPHASIS bits.
+    p_dph_t.allodurs = [40, 40, 40]
+    p_dph_t.tcum = 35
+    p_dph_t.dcstep = 0
+    p_dph_t.area_n = 0
+    p_dph_t.stress_pulse = 50  # Pre-existing value.
+    p_dph_t.pressure = 100
+    _phdraw_regular_phoneme_branch(p_dph_t)
+    assert p_dph_t.stress_pulse == 0
+
+
+@pytest.mark.skipif(
+    not _C_FILE.exists(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
+def test_c_body_has_gen_sil_ending_branch() -> None:
+    """C body has the ``GEN_SIL`` ending-silence branch (lines 1245-1332)."""
+    body = _extract_body()
+    assert "pDph_t->allophons[pDph_t->nphone] == GEN_SIL" in body
+    assert "pDph_t->pressure_drop +=150" in body
+    assert "Now we're at ending silence" in body
+
+
+@pytest.mark.skipif(
+    not _C_FILE.exists(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
+def test_c_body_has_regular_phoneme_dcstep_block() -> None:
+    """C body has the dcstep init / tracker (lines 1337-1503)."""
+    body = _extract_body()
+    assert "pDph_t->dcstep == 0" in body
+    assert "pDph_t->dcstep=1" in body
+    assert "pDph_t->dcstep=-1" in body
+    # The dcval / ueval lookup tables.
+    assert "dcval" in body
+    assert "ueval" in body
