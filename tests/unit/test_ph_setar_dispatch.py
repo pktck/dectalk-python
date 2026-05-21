@@ -43,6 +43,7 @@ import pytest
 
 from dectalk.include.usp_codes import USP_AA, USP_K
 from dectalk.kernel.ksd_t import KsdT
+from dectalk.ph import phsettar as phsettar_module
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.getbegtar import getbegtar
@@ -177,8 +178,6 @@ def test_python_phsettar_dispatches_through_gettar() -> None:
     dispatch invisible. After issue #48 the orchestrator must route
     every per-parameter lookup through the wrappers.
     """
-    from dectalk.ph import phsettar as phsettar_module
-
     src = inspect.getsource(phsettar_module)
     # The orchestrator must import from the wrappers, not the leaf.
     assert "from dectalk.ph.gettar import gettar" in src, (
@@ -342,13 +341,13 @@ def test_diphthong_sentinel_routes_through_gettar() -> None:
     # to -2 so gettar returns -2, then put a synthetic 3-entry diph
     # at index 2 of p_diph: [_, _, 1234, 5678, -1, ...] (entries 2..4).
     assert p_dph_t.p_tar is not None
-    p_tar = cast(list[int], p_dph_t.p_tar)
+    p_tar = p_dph_t.p_tar
     f1_offset = (USP_AA & 0xFF) + 0 * 71  # F1 row
     saved_tar = p_tar[f1_offset]
     p_tar[f1_offset] = -2
 
     assert p_dph_t.p_diph is not None
-    p_diph = cast(list[int], p_dph_t.p_diph)
+    p_diph = p_dph_t.p_diph
     saved_diph = (p_diph[2], p_diph[3], p_diph[4])
     p_diph[2] = 1234
     p_diph[3] = 5678
