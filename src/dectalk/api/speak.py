@@ -219,8 +219,9 @@ def _arpabet_to_us_allophone(name: str) -> int | None:
 
 
 def _build_arpabet_alias() -> dict[str, USPhoneme]:
-    """Build the ARPABET→USPhoneme alias table consulted by
-    :func:`_arpabet_to_us_allophone`.
+    """Build the ARPABET→USPhoneme alias table.
+
+    Consulted by :func:`_arpabet_to_us_allophone`.
 
     The keys are CMU-ARPABET symbols (already stress-stripped, upper-
     cased) that do *not* share their name with the DECtalk
