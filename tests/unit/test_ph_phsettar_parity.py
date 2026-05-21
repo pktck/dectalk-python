@@ -302,3 +302,63 @@ def test_phsettar_breathysw_zeros_on_silence() -> None:
     p_dph_t.breathysw = 1
     phsettar(handle)
     assert p_dph_t.breathysw == 0
+
+
+# ---- ph_setar.c lines 1003-1199 smoothing-formula port -----
+
+
+def test_phsettar_btran_initialised_to_zero() -> None:
+    """Backward smoothing leaves ``btran = 0`` (ph_setar.c line 1186).
+
+    Pre-fix the Python port set ``btran = bouval`` -- the wrong shape;
+    the C source uses ``btran = 0`` and lets ``dbtran`` carry the
+    per-frame accumulation.
+    """
+    from dectalk.ph.numeric_constants import AV  # noqa: PLC0415
+
+    handle = _make_phsettar_handle()
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    phsettar(handle)
+    assert p_dph_t.param[AV].btran == 0
+
+
+def test_phsettar_ftran_normalised_to_dftran_times_durtran() -> None:
+    """Forward smoothing ends with ``ftran = dftran * durtran``.
+
+    ph_setar.c line 1075's final step re-normalises ``ftran`` so the
+    per-frame ``ftran -= dftran`` walk converges to zero exactly at
+    frame ``durtran``. Pre-fix the Python port skipped the
+    normalisation, so the walk diverged with the wrong sign.
+    """
+    from dectalk.ph.numeric_constants import AV  # noqa: PLC0415
+
+    handle = _make_phsettar_handle()
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    p_dphsettar = p_dph_t.pSTphsettar
+    assert p_dphsettar is not None
+    phsettar(handle)
+    p = p_dph_t.param[AV]
+    if p.dftran != 0 and p_dphsettar.durtran > 0:
+        assert p.ftran == p.dftran * p_dphsettar.durtran
+
+
+def test_phsettar_back_smooth_dbtran_uses_bouval_minus_tarend() -> None:
+    """``dbtran`` sign matches ``(bouval - tarend)`` (ph_setar.c line 1191).
+
+    Pre-fix the Python port computed ``(tarend - bouval)`` -- opposite
+    sign. Each phdraw frame does ``btran += dbtran``, so the wrong
+    sign caused unbounded growth of the trajectory and saturated
+    the synthesiser output.
+    """
+    from dectalk.ph.numeric_constants import AV  # noqa: PLC0415
+
+    handle = _make_phsettar_handle()
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    p_dphsettar = p_dph_t.pSTphsettar
+    assert p_dphsettar is not None
+    phsettar(handle)
+    p = p_dph_t.param[AV]
+    if p.dbtran != 0:
+        sign_bouval_minus_tarend = (p_dphsettar.bouval - p.tarend) > 0
+        sign_dbtran = p.dbtran > 0
+        assert sign_bouval_minus_tarend == sign_dbtran
