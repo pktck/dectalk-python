@@ -955,7 +955,7 @@ def test_initial_silence_defaults_set_when_first_frame() -> None:
     from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_init_silence_handle(USP_AA)
+    _handle, p_dph_t, _ = _build_init_silence_handle(USP_AA)
     # Pre-populate with sentinel values that should be reset.
     p_dph_t.last_real_phon = 5
     p_dph_t.area_g = 999
@@ -993,7 +993,7 @@ def test_initial_silence_voiced_vowel_next_opens_glottis() -> None:
     from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_init_silence_handle(USP_AA)
+    _handle, p_dph_t, _ = _build_init_silence_handle(USP_AA)
     _phdraw_initial_silence_anticipation(p_dph_t)
     # FVOWEL & FVOICD next -> area_g = 0, agspeed = 1, area_l = 1000.
     assert p_dph_t.area_g == 0
@@ -1009,7 +1009,7 @@ def test_initial_silence_dh_next_clamps_target_b_to_zero() -> None:
     """USP_DH next-phone triggers the special closure rule (C lines 1226-1242)."""
     from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_init_silence_handle(USP_DH)
+    _handle, p_dph_t, _ = _build_init_silence_handle(USP_DH)
     _phdraw_initial_silence_anticipation(p_dph_t)
     assert p_dph_t.target_b == 0
 
@@ -1018,7 +1018,7 @@ def test_initial_silence_th_next_clamps_target_b_to_zero() -> None:
     """USP_TH next-phone triggers the special closure rule (C lines 1226-1242)."""
     from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_init_silence_handle(USP_TH)
+    _handle, p_dph_t, _ = _build_init_silence_handle(USP_TH)
     _phdraw_initial_silence_anticipation(p_dph_t)
     assert p_dph_t.target_b == 0
 
@@ -1028,7 +1028,7 @@ def test_initial_silence_unvoiced_next_opens_glottis_wide() -> None:
     from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
 
     # USP_TH is unvoiced fricative (FOBST but not FVOICD).
-    handle, p_dph_t, _ = _build_init_silence_handle(USP_TH)
+    _handle, p_dph_t, _ = _build_init_silence_handle(USP_TH)
     _phdraw_initial_silence_anticipation(p_dph_t)
     # The unvoiced-else branch fires (line 1218); but the DH/TH
     # special-rule below it sets target_b = 0 -- doesn't touch area_g.
@@ -1041,7 +1041,7 @@ def test_initial_silence_m_next_drops_lips() -> None:
     from dectalk.include.usp_codes import USP_M as _USP_M  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_init_silence_handle(_USP_M)
+    _handle, p_dph_t, _ = _build_init_silence_handle(_USP_M)
     _phdraw_initial_silence_anticipation(p_dph_t)
     # FNASAL + FVOICD; USP_M sets target_ag = NOM_VOIC_GLOT_AREA = 0.
     assert p_dph_t.target_ag == 0
@@ -1065,7 +1065,7 @@ def test_initial_silence_n_next_sets_target_ag() -> None:
     from dectalk.include.usp_codes import USP_N as _USP_N  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_init_silence_handle(_USP_N)
+    _handle, p_dph_t, _ = _build_init_silence_handle(_USP_N)
     _phdraw_initial_silence_anticipation(p_dph_t)
     # USP_N matches the C source's `==USP_N` branch (line 1173).
     assert p_dph_t.target_ag == 0  # NOM_VOIC_GLOT_AREA on US.
