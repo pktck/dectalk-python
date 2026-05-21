@@ -62,6 +62,7 @@ import math
 from dectalk.hlsyn.ll_frame_n import LLFrameN
 from dectalk.hlsyn.llsyn import LLFrame
 from dectalk.hlsyn.log10_table import dt_f_log10
+from dectalk.hlsyn.nasalf1x import set_nasals_f1x
 from dectalk.hlsyn.place_constants import BLADE, DORSUM, LIPS, LIQUID
 from dectalk.hlsyn.tongue_acx_f1c import tongue_acx_f1c
 from dectalk.hlsyn.unused_ll_parameters import unused_ll_parameters
@@ -616,9 +617,7 @@ def hl_synthesize_ll_frame(
 
     # Step 4: SetNasals_f1x — nasal pole/zero placement.
     # hlframe.c line 158: SetNasals_f1x(frame, speaker, state, llframe)
-    # SHIMMED: nasalf1x.c not yet ported (Phase E). LLFrameN defaults
-    # for NFNP/NBNP/NFNZ/NBNZ are 0, which removes those resonators.
-    # (nasalf1x.c lines 1-200; citation: hlframe.c line 158)
+    set_nasals_f1x(frame, speaker, state, llframe_n)
 
     # Step 5: source amplitudes (AV / AF / AH).
     # hlframe.c line 162: SourceAmplitudes(frame, speaker, state, oldstate, llframe)
