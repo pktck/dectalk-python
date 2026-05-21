@@ -311,6 +311,15 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     # unchanged. Without this seed, fnscale stays 0 and every formant
     # collapses to ``(4096 - 0) >> N`` regardless of the per-phone target.
     p_dph_t.fnscale = _us_paul_spd.fnscale
+    # malfem: 1=MALE, 0=FEMALE. Loaded from the voice's SPD_CHIP.sex field.
+    # Paul is MALE (sex=1). TODO: thread through voice selection properly.
+    p_dph_t.malfem = _us_paul_spd.sex
+    # F0 parameters derived from speaker definition (ph_vset.c lines 610-619).
+    # QU=40 -> f0_lp_filter=1500+15*40=2100; AP=100 -> f0minimum=(100-12)*10=880
+    # (HLSYN formula); PR=100 -> f0scalefac=100*41=4100.
+    p_dph_t.f0_lp_filter = 1500 + 15 * 40  # QU=40 for Paul
+    p_dph_t.f0minimum = (100 - 12) * 10  # AP=100 for Paul, HLSYN: (AP-12)*10
+    p_dph_t.f0scalefac = 100 * 41  # PR=100 for Paul
     settar = DphSettarSt()
     settar.initsw = 1  # Skip the very-first-call getbegtar seeding loop.
     p_dph_t.pSTphsettar = settar
@@ -349,11 +358,17 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     # (hat-rise / stress impulses / comma+question gestures /
     # continuation rises / baseline reset / dummy schwa). Writes
     # f0tar / f0type / f0length / f0tim on DphT.
+    from dectalk.ph.init_clause import init_clause  # noqa: PLC0415
     from dectalk.ph.parstochip_to_frames import (  # noqa: PLC0415
         parstochip_to_llframe_delayed,
     )
     from dectalk.ph.phdraw import phdraw  # noqa: PLC0415
     from dectalk.ph.phinton import phinton  # noqa: PLC0415
+    from dectalk.ph.pht0draw import pht0draw  # noqa: PLC0415
+
+    # init_clause sets nf0ev=-2 (hard init) so pht0draw's first call
+    # performs a full hard+soft initialisation — matching ph_claus.c.
+    init_clause(p_dph_t)
 
     phinton(handle)
 
@@ -364,9 +379,9 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     #     duration, advance ``nphone`` (returning when allophones run
     #     out), reset ``tcum``, set ``durfon`` from ``allodurs``, and
     #     re-run phsettar for the new allophone.
+    #   * Call pht0draw to generate the F0 contour for this frame,
+    #     writing ``parstochip[OUT_T0]``.
     #   * Call phdraw to update ``parstochip[]`` for this frame.
-    #     (pht0draw isn't ported yet -- the adapter uses a static
-    #     122 Hz fallback when OUT_T0 stays zero.)
     #   * Convert ``parstochip[]`` to an LLFrame and append.
     #
     # The first iteration enters the "advance" branch (tcum starts at
@@ -397,6 +412,7 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
                 p_dph_t.allodurs[p_dph_t.nphone] if p_dph_t.allodurs[p_dph_t.nphone] > 0 else 40
             )
             phsettar(handle)
+        pht0draw(handle)
         phdraw(handle)
         frames.append(parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip))
         previous_parstochip = list(p_dph_t.parstochip)
