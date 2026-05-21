@@ -63,4 +63,22 @@ divtab: Final[tuple[int, ...]] = (
 """50-entry mulsh() lookup: ``divtab[n] = round(16384 / n)`` for n=1..49."""
 
 
-__all__ = ["divtab", "parini", "partyp"]
+# -- lineartilt: SPC spectral-tilt linearisation lookup ---------------------
+#
+# Translated from ph_romi.c lines 96-103. ``send_pars()`` in ph_claus.c
+# applies this lookup to ``parstochip[OUT_TLT]`` before shipping the
+# frame to the synthesiser: ``delaypars[OUT_TLT] = lineartilt[parstochip[OUT_TLT]]``
+# (ph_claus.c line 735). The mapping linearises the PH module's
+# internal tilt scale (0..31) to a perceptually-uniform tilt value the
+# Klatt source-spectrum filter expects.
+
+lineartilt: Final[tuple[int, ...]] = (
+    0,  6,  8, 12, 15, 17, 19, 21, 23, 25,
+    26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
+    35, 36, 36, 37, 37, 38, 38, 39, 39, 39,
+    40, 40,
+)  # fmt: skip
+"""32-entry tilt-linearisation lookup (ph_romi.c lines 96-103)."""
+
+
+__all__ = ["divtab", "lineartilt", "parini", "partyp"]

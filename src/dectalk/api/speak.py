@@ -335,7 +335,9 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     # (hat-rise / stress impulses / comma+question gestures /
     # continuation rises / baseline reset / dummy schwa). Writes
     # f0tar / f0type / f0length / f0tim on DphT.
-    from dectalk.ph.parstochip_to_frames import parstochip_to_llframe  # noqa: PLC0415
+    from dectalk.ph.parstochip_to_frames import (  # noqa: PLC0415
+        parstochip_to_llframe_delayed,
+    )
     from dectalk.ph.phdraw import phdraw  # noqa: PLC0415
     from dectalk.ph.phinton import phinton  # noqa: PLC0415
 
@@ -364,6 +366,12 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     # multi-month port. 8000 frames is ~51 s of audio -- well past
     # any reasonable clause.
     max_frames = 8000
+    # One-frame-delay buffer mirroring ph_claus.c's ``delaypars[]``
+    # (lines 706-820). Holds the previous frame's parstochip so the
+    # F1/B1/F2/B2/F3/B3/FZ/A2..A6/AB/AP slots of the *emitted*
+    # LLFrame come from one frame ago, while AV / TL / T0 come from
+    # the current frame.
+    previous_parstochip: list[int] | None = None
     for _ in range(max_frames):
         p_dph_t.tcum += 1
         if p_dph_t.tcum >= p_dph_t.durfon:
@@ -376,7 +384,8 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
             )
             phsettar(handle)
         phdraw(handle)
-        frames.append(parstochip_to_llframe(p_dph_t.parstochip))
+        frames.append(parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip))
+        previous_parstochip = list(p_dph_t.parstochip)
 
     # 7. Pump the collected Klatt frames through ll_synthesize for
     # int16 PCM output.
