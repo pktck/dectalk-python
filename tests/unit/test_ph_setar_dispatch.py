@@ -188,9 +188,7 @@ def test_python_phsettar_dispatches_through_gettar() -> None:
     )
     # And actually call the wrappers in the body.
     assert re.search(r"\bgettar\s*\(\s*phTTS", src), "phsettar must call gettar(phTTS, ...)"
-    assert re.search(r"\bgetbegtar\s*\(\s*phTTS", src), (
-        "phsettar must call getbegtar(phTTS, ...)"
-    )
+    assert re.search(r"\bgetbegtar\s*\(\s*phTTS", src), "phsettar must call getbegtar(phTTS, ...)"
 
 
 # -- Behavioural integration -----------------------------------------------
