@@ -3,8 +3,11 @@
 Re-parses the C body via brace-depth tracking and asserts the
 static locus-computation helper still exists in the develop branch
 with its expected per-language plocu dispatch and obstruent /
-sonorant gating. Also checks the Python shim raises
-``NotImplementedError`` as documented.
+sonorant gating. Also exercises the Python port at the
+filter-rejection boundary (the path callers most often hit when
+phonemes are silence or a non-obstruent leads the pair) and on a
+happy-path with a synthetic US locus table to verify the
+``muldv``-based ``bouval`` write-back.
 
 Skips cleanly when ``DECTALK_SRC`` / ``/tmp/dectalk-src`` is absent.
 """
@@ -17,10 +20,14 @@ from pathlib import Path
 
 import pytest
 
+from dectalk.include.cmd_codes import PSFONT
+from dectalk.include.phoneme_codes import PFUSA, USPhoneme
 from dectalk.kernel.ksd_t import KsdT
+from dectalk.ph import setloc as setloc_module
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
-from dectalk.ph.numeric_constants import F1
+from dectalk.ph.numeric_constants import F1, F2, MALE
+from dectalk.ph.rom_tables import us_maleloc, us_plocu
 from dectalk.ph.setloc import setloc
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.utterance_constants import GEN_SIL
@@ -124,6 +131,55 @@ def test_initfinso_branch() -> None:
     assert re.search(r"initfinso\s*==\s*'i'", body)
 
 
+def test_rounded_sonor_cons_remap_to_back_rounded_vowel() -> None:
+    """Body remaps ROUNDED_SONOR_CONS sonorant class to BACK_ROUNDED_VOWEL locus."""
+    body = _extract_body()
+    assert re.search(r"typso\s*==\s*ROUNDED_SONOR_CONS", body)
+    assert re.search(r"sontyx\s*=\s*BACK_ROUNDED_VOWEL", body)
+
+
+def test_low_vowel_remap_to_back() -> None:
+    """Body remaps low-vowel sonorant (typso == 6) to back-unrounded (sontyx == 2)."""
+    body = _extract_body()
+    # The comment is `typso == 6) //LOW_VOWEL)` in the C source.
+    assert re.search(r"typso\s*==\s*6", body)
+    assert re.search(r"sontyx\s*=\s*2", body)
+
+
+def test_locus_triplet_stride() -> None:
+    """Body adds ``3 * (pDphsettar->np - &PF1)`` to ploc for F1/F2/F3 stride."""
+    body = _extract_body()
+    assert re.search(r"ploc\s*\+\s*\(?\s*3\s*\*\s*\(\s*pDphsettar->np\s*-\s*&PF1\s*\)", body)
+
+
+def test_durtran_via_mstofr() -> None:
+    """Body writes ``pDphsettar->durtran = mstofr(p_locus[ploc+2])``."""
+    body = _extract_body()
+    assert re.search(r"durtran\s*=\s*mstofr\s*\(", body)
+
+
+def test_f2back_affil_branch() -> None:
+    """Body has the F2-back-cavity prcnt-reduction branch."""
+    body = _extract_body()
+    # The C uses ``f2backaffil IS_PLUS`` (a macro) and tests np == &PF2.
+    assert re.search(r"f2backaffil\s+IS_PLUS", body)
+    assert re.search(r"pDphsettar->np\s*==\s*&PF2", body)
+
+
+def test_vv_coartic_branch_calls_helper() -> None:
+    """Body calls ``vv_coartic_across_c`` when both segments are vowels at F2."""
+    body = _extract_body()
+    assert re.search(r"vv_coartic_across_c\s*\(", body)
+    assert re.search(r"phone_feature\(\s*pDph_t\s*,\s*fonsonor\s*\)\s*&\s*FVOWEL", body)
+    assert re.search(r"phone_feature\(\s*pDph_t\s*,\s*fonvowel\s*\)\s*&\s*FVOWEL", body)
+
+
+def test_returns_one_on_success() -> None:
+    """Body ends with ``return (1)`` on the success path."""
+    body = _extract_body()
+    assert re.search(r"return\s*\(\s*1\s*\)", body)
+
+
 # -- Python behavioural tests ----------------------------------------------
 
 
@@ -158,3 +214,78 @@ def test_setloc_final_branch_also_filters_to_zero() -> None:
     """``initfinso == 'f'`` path also returns 0 for silence-silence input."""
     handle = _make_setloc_handle()
     assert setloc(handle, 0, 1, "f", 2, 0) == 0
+
+
+def test_setloc_happy_path_us_s_iy_writes_bouval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """US `S` (obstruent) → `IY` (front vowel) succeeds and writes ``bouval``.
+
+    Walks one full pass through the US-font branch with a synthetic
+    ``curval``. ``S`` has ``us_endtyp == 4`` (OBSTRUENT) and ``IY``
+    has ``us_begtyp == 1`` (FRONT_VOWEL == sontyx 1), so the filter
+    passes and the F1 row of ``us_maleloc`` should be applied.
+    """
+    # Stub getbegtar/getendtar to return a deterministic curval so we
+    # don't have to set up the whole gettar/diph chain.
+    fake_curval = 700
+    monkeypatch.setattr(setloc_module, "getbegtar", lambda _h, _n: fake_curval)
+    monkeypatch.setattr(setloc_module, "getendtar", lambda _h, _n: fake_curval)
+
+    fonobst_us_s = (PFUSA << PSFONT) | int(USPhoneme.S)
+    fonsonor_us_iy = (PFUSA << PSFONT) | int(USPhoneme.IY)
+    fonvowel_us_iy = fonsonor_us_iy
+
+    p_dph_t = DphT()
+    p_dph_t.allophons = [fonobst_us_s, fonsonor_us_iy, fonvowel_us_iy, GEN_SIL]
+    p_dph_t.allofeats = [0] * 4
+    p_dph_t.allodurs = [0] * 4
+    p_dph_t.nallotot = 4
+    p_dph_t.malfem = MALE
+    settar = DphSettarSt()
+    settar.np = F1
+    p_dph_t.pSTphsettar = settar
+    handle = TtsHandle()
+    handle.p_ph_thread_data = p_dph_t
+    handle.p_kernel_share_data = KsdT()
+
+    rc = setloc(handle, nfonobst=0, nfonsonor=1, initfinso="i", nfonvowel=2, feanex=0)
+
+    # Filter passed and a non-zero locus entry exists for S+sontyx=1.
+    assert rc == 1
+
+    # us_plocu[41] == 82 (the IY locus block for /S/). Then F1 stride
+    # is 0, so the triplet is us_maleloc[82..84] == (310, 40, ...).
+    assert us_plocu[int(USPhoneme.S)] == 82
+    locus_freq = us_maleloc[82]
+    prcnt = us_maleloc[83]
+    # bouval = locus + muldv(prcnt, curval - locus, 100)
+    #        = 310 + ((40 * (700 - 310)) / 100) under integer arithmetic.
+    expected_delta = (prcnt * (fake_curval - locus_freq)) // 100
+    assert settar.bouval == locus_freq + expected_delta
+    # The C source's `p_locus` pointer must be assigned to us_maleloc.
+    assert p_dph_t.p_locus is not None
+    assert list(p_dph_t.p_locus[:3]) == list(us_maleloc[:3])
+
+
+def test_setloc_returns_zero_when_np_above_f3(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Filter rejects when ``np > F3`` -- only F1/F2/F3 get a locus."""
+    # Even with valid obstruent/sonorant, np > F3 should bail with 0.
+    monkeypatch.setattr(setloc_module, "getbegtar", lambda _h, _n: 500)
+    fonobst_us_s = (PFUSA << PSFONT) | int(USPhoneme.S)
+    fonsonor_us_iy = (PFUSA << PSFONT) | int(USPhoneme.IY)
+    p_dph_t = DphT()
+    p_dph_t.allophons = [fonobst_us_s, fonsonor_us_iy, GEN_SIL]
+    p_dph_t.allofeats = [0] * 3
+    p_dph_t.allodurs = [0] * 3
+    p_dph_t.nallotot = 3
+    p_dph_t.malfem = MALE
+    settar = DphSettarSt()
+    settar.np = F2 + 10  # above F3
+    p_dph_t.pSTphsettar = settar
+    handle = TtsHandle()
+    handle.p_ph_thread_data = p_dph_t
+    handle.p_kernel_share_data = KsdT()
+    assert setloc(handle, 0, 1, "i", 2, 0) == 0
