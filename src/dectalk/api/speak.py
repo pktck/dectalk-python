@@ -258,7 +258,7 @@ def _build_arpabet_alias() -> dict[str, USPhoneme]:
 _ARPABET_ALIAS: dict[str, USPhoneme] = _build_arpabet_alias()
 
 
-def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically long
+def _speak_via_python_full(
     text: str,
     rate: float,
     voice: str | VoicePreset | None,
@@ -267,40 +267,110 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
 ) -> NDArray[np.int16]:
     """Real PH-stage pipeline -- walks the translated C call chain.
 
-    Gated behind ``DECTALK_FULL_PIPELINE=1``. Calls the real translated
-    Python modules in the order the C source's ph_claus.c would:
+    Gated behind ``DECTALK_FULL_PIPELINE=1``. Routes the input through
+    :func:`dectalk.cmd.parse` so inline ``[:cmd value]`` directives
+    (rate, voice, phoneme-mode) mutate per-segment state instead of
+    leaking into the phone stream, then synthesises each segment via
+    the ported C call chain (``ph_claus.c``-style):
 
       1. tokenize + LTS to build an ARPABET phoneme sequence (uses
          the existing dict + ``lts`` fallback path).
       2. ARPABET symbols -> US allophone codes via the USPhoneme enum.
       3. Populate ``DphT.allophons`` / ``allofeats`` / ``allodurs`` /
          ``nallotot`` from the allophone sequence.
-      4. :func:`init_phclause` for per-clause array setup; default
-         durations (40 frames / phone) until ``init_timing`` is wired.
-      5. Per-nphone loop: :func:`phsettar` writes target/transition
-         state into the shared :class:`~dectalk.ph.dph_t.DphT`.
-      6. (TODO) phinton for F0 contour generation.
-      7. (TODO) ph_draw walks ``param`` into Klatt frames.
-      8. (TODO) hlsyn synthesises samples from the frame stream.
-
-    Steps 6-8 are still missing. The function currently raises
-    :class:`NotImplementedError` AFTER walking the phsettar loop, so
-    you can verify the wiring up to that point executes without
-    error.
+      4. :func:`init_phclause` + :func:`init_timing` + :func:`us_phtiming`
+         for per-clause array setup and per-phone duration assignment.
+      5. :func:`phinton` for F0 contour generation.
+      6. Per-frame driver loop walking ``phsettar`` / ``pht0draw`` /
+         ``phdraw`` and emitting one :class:`~dectalk.hlsyn.llsyn.LLFrame`
+         per 6.4 ms tick.
+      7. :func:`ll_synthesize` pumps frames to int16 PCM.
 
     Args:
-        text: Speech input string.
+        text: Speech input string. May contain ``[:cmd value]``
+            directives that mutate per-segment voice / rate / phoneme
+            mode.
         rate: Multiplicative speaking-rate factor; ``1.0`` is nominal.
-        voice: Voice preset (string name, ``VoicePreset``, or ``None``).
+            Combined multiplicatively with any per-segment ``[:rate N]``.
+        voice: Initial voice preset (string name, ``VoicePreset``, or
+            ``None``). Overridden per-segment by ``[:dv NAME]``.
         lang: Language code; only ``"us"`` is wired for the full path.
         lts_fallback: Allow ``lts()`` for words not in the dictionary.
 
     Returns:
         16-bit PCM samples at the synthesiser's native sample rate.
+    """
+    if lang != "us":
+        raise NotImplementedError(
+            f"DECTALK_FULL_PIPELINE: lang={lang!r} not yet wired; only 'us' is."
+        )
 
-    Raises:
-        NotImplementedError: After the phsettar loop completes. ph_draw
-            / hlsyn frame-synthesis is the named gap.
+    # Route through the inline-command parser so ``[:rate N]`` / ``[:dv]``
+    # / ``[:phoneme on]`` directives become per-segment state mutations
+    # instead of leaking into the phone stream (issue #64).
+    initial_voice = voice if isinstance(voice, str) else None
+    initial_state = SpeechState(voice=initial_voice, rate=rate)
+    segments = parse(text, initial_state=initial_state)
+    if not segments:
+        return np.zeros(0, dtype=np.int16)
+
+    chunks: list[NDArray[np.int16]] = []
+    for seg in segments:
+        # Per-segment voice: a ``[:dv NAME]`` directive overrides the
+        # caller's voice; otherwise we fall back to whatever the caller
+        # passed (which may be a VoicePreset object rather than a name).
+        seg_voice: str | VoicePreset | None
+        if seg.state.voice is not None:
+            seg_voice = seg.state.voice
+        else:
+            seg_voice = voice
+
+        if seg.state.phoneme_mode:
+            # ``[:phoneme on]`` bodies are direct ARPABET; skip the
+            # tokenize + LTS path. We could feed the full pipeline,
+            # but the legacy ``synthesize_phonemes`` is the bit-
+            # accurate-on-its-own-axis route here.
+            phones = seg.body.split()
+            if not phones:
+                continue
+            preset = _resolve_voice(seg_voice)
+            chunks.append(
+                synthesize_phonemes(
+                    phones,
+                    rate=seg.state.rate,
+                    preset=preset,
+                    question=False,
+                )
+            )
+            continue
+
+        chunk = _render_clause_full(
+            seg.body,
+            rate=seg.state.rate,
+            voice=seg_voice,
+            lang=lang,
+            lts_fallback=lts_fallback,
+        )
+        if chunk.size:
+            chunks.append(chunk)
+
+    if not chunks:
+        return np.zeros(0, dtype=np.int16)
+    return np.concatenate(chunks)
+
+
+def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically long
+    text: str,
+    *,
+    rate: float,
+    voice: str | VoicePreset | None,
+    lang: str,
+    lts_fallback: bool,
+) -> NDArray[np.int16]:
+    """Render a single parser segment's body through the full PH pipeline.
+
+    Pure ``[:cmd]``-free text. Called by :func:`_speak_via_python_full`
+    once per :class:`~dectalk.cmd.Segment`.
     """
     from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
     from dectalk.kernel.lang_codes import LANG_english  # noqa: PLC0415
@@ -318,11 +388,6 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     # into the LL synthesizer; the PH module always runs with its
     # default spdef.
     voice_preset = _resolve_voice(voice)
-
-    if lang != "us":
-        raise NotImplementedError(
-            f"DECTALK_FULL_PIPELINE: lang={lang!r} not yet wired; only 'us' is."
-        )
 
     # 1. Text -> ARPABET phonemes via the existing approximate path.
     # Capture the per-word grouping (rather than a flat phone list) so
