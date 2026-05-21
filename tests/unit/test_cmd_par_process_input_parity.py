@@ -246,9 +246,9 @@ def test_invalid_rule_section_writes_message_and_returns() -> None:
         new_input=bytearray(64),
         output_array=out,
         dict_hit_array=bytearray(64),
-        input_indexes=IndexData(),
-        new_input_indexes=IndexData(),
-        output_indexes=IndexData(),
+        input_indexes=[IndexData()],
+        new_input_indexes=[IndexData()],
+        output_indexes=[IndexData()],
         in_lang_flag=0,
         in_mode_flag=0,
         rule=100,
@@ -271,7 +271,11 @@ def test_invalid_message_matches_c_source() -> None:
 
 
 def test_valid_rule_index_proceeds_past_guard() -> None:
-    """A valid rule index proceeds to the deferred driver loop."""
+    """A valid rule index proceeds past the guard into the deferred loop.
+
+    Without tables the function raises NotImplementedError after
+    completing the deterministic preamble (copy_index_list, _init_state).
+    """
     ret = ReturnValue()
     with pytest.raises(NotImplementedError, match="par_process_input rule-driver"):
         par_process_input(
@@ -279,9 +283,9 @@ def test_valid_rule_index_proceeds_past_guard() -> None:
             new_input=bytearray(64),
             output_array=bytearray(64),
             dict_hit_array=bytearray(64),
-            input_indexes=IndexData(),
-            new_input_indexes=IndexData(),
-            output_indexes=IndexData(),
+            input_indexes=[IndexData()] * 8,
+            new_input_indexes=[IndexData()] * 8,
+            output_indexes=[IndexData()] * 8,
             in_lang_flag=0,
             in_mode_flag=0,
             rule=0,
@@ -293,7 +297,7 @@ def test_valid_rule_index_proceeds_past_guard() -> None:
 
 
 def test_notimplemented_cites_c_source_lines() -> None:
-    """The NotImplementedError message names par_pars1.c."""
+    """The NotImplementedError message names par_pars1.c when tables absent."""
     ret = ReturnValue()
     try:
         par_process_input(
@@ -301,9 +305,9 @@ def test_notimplemented_cites_c_source_lines() -> None:
             new_input=bytearray(16),
             output_array=bytearray(16),
             dict_hit_array=bytearray(16),
-            input_indexes=IndexData(),
-            new_input_indexes=IndexData(),
-            output_indexes=IndexData(),
+            input_indexes=[IndexData()] * 4,
+            new_input_indexes=[IndexData()] * 4,
+            output_indexes=[IndexData()] * 4,
             in_lang_flag=0,
             in_mode_flag=0,
             rule=0,
@@ -368,9 +372,9 @@ def test_invalid_rule_section_does_not_mutate_input() -> None:
         new_input=bytearray(64),
         output_array=out,
         dict_hit_array=bytearray(64),
-        input_indexes=IndexData(),
-        new_input_indexes=IndexData(),
-        output_indexes=IndexData(),
+        input_indexes=[IndexData()],
+        new_input_indexes=[IndexData()],
+        output_indexes=[IndexData()],
         in_lang_flag=0,
         in_mode_flag=0,
         rule=99,
@@ -390,9 +394,9 @@ def test_invalid_rule_section_does_not_modify_ret_value() -> None:
         new_input=bytearray(16),
         output_array=bytearray(64),
         dict_hit_array=bytearray(16),
-        input_indexes=IndexData(),
-        new_input_indexes=IndexData(),
-        output_indexes=IndexData(),
+        input_indexes=[IndexData()],
+        new_input_indexes=[IndexData()],
+        output_indexes=[IndexData()],
         in_lang_flag=0,
         in_mode_flag=0,
         rule=99,
