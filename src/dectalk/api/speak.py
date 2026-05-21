@@ -319,11 +319,9 @@ def _speak_via_python_full(
         # Per-segment voice: a ``[:dv NAME]`` directive overrides the
         # caller's voice; otherwise we fall back to whatever the caller
         # passed (which may be a VoicePreset object rather than a name).
-        seg_voice: str | VoicePreset | None
-        if seg.state.voice is not None:
-            seg_voice = seg.state.voice
-        else:
-            seg_voice = voice
+        seg_voice: str | VoicePreset | None = (
+            seg.state.voice if seg.state.voice is not None else voice
+        )
 
         if seg.state.phoneme_mode:
             # ``[:phoneme on]`` bodies are direct ARPABET; skip the
