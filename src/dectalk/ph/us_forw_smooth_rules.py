@@ -35,7 +35,6 @@ from __future__ import annotations
 # ruff: noqa: SIM102 -- C-literal magic numbers and branching kept
 from typing import cast
 
-from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.usp_codes import (
     USP_CH,
     USP_EN,
@@ -43,7 +42,6 @@ from dectalk.include.usp_codes import (
     USP_HX,
     USP_JH,
     USP_LL,
-    USP_M,
     USP_N,
     USP_R,
     USP_S,
@@ -68,10 +66,9 @@ from dectalk.ph.frame_counts import (
     NF130MS,
 )
 from dectalk.ph.math_helpers import mlsh1
-from dectalk.ph.numeric_constants import A3, AP, AV, B1, B2, B3, F1, F2, F3, TILT
+from dectalk.ph.numeric_constants import A3, AP, AV, B1, B2, B3, F1, TILT
 from dectalk.ph.param_indices import OUT_TLT
 from dectalk.ph.phoneme_features import (
-    F2BACKF,
     FNASAL,
     FOBST,
     FPLOSV,
@@ -80,7 +77,6 @@ from dectalk.ph.phoneme_features import (
     FSTOP,
     FVOICD,
 )
-from dectalk.ph.rom_tables import us_place
 from dectalk.ph.setloc import setloc
 from dectalk.ph.sonor_classes import OBSTRUENT
 from dectalk.ph.timing import begtyp, endtyp, phone_feature
@@ -181,10 +177,13 @@ def us_forw_smooth_rules(  # noqa: PLR0912, PLR0915
             # Dummy vowel for final plosive release into silence: skipped
             # (the C source has a comment-out block here).
 
-            # F1 raised at onset of voiceless plosive release
-            if (fealas & FPLOSV) != 0 and (fealas & FVOICD) == 0:
-                if p_dphsettar.np == F1:
-                    p_dphsettar.bouval += 100
+            # F1 += 100 at onset of voiceless plosive release.
+            # SKIPPED on the libtts_us.so build target: the C source
+            # at p_us_st1.c lines 587-595 guards this block with
+            # ``#if (defined FAKE_HLSYN || !defined HLSYN)``, so the
+            # HLSYN build (ours) compiles it out. The HLSyn-area-
+            # based formant adjustment in hlframe.c (also un-ported)
+            # is the C source's HLSYN replacement for this rule.
 
             # Transitions modified inside obstruents
             if (feacur & FOBST) != 0:
@@ -195,27 +194,17 @@ def us_forw_smooth_rules(  # noqa: PLR0912, PLR0915
                 if (feacur & FPLOSV) != 0:
                     p_dphsettar.durtran = p_dph_t.durfon
 
-            # Higher formant transitions slow inside a nasal
+            # Higher formant transitions slow inside a nasal. The C
+            # source's "Lower F2 & F3 of [n]/[m] nasal murmur" sub-
+            # branches below the outer if are FAKE_HLSYN-guarded
+            # (p_us_st1.c lines 618-636) and SKIPPED on the HLSYN
+            # build target. The outer if + F1-jump-to-0 is
+            # unconditional in C, so it stays.
             if (feacur & FNASAL) != 0:
                 p_dphsettar.durtran = p_dph_t.durfon
                 # Except F1, which jumps to value above FNZRO
                 if p_dphsettar.np == F1:
                     p_dphsettar.durtran = 0
-                # Lower F2 & F3 of [n] nasal murmur after front vowels
-                elif p_dphsettar.phcur in (USP_N, USP_EN) and endtyp(pholas) == 1:
-                    if p_dphsettar.np == F2:
-                        p_dphsettar.bouval -= 100
-                        if (us_place[pholas & PVALUE] & F2BACKF) != 0:
-                            p_dphsettar.bouval -= 100
-                    if p_dphsettar.np == F3:
-                        p_dphsettar.bouval -= 100
-                # Lower F2 of [m] nasal murmur near [i,e]
-                elif (
-                    p_dphsettar.np == F2
-                    and p_dphsettar.phcur == USP_M
-                    and (us_place[pholas & PVALUE] & F2BACKF) != 0
-                ):
-                    p_dphsettar.bouval -= 150
 
         # Shrink transition dur inside sonor if sonor short.
         if (feacur & FOBST) == 0 and endtyp(pholas) != OBSTRUENT and p_dphsettar.durtran > 0:
