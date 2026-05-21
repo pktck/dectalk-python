@@ -292,22 +292,25 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     # derive timeref / sprat0 / sprat1 / sprat2 etc.
     wpm = max(75, min(600, round(_DEFAULT_WPM * rate)))
 
+    from dectalk.vtm.spd_chip import default_us_paul_spd  # noqa: PLC0415
+
+    _us_paul_spd = default_us_paul_spd()
+
     p_dph_t = DphT()
     p_dph_t.dipspec = [0] * 256
     p_dph_t.parstochip = [0] * 64
     p_dph_t.last_lang = 0  # forces gettar to load tables on first call.
     p_dph_t.sprate = wpm
-    # ``fnscale`` is the per-voice Q12 formant-frequency scaler. The C
-    # source loads it from the speaker-def table at clause init via
-    # vtm_i.c line 625. The Python port hasn't ported the speaker-def
-    # loader yet, so seed it to 4096 (Q12 unity) so phdraw's formant-
-    # scaling step ``frac4mul(F_n, fnscale) + complement_n`` reduces
-    # to the identity: F_n -> F_n + 0 -- the formant trajectory's
-    # tarcur value flows through unchanged. Without this seed, fnscale
-    # stayed at the default 0, which made every formant collapse to
-    # ``(4096 - 0) >> N`` (256 for F1, 512 for F2, 0 for F3) regardless
-    # of the per-phone target.
-    p_dph_t.fnscale = 4096
+    # ``fnscale`` is the per-voice Q12 formant-frequency scaler loaded
+    # from the speaker-definition table (vtm_i.c line 625 reads it from
+    # SPD_CHIP.fnscale). Load it from the US-Paul defaults so the value
+    # is tied to the canonical voice-table source rather than a bare
+    # literal. For Paul, fnscale = 4096 (Q12 unity, HS = 100 = nominal
+    # head size), so phdraw's ``frac4mul(F_n, fnscale) + complement_n``
+    # reduces to the identity and the formant trajectory flows through
+    # unchanged. Without this seed, fnscale stays 0 and every formant
+    # collapses to ``(4096 - 0) >> N`` regardless of the per-phone target.
+    p_dph_t.fnscale = _us_paul_spd.fnscale
     settar = DphSettarSt()
     settar.initsw = 1  # Skip the very-first-call getbegtar seeding loop.
     p_dph_t.pSTphsettar = settar
