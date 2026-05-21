@@ -70,10 +70,10 @@ def _neutral_frame() -> HLFrame:
     frame.f2 = 1500.0
     frame.f3 = 2500.0
     frame.f4 = 3500.0
-    frame.ag = 4.0   # mm^2 — right at agm for a male
+    frame.ag = 4.0  # mm^2 — right at agm for a male
     frame.al = 0.0
     frame.an = 0.0
-    frame.ps = 8.0   # cmH2O
+    frame.ps = 8.0  # cmH2O
     frame.dc = 0.0
     frame.ap = 0.0
     return frame
@@ -123,9 +123,7 @@ class TestMapGlottalFormantsNotF1:
         assert int(frame.f4) == llframe.NF4
         assert int(male_speaker.F5) == llframe.NF5
 
-    def test_f1c_tracheal_coupling_not_applied_when_an_high(
-        self, male_speaker: HLSpeaker
-    ) -> None:
+    def test_f1c_tracheal_coupling_not_applied_when_an_high(self, male_speaker: HLSpeaker) -> None:
         """f1c bump requires an < 3; an=5 should leave f1c unchanged."""
         frame = _neutral_frame()
         frame.an = 5.0  # above threshold
@@ -263,9 +261,7 @@ class TestSourceSpecifics:
 
 
 class TestFricativeFilters:
-    def test_all_zero_when_naf_below_threshold(
-        self, male_speaker: HLSpeaker
-    ) -> None:
+    def test_all_zero_when_naf_below_threshold(self, male_speaker: HLSpeaker) -> None:
         frame = _neutral_frame()
         state = _neutral_state()
         state.loc = LIPS
@@ -276,9 +272,7 @@ class TestFricativeFilters:
         assert llframe.NA2F == 0
         assert llframe.NA3F == 0
 
-    def test_nab_set_for_lips_above_threshold(
-        self, male_speaker: HLSpeaker
-    ) -> None:
+    def test_nab_set_for_lips_above_threshold(self, male_speaker: HLSpeaker) -> None:
         frame = _neutral_frame()
         state = _neutral_state()
         state.loc = LIPS
@@ -350,9 +344,7 @@ class TestHLSynthesizeLLFrame:
         frame = _neutral_frame()
         oldframe = _neutral_frame()
         state = _neutral_state(ag=male_speaker.agm)
-        result = hl_synthesize_ll_frame(
-            frame, oldframe, male_speaker, state, male_oldstate
-        )
+        result = hl_synthesize_ll_frame(frame, oldframe, male_speaker, state, male_oldstate)
         assert isinstance(result, LLFrame)
 
     def test_f0_passed_through(
@@ -365,9 +357,7 @@ class TestHLSynthesizeLLFrame:
         frame.f0 = 1100.0
         oldframe = _neutral_frame()
         state = _neutral_state(ag=male_speaker.agm)
-        result = hl_synthesize_ll_frame(
-            frame, oldframe, male_speaker, state, male_oldstate
-        )
+        result = hl_synthesize_ll_frame(frame, oldframe, male_speaker, state, male_oldstate)
         # NF0 = int(f0 + 0.5) = 1100, but zeroed if NAV==0; ps may be too low.
         # Just ensure F0 is non-negative.
         assert result.F0 >= 0
@@ -383,9 +373,7 @@ class TestHLSynthesizeLLFrame:
         frame.ag = 0.0
         oldframe = _neutral_frame()
         state = _neutral_state(ag=0.0)
-        result = hl_synthesize_ll_frame(
-            frame, oldframe, male_speaker, state, male_oldstate
-        )
+        result = hl_synthesize_ll_frame(frame, oldframe, male_speaker, state, male_oldstate)
         assert result.AV == 0
 
     def test_formant_bandwidths_nonnegative(
@@ -399,9 +387,7 @@ class TestHLSynthesizeLLFrame:
         frame.ps = 8.0
         oldframe = _neutral_frame()
         state = _neutral_state(ag=male_speaker.agm + 2.0)
-        result = hl_synthesize_ll_frame(
-            frame, oldframe, male_speaker, state, male_oldstate
-        )
+        result = hl_synthesize_ll_frame(frame, oldframe, male_speaker, state, male_oldstate)
         assert result.B1 >= 0
         assert result.B2 >= 0
         assert result.B3 >= 0
@@ -415,7 +401,5 @@ class TestHLSynthesizeLLFrame:
         frame = _neutral_frame()
         oldframe = _neutral_frame()
         state = _neutral_state(ag=male_speaker.agm)
-        result = hl_synthesize_ll_frame(
-            frame, oldframe, male_speaker, state, male_oldstate
-        )
+        result = hl_synthesize_ll_frame(frame, oldframe, male_speaker, state, male_oldstate)
         assert 0 <= result.OQ <= 99
