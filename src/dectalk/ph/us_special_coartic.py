@@ -31,33 +31,21 @@ from __future__ import annotations
 from typing import cast
 
 # ruff: noqa: SIM102 -- C-literal magic numbers and nested ifs kept
-from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.usp_codes import (
-    USP_AE,
-    USP_AY,
-    USP_IX,
-    USP_IY,
-    USP_LL,
-    USP_LX,
-    USP_OY,
     USP_R,
     USP_RR,
     USP_RX,
-    USP_UW,
     USP_W,
-    USP_YU,
 )
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
-from dectalk.ph.feature_bits import FBOUNDARY, FSTRESS, FVPNEXT
 from dectalk.ph.get_phone import get_phone
-from dectalk.ph.numeric_constants import F2, F3
-from dectalk.ph.phoneme_features import FALVEL, FVOWEL
-from dectalk.ph.rom_tables import us_place
+from dectalk.ph.numeric_constants import F3
+from dectalk.ph.phoneme_features import FVOWEL
 from dectalk.ph.timing import phone_feature
 
 
-def us_special_coartic(p_dph_t: DphT, nfon: int, diphpos: int) -> int:  # noqa: PLR0912
+def us_special_coartic(p_dph_t: DphT, nfon: int, diphpos: int) -> int:
     """Compute the coarticulation delta for one diphthong segment.
 
     Faithful translation of the C static helper. The caller adds the
@@ -87,40 +75,12 @@ def us_special_coartic(p_dph_t: DphT, nfon: int, diphpos: int) -> int:  # noqa: 
             if fonlas in (USP_W, USP_R, USP_RX) or fonnex in (USP_W, USP_R, USP_RX):
                 temp = -150
 
-    # F2 target of selected vowels.
-    if p_dphsettar.np == F2:
-        # Front vowel F2 target lowered before LX.
-        if fonnex == USP_LX:
-            if (USP_IY <= foncur <= USP_AE) or foncur == USP_IX:
-                temp = -150
-            if foncur in (USP_AY, USP_OY) and diphpos == 1:
-                temp = -250
-            if foncur in (USP_AY, USP_OY) and diphpos > 1:
-                temp = -350
-
-        # Front vowel F2 lowered after W / LL / LX.
-        if fonlas in (USP_W, USP_LL, USP_LX):
-            if (USP_IY <= foncur <= USP_AE) or foncur == USP_IX:
-                temp = -150  # las and nex effects not cumulative in C source
-
-        # UW raised +200 adjacent to an alveolar.
-        if foncur == USP_UW:
-            if (us_place[fonlas & PVALUE] & FALVEL) != 0:
-                temp = 200
-
-        if foncur == USP_UW or (foncur == USP_YU and diphpos > 0):
-            if (us_place[fonnex & PVALUE] & FALVEL) != 0:
-                temp += 200
-
-        # Effects greater for unstressed vowels.
-        if (p_dph_t.allofeats[nfon] & FSTRESS) == 0:
-            temp += temp >> 1
-            # Unstressed YU has a fronted U part.
-            if foncur == USP_YU and diphpos > 0:
-                temp = 400
-        # Reduce effects for phrase-final stressed vowels.
-        elif (p_dph_t.allofeats[nfon] & FBOUNDARY) >= FVPNEXT:
-            temp = temp >> 1
+        # F2 target of selected vowels (LX-before, W/L-after, UW raised,
+        # YU fronted, stress effects, and the -400..+400 final clamp)
+        # SKIPPED on the libtts_us.so HLSYN build target: the C source at
+        # p_us_st1.c lines 401-470 wraps the whole block in
+        # ``#ifndef HLSYN``. The HLSyn vocal-tract model in hlframe.c
+        # (un-ported) is the C source's HLSYN replacement.
 
         # Maximum change should not be excessive.
         temp = min(temp, 400)
