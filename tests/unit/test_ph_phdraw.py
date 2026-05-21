@@ -533,3 +533,224 @@ def test_c_body_has_hlsyn_area_loop() -> None:
         r"for\s*\(\s*;\s*np\s*<=\s*&PTONGUEBODY\s*;\s*np\+\+\s*\)",
         body,
     )
+
+
+# ----- Per-frame HLSyn state machine tests (ph_draw.c lines 2350-4300) ------
+
+
+def _build_state_machine_handle(  # noqa: PLR0915 — state setup needs many fields
+    *,
+    nphone: int = 1,
+    allophons: list[int] | None = None,
+    allofeats: list[int] | None = None,
+    allodurs: list[int] | None = None,
+) -> tuple[TtsHandle, DphT, DphSettarSt]:
+    """Build a handle with minimal state suitable for the state-machine tests.
+
+    Uses three silent phones (code 0) by default; callers override via kwargs.
+    """
+    handle, p_dph_t, p_dphsettar = _build_handle()
+    if allophons is not None:
+        p_dph_t.allophons = allophons
+    else:
+        p_dph_t.allophons = [0, 0, 0]
+    if allofeats is not None:
+        p_dph_t.allofeats = allofeats
+    else:
+        p_dph_t.allofeats = [0] * len(p_dph_t.allophons)
+    if allodurs is not None:
+        p_dph_t.allodurs = allodurs
+    else:
+        p_dph_t.allodurs = [40] * len(p_dph_t.allophons)
+    p_dph_t.nphone = nphone
+    p_dph_t.nphonelast = nphone  # same phone, not start-of-phone
+    p_dph_t.tcum = 5
+    p_dph_t.nphonetot = len(p_dph_t.allophons)
+    p_dph_t.tcumdur = 120
+    p_dph_t.area_g = 0
+    p_dph_t.area_l = 1000
+    p_dph_t.area_b = 1000
+    p_dph_t.area_tb = 1000
+    p_dph_t.area_n = 0
+    p_dph_t.area_flap = 1200
+    p_dph_t.target_ag = 400
+    p_dph_t.target_l = 1000
+    p_dph_t.target_b = 1000
+    p_dph_t.target_tb = 1000
+    p_dph_t.target_ap = 0
+    p_dph_t.agspeed = 2
+    p_dph_t.last_area_b = 1000
+    p_dph_t.last_area_l = 1000
+    p_dph_t.last_area_tb = 1000
+    p_dph_t.pressure = 0
+    p_dph_t.pressure_drop = 0
+    p_dph_t.pressure_gest = 0
+    p_dph_t.syl_pressure = 0
+    p_dph_t.stress_pulse = 0
+    p_dph_t.delta_area_g = 0
+    p_dph_t.delta_area_gst = 0
+    p_dph_t.delta_area_gstop = 0
+    p_dph_t.delta_a_forap = 0
+    p_dph_t.nasal_step = 0
+    p_dph_t.bstep = 0
+    p_dph_t.lstep = 0
+    p_dph_t.tbstep = 0
+    p_dph_t.in_lclosure = 0
+    p_dph_t.in_lrelease = 0
+    p_dph_t.in_lfric = 0
+    p_dph_t.in_bclosure = 0
+    p_dph_t.in_brelease = 0
+    p_dph_t.in_tbclosure = 0
+    p_dph_t.in_tbrelease = 0
+    p_dph_t.last_real_phon = 1000
+    p_dph_t.sprate = 180  # normal speed
+    p_dph_t.curspdef = [0] * 20  # large enough for SPD_F4=10
+    p_dph_t.had_in_phrase_final = 0
+    p_dphsettar.nframb = 50  # mid-utterance
+    return handle, p_dph_t, p_dphsettar
+
+
+def test_state_machine_phonestep_incremented_when_same_phone() -> None:
+    """``phonestep`` increments each frame when ``nphone == nphonelast``."""
+    handle, p_dph_t, _ = _build_state_machine_handle()
+    p_dph_t.phonestep = 3
+    p_dph_t.nphonelast = p_dph_t.nphone  # same phone
+    phdraw(handle)
+    assert p_dph_t.phonestep == 4
+
+
+def test_state_machine_phonestep_reset_on_new_phone() -> None:
+    """``phonestep`` resets to 0 when ``nphone != nphonelast``."""
+    handle, p_dph_t, _ = _build_state_machine_handle()
+    p_dph_t.phonestep = 7
+    p_dph_t.nphonelast = p_dph_t.nphone + 1  # different phone
+    phdraw(handle)
+    assert p_dph_t.phonestep == 0
+
+
+def test_state_machine_nasal_step_increments_during_nasal() -> None:
+    """During a nasal phone, ``nasal_step`` increases and ``area_n`` follows table."""
+    from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
+    from dectalk.ph.phdraw import _NASALIZATION  # noqa: PLC0415
+
+    m_code = (PFUSA << 8) | int(USPhoneme["M"])
+    # Use 5 phones: SIL, M, SIL, SIL, SIL to avoid index-out-of-range
+    handle, p_dph_t, _ = _build_state_machine_handle(
+        nphone=1,
+        allophons=[0, m_code, 0, 0, 0],
+        allofeats=[0] * 5,
+        allodurs=[40] * 5,
+    )
+    p_dph_t.nasal_step = 2
+    phdraw(handle)
+    # nasal_step should have incremented (by +2 from the else branch)
+    assert p_dph_t.nasal_step >= 3
+    assert p_dph_t.area_n == _NASALIZATION[min(p_dph_t.nasal_step, 12)]
+
+
+def test_state_machine_nasal_target_ag_set_during_nasal() -> None:
+    """During a nasal phone, ``target_ag`` is set to 700."""
+    from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
+
+    m_code = (PFUSA << 8) | int(USPhoneme["M"])
+    handle, p_dph_t, _ = _build_state_machine_handle(
+        nphone=1,
+        allophons=[0, m_code, 0, 0, 0],
+        allofeats=[0] * 5,
+        allodurs=[40] * 5,
+    )
+    p_dph_t.target_ag = 0
+    phdraw(handle)
+    assert p_dph_t.target_ag == 700
+
+
+def test_state_machine_pressure_builds_for_voiced() -> None:
+    """For a voiced phone, ``pressure`` is incremented toward NOM_Sub_Pressure."""
+    from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
+
+    # /V/ is voiced fricative
+    v_code = (PFUSA << 8) | int(USPhoneme["V"])
+    handle, p_dph_t, _ = _build_state_machine_handle(
+        nphone=1,
+        allophons=[0, v_code, 0, 0, 0],
+        allofeats=[0] * 5,
+        allodurs=[40] * 5,
+    )
+    p_dph_t.pressure = 0
+    phdraw(handle)
+    assert p_dph_t.pressure == 70
+
+
+def test_state_machine_out_ag_written() -> None:
+    """``parstochip[OUT_AG]`` is written to a non-negative value each call."""
+    from dectalk.ph.param_indices import OUT_AG  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_state_machine_handle()
+    phdraw(handle)
+    assert p_dph_t.parstochip[OUT_AG] >= 0
+
+
+def test_state_machine_out_an_equals_area_n() -> None:
+    """``parstochip[OUT_AN]`` equals ``area_n`` at the end of each call."""
+    from dectalk.ph.param_indices import OUT_AN  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_state_machine_handle()
+    p_dph_t.area_n = 160
+    phdraw(handle)
+    assert p_dph_t.parstochip[OUT_AN] == p_dph_t.area_n
+
+
+def test_state_machine_nphonelast_updated() -> None:
+    """``nphonelast`` is set to ``nphone`` at the end of each call."""
+    handle, p_dph_t, _ = _build_state_machine_handle()
+    p_dph_t.nphonelast = 99  # stale value
+    p_dph_t.nphone = 1
+    phdraw(handle)
+    assert p_dph_t.nphonelast == 1
+
+
+def test_state_machine_dh_closure_not_at_word_boundary() -> None:
+    """DH/TH within a word (not at word boundary): sets ``target_b = area_b = 0``
+    while phonestep < allodurs - 1."""
+    from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
+
+    dh_code = (PFUSA << 8) | int(USPhoneme["DH"])
+    # boundary_val < FWBNEXT: use 0 (no boundary, less than the 0o140 threshold)
+    handle, p_dph_t, _ = _build_state_machine_handle(
+        nphone=1,
+        allophons=[0, dh_code, 0, 0, 0],
+        allofeats=[0, 0, 0, 0, 0],  # boundary = 0 < FWBNEXT
+        allodurs=[10, 10, 10, 10, 10],
+    )
+    p_dph_t.phonestep = 3  # < allodurs[1] - 1 = 9
+    p_dph_t.target_b = 500
+    p_dph_t.area_b = 500
+    phdraw(handle)
+    # The DH rule should have set target_b = area_b = 0
+    assert p_dph_t.target_b == 0
+    assert p_dph_t.area_b == 0
+
+
+def test_state_machine_flap_opens_after_half_duration() -> None:
+    """For USP_DX (flap), ``area_flap`` increases during the second half of the phone."""
+    from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
+
+    dx_code = (PFUSA << 8) | int(USPhoneme["DX"])
+    handle, p_dph_t, _ = _build_state_machine_handle(
+        nphone=1,
+        allophons=[0, dx_code, 0, 0, 0],
+        allofeats=[0] * 5,
+        allodurs=[20, 20, 20, 20, 20],
+    )
+    p_dph_t.tcum = 12  # > half (10) → opening phase
+    p_dph_t.area_flap = 0
+    phdraw(handle)
+    assert p_dph_t.area_flap > 0  # was increased
+
+
+def test_state_machine_non_flap_phone_sets_area_flap_1200() -> None:
+    """For a non-flap phone, ``area_flap`` is reset to 1200."""
+    handle, p_dph_t, _ = _build_state_machine_handle()
+    p_dph_t.area_flap = 42
+    phdraw(handle)
+    assert p_dph_t.area_flap == 1200

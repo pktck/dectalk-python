@@ -53,8 +53,26 @@ from __future__ import annotations
 # obscure the per-line correspondence with the C source.
 from typing import cast
 
+from dectalk.include.usp_codes import (
+    USP_DF,
+    USP_DH,
+    USP_DX,
+    USP_LL,
+    USP_LX,
+    USP_R,
+    USP_TH,
+    USP_W,
+)
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
+from dectalk.ph.feature_bits import (
+    FBOUNDARY,
+    FDUMMY_VOWEL,
+    FPPNEXT,
+    FSTRESS,
+    FWBNEXT,
+    PRESSBOUND,
+)
 from dectalk.ph.numeric_constants import (
     A2,
     A3,
@@ -84,15 +102,26 @@ from dectalk.ph.param_indices import (
     OUT_A5,
     OUT_A6,
     OUT_AB,
+    OUT_ABLADE,
+    OUT_AG,
+    OUT_AL,
+    OUT_AN,
     OUT_AP,
+    OUT_ATB,
     OUT_AV,
     OUT_B1,
     OUT_B2,
     OUT_B3,
+    OUT_BRST,
+    OUT_CNK,
     OUT_F1,
     OUT_F2,
     OUT_F3,
+    OUT_F4,
     OUT_FZ,
+    OUT_GF,
+    OUT_PLACE,
+    OUT_PS,
     OUT_T0,
     OUT_TLT,
     TONGUEBODY,
@@ -104,10 +133,16 @@ from dectalk.ph.phoneme_features import (
     FCONSON,
     FLABIAL,
     FNASAL,
+    FOBST,
     FPLOSV,
+    FSONCON,
+    FSONOR,
     FSTOP,
+    FSYLL,
+    FVELAR,
+    FVOICD,
 )
-from dectalk.ph.timing import phone_feature, place
+from dectalk.ph.timing import begtyp, phone_feature, place
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.vtm.frac import frac4mul
 
@@ -167,6 +202,55 @@ _AMP_PARAMS: tuple[int, ...] = (AV, AP, A2, A3, A4, A5, A6, AB, TILT)
 # spectral-tilt parameter saturates at 31 dB; the Python port mirrors
 # the C clamp so downstream synthesisers see the same numerical range.
 _TILT_MAX: int = 31
+
+# ---- Per-frame HLSyn state machine constants (ph_draw.c lines 2350-4300) ---
+
+# VTM nominal area / pressure constants.  In the C source these come from
+# ``pVtm_t->NOM_*`` fields loaded by vtm/vtmiont.c per speaker.  The values
+# below are the US-English (Paul) defaults for the HLSYN build (non-TOMBUCHLER
+# path): most are 0 because that is what calloc() leaves for the unused
+# NEW_VTM fields.  The only non-zero US defaults are NOM_Sub_Pressure=800
+# (vtmiont.c line 3118) and NOM_Fricative_Opening=100 (line 3120).
+_NOM_VOIC_GLOT_AREA: int = 0  # vtmiont.c: 0 for Paul (non-TOMBUCHLER)
+_NOM_UNSTRESSED_VOWEL: int = 0  # vtmiont.c: 0 for Paul
+_NOM_Sub_Pressure: int = 800  # vtmiont.c line 3118
+_EndOfPhrase_Spread: int = 1  # vtmiont.c line 3123
+
+# Nasalization table (ph_draw.c line 219).  Maps nasal_step → velum area.
+_NASALIZATION: tuple[int, ...] = (0, 30, 60, 100, 130, 160, 190, 320, 450, 570, 675, 780, 885)
+
+# Area-release ramp for plosive burst (ph_draw.c line 241; element 0 is set
+# to NOM_Fricative_Opening=100 at init time, elements 1-17 are literal).
+_AREA_REL: tuple[int, ...] = (
+    100,  # [0] = NOM_Fricative_Opening (ph_draw.c line 288)
+    100,
+    120,
+    160,
+    210,
+    280,
+    350,
+    450,
+    560,
+    680,
+    800,
+    900,
+    1000,
+    1000,
+    1000,
+    1000,
+    1000,
+    1000,
+)
+
+# Frame-count timing constants from ph_defs.h (1 frame ≈ 6.4 ms).
+_NF50MS: int = 8  # ph_defs.h: NF50MS = 8
+_NF60MS: int = 9  # ph_defs.h: NF60MS = 9
+
+# Default coarticulation window (ph_draw.c line 238: ``int coarticulation=4``).
+_COARTICULATION_DEFAULT: int = 4
+
+# SPD_F4 index into curspdef[] (cmd.h: #define SPD_F4 10).
+_SPD_F4: int = 10
 
 
 def _div_by8(value: int) -> int:
@@ -522,21 +606,538 @@ def _phdraw_initial_silence_anticipation_unported() -> None:
     )
 
 
-def _phdraw_per_frame_hlsyn_state_machine_unported() -> None:
-    """Stub for ph_draw.c lines 2350-4500 (per-frame HLSyn area updates).
+def _phdraw_per_frame_hlsyn_state_machine(  # noqa: PLR0912,PLR0915 — mirrors C body
+    p_dph_t: DphT,
+    p_dphsettar: DphSettarSt,
+) -> None:
+    """Per-frame HLSyn area / pressure / glottis state machine.
 
-    The bulk of the C body: pressure / glottis / nasal / labial /
-    blade / tongue-body trackers step toward their targets each frame
-    via the ``*step`` increments and ``target_*`` values that the
-    HLSyn area loop set up.
+    Faithful port of ``ph_draw.c`` lines 2350-4300 (HLSYN build,
+    US-English path).  Mutates ``p_dph_t`` fields in place and
+    writes ``parstochip[]`` slots OUT_AG / OUT_AL / OUT_AN /
+    OUT_ABLADE / OUT_ATB / OUT_BRST / OUT_CNK / OUT_GF / OUT_PS /
+    OUT_F4 / OUT_PLACE.
+
+    Non-US language branches (French, German, Spanish, UK) that
+    reference language-specific phoneme codes not present in the
+    Python codebase are omitted with inline comments naming the
+    C source lines they occupy.
     """
-    raise NotImplementedError(
-        "phdraw: per-frame HLSyn state machine (ph_draw.c lines 2350-4500) "
-        "is not yet ported; requires the full DphT area-parameter set "
-        "(target_ag, area_g, target_b, target_l, target_tb, area_n, "
-        "pressure, syl_pressure, nasal_step, etc.) which depend on the "
-        "un-ported phinton / pht0draw / phalloph helpers."
-    )
+    nphone = p_dph_t.nphone
+    allophons = p_dph_t.allophons
+    allofeats = p_dph_t.allofeats
+    allodurs = p_dph_t.allodurs
+    ps = p_dph_t.parstochip
+    coarticulation = _COARTICULATION_DEFAULT
+
+    # C lines ~2396-2432: sonant-consonant glottal rules
+    if nphone and phone_feature(allophons[nphone]) & FSONCON:
+        if p_dph_t.tcum <= (allodurs[nphone] >> 1):
+            if p_dph_t.target_ag < _NOM_VOIC_GLOT_AREA + 300 and allophons[nphone] != USP_R:
+                p_dph_t.agspeed = 1
+        elif p_dph_t.target_ag > _NOM_VOIC_GLOT_AREA:
+            p_dph_t.agspeed = 1
+        # French R (FP_R) branch omitted — non-US phoneme code
+        # (ph_draw.c lines ~2420-2431)
+        if allophons[nphone] == USP_W or allophons[nphone] == USP_R:
+            ps[OUT_A2] = 4000
+            p_dph_t.target_ag = 800
+
+    # C lines ~2434-2455: narrow glottis anticipating lateral
+    if nphone + 1 < len(allophons):
+        if (
+            (allophons[nphone + 1] == USP_LL or allophons[nphone + 1] == USP_LX)
+            and p_dph_t.tcum >= (allodurs[nphone] - 4)
+            and not (phone_feature(allophons[nphone]) & FSTOP)
+        ):
+            p_dph_t.target_ag = min(p_dph_t.target_ag, 600)
+
+    # C lines ~2450-2457: lateral liquid (LL / LX) sets A2 and target_ag
+    if allophons[nphone] == USP_LL or allophons[nphone] == USP_LX:
+        ps[OUT_A2] = 4000
+        p_dph_t.target_ag = 600
+        p_dph_t.agspeed = 3
+
+    # C lines ~2459-2470: velar nasal (ng) → set in_tbclosure
+    if place(allophons[nphone]) & FVELAR and phone_feature(allophons[nphone]) & FNASAL:
+        if p_dph_t.tcum <= allodurs[nphone]:
+            p_dph_t.in_tbclosure = 1
+
+    # C lines ~2472-2617: nasal velum rules
+    if phone_feature(allophons[nphone]) & FNASAL:
+        if (
+            place(allophons[nphone]) & BLADEAFFECTED
+            and place(allophons[nphone - 1]) & BLADEAFFECTED
+        ):
+            # Homorganic place → snap velum open faster
+            if p_dph_t.nasal_step == 0:
+                p_dph_t.nasal_step = 4
+            elif p_dph_t.nasal_step < 7:
+                p_dph_t.nasal_step += 1
+        elif (
+            nphone + 1 < len(allophons)
+            and phone_feature(allophons[nphone + 1]) & FOBST
+            and p_dph_t.tcum >= (allodurs[nphone] - 1)
+            and allophons[nphone + 1] != USP_DH
+        ):
+            # Close velum early before obstruent
+            if p_dph_t.nasal_step:
+                p_dph_t.nasal_step -= 1
+            if p_dph_t.nasal_step:
+                p_dph_t.nasal_step -= 1
+        elif p_dph_t.nasal_step < 7:
+            p_dph_t.nasal_step += 2
+        p_dph_t.area_n = _NASALIZATION[min(p_dph_t.nasal_step, 12)]
+        # French sets target_ag=900; US path uses 700
+        p_dph_t.target_ag = 700
+
+    elif (
+        nphone + 1 < len(allophons)
+        and phone_feature(allophons[nphone + 1]) & FNASAL
+        and (nphone + 2 >= len(allophons) or allophons[nphone + 1] != allophons[nphone + 2])
+    ):
+        # Next phone is a nasal: start dropping velum at 50% of current phone
+        if allodurs[nphone] < 7:
+            if p_dph_t.nasal_step < 7:
+                p_dph_t.nasal_step += 1
+        if not (phone_feature(allophons[nphone]) & FOBST):
+            if p_dph_t.tcum >= (allodurs[nphone] >> 1):
+                if p_dph_t.nasal_step < 7:
+                    p_dph_t.nasal_step += 1
+                p_dph_t.area_n = _NASALIZATION[min(p_dph_t.nasal_step, 12)]
+
+    elif not (phone_feature(allophons[nphone]) & FNASAL):
+        # Was nasalized but no longer in a nasal — close velum (US path)
+        if p_dph_t.nasal_step and p_dph_t.phonestep:
+            if phone_feature(allophons[nphone]) & FSONOR:
+                # C: skip decrement when phonestep < 3 (goto skipit)
+                if p_dph_t.phonestep >= 3:
+                    if p_dph_t.nasal_step > 0:
+                        p_dph_t.nasal_step -= 1
+                    p_dph_t.area_n = _NASALIZATION[min(p_dph_t.nasal_step, 12)]
+            else:
+                # Not sonor → close velum quickly
+                if p_dph_t.nasal_step > 4:
+                    p_dph_t.nasal_step -= 3
+                else:
+                    p_dph_t.nasal_step -= 1
+                p_dph_t.nasal_step = max(p_dph_t.nasal_step, 0)
+                p_dph_t.area_n = _NASALIZATION[min(p_dph_t.nasal_step, 12)]
+
+        # C lines ~2741-2765: anticipate unvoiced obstruent → spread glottis
+        if nphone + 1 < len(allophons) and (
+            not (phone_feature(allophons[nphone]) & FOBST)
+            and phone_feature(allophons[nphone + 1]) & FOBST
+            and not (allofeats[nphone] & FSTRESS)
+            and not (phone_feature(allophons[nphone + 1]) & FVOICD)
+            and not (phone_feature(allophons[nphone + 1]) & FSTOP)
+        ):
+            if p_dph_t.tcum >= (allodurs[nphone] - _NF60MS) and p_dph_t.tcum >= (
+                allodurs[nphone] >> 1
+            ):
+                if p_dph_t.target_ag < 1000:
+                    p_dph_t.target_ag += 10
+            elif p_dph_t.target_ag < 700:
+                p_dph_t.target_ag += 75
+            elif p_dph_t.target_ag < 1100:
+                p_dph_t.target_ag += 40
+
+        # C lines ~2767-2781: plosive before nasal → narrow glottis early
+        if nphone + 1 < len(allophons) and (
+            phone_feature(allophons[nphone]) & FOBST
+            and phone_feature(allophons[nphone]) & FPLOSV
+            and phone_feature(allophons[nphone + 1]) & FNASAL
+        ):
+            if p_dph_t.tcum >= (allodurs[nphone] - _NF50MS):
+                p_dph_t.target_ag = min(p_dph_t.target_ag, 1100)
+
+        # C lines ~2783-2856: non-plosive obstruent before voiced → close glottis
+        elif (
+            nphone + 1 < len(allophons)
+            and phone_feature(allophons[nphone]) & FOBST
+            and not (phone_feature(allophons[nphone]) & FPLOSV)
+            and phone_feature(allophons[nphone + 1]) & FVOICD
+            and not (phone_feature(allophons[nphone + 1]) & FNASAL)
+        ):
+            if p_dph_t.target_ag >= 800:
+                if p_dph_t.tcum >= (allodurs[nphone] - _NF50MS) and not (
+                    phone_feature(allophons[nphone + 1]) & FSTOP
+                ):
+                    if allophons[nphone + 1] != USP_R:
+                        p_dph_t.target_ag = min(p_dph_t.target_ag, 1200)
+                        p_dph_t.agspeed = 1
+                else:
+                    p_dph_t.agspeed = 3
+            else:
+                p_dph_t.agspeed = 2
+
+    # C lines ~2858-2867: if voiced, build pressure toward nominal
+    if phone_feature(allophons[nphone]) & FVOICD:
+        if p_dph_t.pressure <= _NOM_Sub_Pressure:
+            p_dph_t.pressure += 70
+
+    # C lines ~2870-2900: tongue-body area tracker (#ifdef TONGUE_BODY_AREA path)
+    if not (place(allophons[nphone]) & FVELAR):
+        p_dph_t.in_tbclosure = 0
+
+    if p_dph_t.in_tbclosure:
+        p_dph_t.target_tb = 0
+
+    if p_dph_t.target_tb < p_dph_t.area_tb:
+        if p_dph_t.area_tb:
+            p_dph_t.area_tb -= 310
+            p_dph_t.area_tb = max(p_dph_t.area_tb, p_dph_t.target_tb)
+    elif p_dph_t.target_tb != p_dph_t.area_tb:
+        if p_dph_t.in_tbrelease == 1 and p_dph_t.area_tb < 1000:
+            if (
+                phone_feature(allophons[nphone - 1]) & FBURST
+                or phone_feature(allophons[nphone]) & FBURST
+            ):
+                if p_dph_t.tbstep == -1:
+                    p_dph_t.area_tb = _NOM_FRICATIVE_OPENING
+                else:
+                    p_dph_t.area_tb = _AREA_REL[min(p_dph_t.tbstep, len(_AREA_REL) - 1)]
+                if p_dph_t.tbstep <= 9:
+                    p_dph_t.tbstep += 1
+            elif place(allophons[nphone]) & BLADEAFFECTED:
+                p_dph_t.area_tb = _NOM_FRICATIVE_OPENING
+        elif p_dph_t.in_tbrelease == 0 or p_dph_t.in_tbclosure == 0:
+            if p_dph_t.target_tb > p_dph_t.area_tb:
+                p_dph_t.area_tb += (p_dph_t.target_tb - p_dph_t.area_tb) >> 3
+            else:
+                p_dph_t.area_tb += (p_dph_t.target_tb - p_dph_t.area_tb) >> 1
+            if place(allophons[nphone]) & BLADEAFFECTED and place(allophons[nphone - 1]) & FVELAR:
+                if p_dph_t.phonestep < coarticulation:
+                    p_dph_t.area_tb = p_dph_t.last_area_tb
+
+    # C lines ~3153-3175: lclosure
+    if p_dph_t.in_lclosure == 1:
+        p_dph_t.target_l = 0
+        p_dph_t.lstep = 0
+
+    # C lines ~3180-3260: labial frication / area tracker
+    if p_dph_t.in_lfric:
+        p_dph_t.area_l = _NOM_FRICATIVE_OPENING
+        p_dph_t.target_l = _NOM_FRICATIVE_OPENING
+        if p_dph_t.nphonelast != nphone:
+            if not (allofeats[nphone] & FDUMMY_VOWEL):
+                p_dph_t.in_lrelease = 1
+                p_dph_t.area_l = 270
+                p_dph_t.lstep = 3
+    elif p_dph_t.target_l < p_dph_t.area_l:
+        if p_dph_t.area_l:
+            p_dph_t.area_l -= 250
+            p_dph_t.area_l = max(p_dph_t.area_l, p_dph_t.target_l)
+    elif p_dph_t.target_l != p_dph_t.area_l:
+        if p_dph_t.in_lrelease == 1 and p_dph_t.area_l < 1000:
+            if (
+                phone_feature(allophons[nphone - 1]) & FBURST
+                or phone_feature(allophons[nphone]) & FBURST
+            ):
+                if p_dph_t.lstep == -1:
+                    p_dph_t.area_l = _NOM_FRICATIVE_OPENING
+                    p_dph_t.lstep = 1
+                else:
+                    p_dph_t.area_l = _AREA_REL[min(p_dph_t.lstep, len(_AREA_REL) - 1)]
+                    if p_dph_t.lstep <= 9:
+                        p_dph_t.lstep += 1
+            elif place(allophons[nphone]) & FLABIAL:
+                p_dph_t.area_l = _NOM_FRICATIVE_OPENING
+        elif p_dph_t.in_lrelease == 0 or p_dph_t.in_lclosure == 0:
+            if p_dph_t.target_l > p_dph_t.area_l:
+                p_dph_t.area_l += (p_dph_t.target_l - p_dph_t.area_l) >> 2
+            elif p_dph_t.target_l == 0:
+                p_dph_t.area_l += (p_dph_t.target_l - (p_dph_t.area_l + 100)) >> 1
+                if p_dph_t.target_l == 0 and p_dph_t.area_l < 300:
+                    p_dph_t.area_l = 0
+            else:
+                p_dph_t.area_l += (p_dph_t.target_l - p_dph_t.area_l) >> 1
+                p_dph_t.area_l = max(p_dph_t.area_l, p_dph_t.target_l)
+            if place(allophons[nphone]) & BLADEAFFECTED:
+                if p_dph_t.phonestep < coarticulation:
+                    p_dph_t.area_b = p_dph_t.last_area_b
+            p_dph_t.area_l += (p_dph_t.target_l - p_dph_t.area_l) >> 2
+            if p_dph_t.target_l == 0 and p_dph_t.area_l < 260:
+                p_dph_t.area_l = 0
+            if place(allophons[nphone]) & BLADEAFFECTED:
+                if p_dph_t.phonestep < coarticulation:
+                    p_dph_t.area_l = p_dph_t.last_area_l
+        p_dph_t.area_l = min(p_dph_t.area_l, 1000)
+
+    # C lines ~3348-3382: flap area for USP_DX / USP_DF
+    if allophons[nphone] == USP_DX or allophons[nphone] == USP_DF:
+        half = allodurs[nphone] >> 1
+        if p_dph_t.tcum >= half:
+            if p_dph_t.area_flap <= 850:
+                p_dph_t.area_flap += 500
+            else:
+                p_dph_t.area_flap = 1200
+        elif p_dph_t.tcum >= (half - 3):
+            if p_dph_t.area_flap > 0:
+                p_dph_t.area_flap -= 500
+            else:
+                p_dph_t.area_flap = 0
+    else:
+        p_dph_t.area_flap = 1200
+
+    # C lines ~3384-3549: blade area tracker
+    if p_dph_t.target_b < p_dph_t.area_b:
+        if p_dph_t.area_b:
+            p_dph_t.area_b -= 400
+            p_dph_t.area_b = max(p_dph_t.area_b, p_dph_t.target_b)
+    elif p_dph_t.target_b != p_dph_t.area_b or p_dph_t.bstep == -1:
+        if p_dph_t.in_brelease == 1 and p_dph_t.area_b < 1000:
+            if (
+                phone_feature(allophons[nphone - 1]) & FBURST
+                or phone_feature(allophons[nphone]) & FBURST
+            ):
+                if p_dph_t.bstep == -1:
+                    p_dph_t.area_b = _NOM_FRICATIVE_OPENING
+                    p_dph_t.bstep = 1
+                elif p_dph_t.target_b != 0:
+                    p_dph_t.area_b = _AREA_REL[min(p_dph_t.bstep, len(_AREA_REL) - 1)]
+                    if p_dph_t.bstep <= 9:
+                        p_dph_t.bstep += 1
+                else:
+                    p_dph_t.area_b = 0
+            elif place(allophons[nphone]) & BLADEAFFECTED:
+                p_dph_t.area_b = _NOM_FRICATIVE_OPENING
+            else:
+                p_dph_t.area_b += (p_dph_t.target_b - p_dph_t.area_b) >> 1
+        elif p_dph_t.in_brelease == 0 or p_dph_t.in_bclosure == 0:
+            if p_dph_t.target_b > p_dph_t.area_b:
+                if p_dph_t.target_b <= 200 and p_dph_t.area_b < 100:
+                    p_dph_t.area_b = p_dph_t.target_b
+                else:
+                    p_dph_t.area_b += (p_dph_t.target_b - p_dph_t.area_b) >> 1
+            elif p_dph_t.target_b == 0:
+                p_dph_t.area_b += (p_dph_t.target_b - p_dph_t.area_b) >> 2
+                if p_dph_t.target_b == 0 and p_dph_t.area_b <= 500:
+                    p_dph_t.area_b = 0
+            else:
+                p_dph_t.area_b += (p_dph_t.target_b - p_dph_t.area_b) >> 1
+                p_dph_t.area_b = max(p_dph_t.area_b, p_dph_t.target_b)
+            if place(allophons[nphone]) & FLABIAL or place(allophons[nphone]) & FVELAR:
+                if p_dph_t.phonestep < coarticulation:
+                    p_dph_t.area_b = p_dph_t.last_area_b
+                    if place(allophons[nphone - 1]) & BLADEAFFECTED and p_dph_t.area_b < 200:
+                        p_dph_t.area_b = 0
+        p_dph_t.area_b = min(p_dph_t.area_b, 1000)
+
+    # C lines ~3550-3615: DH / TH closure rule (US phonemes only)
+    # UKP_DH / UKP_TH omitted — UK phoneme codes not in Python codebase
+    if allophons[nphone] == USP_DH or allophons[nphone] == USP_TH:
+        boundary_val = allofeats[nphone] & FBOUNDARY
+        if boundary_val < FWBNEXT:
+            if p_dph_t.phonestep < (allodurs[nphone] - 1):
+                p_dph_t.target_b = 0
+                p_dph_t.area_b = 0
+            else:
+                p_dph_t.in_brelease = 1
+                p_dph_t.area_b = 100
+        elif p_dph_t.phonestep < (allodurs[nphone] - 8):
+            p_dph_t.target_b = 0
+            p_dph_t.area_b = 0
+        else:
+            p_dph_t.target_b = 300
+
+    # French AP (FP_AP) delta_a_forap rule omitted — non-US phoneme code
+    # (ph_draw.c lines ~3617-3631)
+
+    # C lines ~3633-3720: glottis spread at final sonorant (#ifndef TOMBUCHLER)
+    if p_dph_t.had_in_phrase_final:
+        if p_dphsettar.nframb > (p_dph_t.tcumdur - 92):
+            if (
+                p_dph_t.nphone >= (p_dph_t.last_real_phon - 2)
+                and phone_feature(allophons[nphone]) & FVOICD
+            ):
+                if p_dph_t.delta_area_g < 800:
+                    p_dph_t.delta_area_g += _EndOfPhrase_Spread
+        else:
+            p_dph_t.delta_area_g = 0
+    else:
+        p_dph_t.delta_area_g = 0
+
+    # GRP_Q glottalized stop rule omitted — non-US phoneme code
+    # (ph_draw.c lines ~4028-4046)
+    p_dph_t.delta_area_gstop = 0  # US path: always reset
+
+    # C lines ~4046-4060: glottalized release (previous was voiced glottal)
+    if phone_feature(allophons[nphone - 1]) & FVOICD:
+        if place(allophons[nphone - 1]) & 0o40:  # FGLOTTAL = 0o40
+            p_dph_t.agspeed = 3
+
+    # French R (FP_R) special reset rule omitted — non-US phoneme code
+    # (ph_draw.c lines ~4063-4082)
+
+    # C lines ~4085-4093: unstressed vowel glottis spread
+    if not (allofeats[nphone] & FSTRESS) and (phone_feature(allophons[nphone]) & FSYLL):
+        p_dph_t.target_ag = _NOM_UNSTRESSED_VOWEL
+        if p_dph_t.target_ag <= _NOM_UNSTRESSED_VOWEL:
+            p_dph_t.target_ag += 10
+
+    # C lines ~4094-4106: delta_a_forap offset + clamp target_ap
+    if p_dph_t.target_ag <= 600:
+        p_dph_t.target_ag += p_dph_t.delta_a_forap
+    p_dph_t.target_ap = min(p_dph_t.target_ap, 2500)
+    p_dph_t.target_ap = max(p_dph_t.target_ap, 0)
+    p_dph_t.area_ap += (p_dph_t.target_ap - p_dph_t.area_ap) >> 3
+
+    # High speaking rate hack
+    if p_dph_t.sprate >= 350:
+        p_dph_t.agspeed = 1
+
+    # Glottal area advance (clamped to avoid big jumps)
+    ag_delta = (p_dph_t.target_ag - p_dph_t.area_g) >> p_dph_t.agspeed
+    if ag_delta > 300:
+        p_dph_t.area_g += 350
+    else:
+        p_dph_t.area_g += ag_delta + p_dph_t.delta_area_g
+
+    # C lines ~4107-4116: burst flag OUT_BRST
+    if p_dph_t.in_lrelease or p_dph_t.in_tbrelease or p_dph_t.in_brelease:
+        if ps[OUT_BRST] == 0:
+            if p_dph_t.in_tbrelease:
+                ps[OUT_BRST] = 1
+            else:
+                ps[OUT_BRST] = 2
+        else:
+            ps[OUT_BRST] = -1
+    else:
+        ps[OUT_BRST] = 0
+
+    # C lines ~4118-4125: chink area (aspiration chink)
+    ps[OUT_CNK] = p_dph_t.area_ap
+
+    # C lines ~4126-4145: OUT_AG
+    tmp = p_dph_t.area_g + p_dph_t.delta_area_gst - p_dph_t.delta_area_gstop
+    tmp = max(tmp, 0)
+    ps[OUT_AG] = tmp
+
+    # C lines ~4147-4163: OUT_AL, remember last area_b / area_l
+    ps[OUT_AL] = p_dph_t.area_l
+    p_dph_t.last_area_b = p_dph_t.area_b
+    p_dph_t.last_area_l = p_dph_t.area_l
+
+    # OUT_ABLADE = min(area_flap, area_b)
+    if p_dph_t.area_flap < p_dph_t.area_b:
+        ps[OUT_ABLADE] = max(0, p_dph_t.area_flap)
+    else:
+        ps[OUT_ABLADE] = p_dph_t.area_b
+
+    # C lines ~4167: OUT_ATB
+    ps[OUT_ATB] = p_dph_t.area_tb
+
+    # C lines ~4168-4210: OUT_PLACE (velar phones → begtyp-based place code)
+    # Non-US codes (GRP_KH, SPP_J, LAP_J, GRP_CH, LAP_Y, SPP_Y) omitted.
+    if place(allophons[nphone]) & FVELAR and nphone + 1 < len(allophons):
+        bt = begtyp(allophons[nphone + 1])
+        if bt == 1:
+            ps[OUT_PLACE] = 45
+        elif bt == 3:
+            ps[OUT_PLACE] = 40
+        else:
+            ps[OUT_PLACE] = 42
+
+    # C lines ~4211-4240: FAKE_HLSYN fricative gain (OUT_GF)
+    tmp_gf = 0
+    if p_dph_t.area_l != 0 and p_dph_t.area_b != 0 and p_dph_t.area_tb != 0:
+        if 99 < p_dph_t.area_l <= 400:
+            tmp_gf = 5500 // p_dph_t.area_l
+        if 99 < p_dph_t.area_b <= 400:
+            v = 5500 // p_dph_t.area_b
+            tmp_gf = max(tmp_gf, v)
+        if 99 < p_dph_t.area_tb <= 400:
+            v = 5500 // p_dph_t.area_tb
+            tmp_gf = max(tmp_gf, v)
+    glot_total = p_dph_t.area_g + p_dph_t.delta_area_gst - p_dph_t.delta_area_gstop
+    if glot_total < 1200:
+        tmp_gf -= 15
+    if tmp_gf == 0:
+        ps[OUT_GF] -= ps[OUT_GF] >> 2
+    else:
+        ps[OUT_GF] = tmp_gf
+
+    # C lines ~4242-4262: pressure_gest for PRESSBOUND allofeats
+    if allofeats[nphone] & PRESSBOUND:
+        if p_dph_t.tcum <= (allodurs[nphone] >> 1):
+            p_dph_t.pressure_gest += 20
+        elif p_dph_t.pressure_gest > 0:
+            p_dph_t.pressure_gest -= 20
+        else:
+            p_dph_t.pressure_gest = 0
+    else:
+        p_dph_t.pressure_gest = 0
+
+    # C lines ~4265-4282: pressure drop near end-of-phrase (NEW_PRESSURE path)
+    if phone_feature(allophons[nphone]) & FSYLL:
+        boundary_v = allofeats[nphone] & FBOUNDARY
+        nxt2 = (allofeats[nphone + 2] & FBOUNDARY) if nphone + 2 < len(allofeats) else 0
+        nxt3 = (allofeats[nphone + 3] & FBOUNDARY) if nphone + 3 < len(allofeats) else 0
+        if (
+            boundary_v >= FPPNEXT or nxt2 >= FPPNEXT or nxt3 >= FPPNEXT
+        ) and p_dph_t.syl_pressure == 0:
+            if (p_dph_t.nphonetot - nphone) <= 4:
+                if nphone < len(allofeats) and allofeats[p_dph_t.nphonetot - 1] & FDUMMY_VOWEL:
+                    value = p_dph_t.tcumdur - (allodurs[p_dph_t.nphonetot - 1] >> 1)
+                    value += allodurs[0]
+                    p_dph_t.last_real_phon = p_dph_t.nphonetot - 3
+                else:
+                    value = p_dph_t.tcumdur + allodurs[0]
+                    p_dph_t.last_real_phon = p_dph_t.nphonetot - 2
+                denom = value - p_dphsettar.nframb
+                if p_dph_t.syl_pressure == 0 and p_dphsettar.nframb > 9 and denom > 0:
+                    feat_last = phone_feature(allophons[p_dph_t.last_real_phon])
+                    if feat_last & FOBST:
+                        if feat_last & FVOICD:
+                            if (p_dph_t.tcumdur - p_dphsettar.nframb) > 5:
+                                p_dph_t.syl_pressure = (
+                                    p_dph_t.pressure - p_dph_t.syl_pressure - 600
+                                ) // denom
+                        elif (p_dph_t.tcumdur - p_dphsettar.nframb) > 5:
+                            p_dph_t.syl_pressure = (
+                                p_dph_t.pressure - p_dph_t.syl_pressure - 500
+                            ) // denom
+                    elif (p_dph_t.tcumdur - p_dphsettar.nframb) > 5:
+                        p_dph_t.syl_pressure = (
+                            p_dph_t.pressure - p_dph_t.syl_pressure - 500
+                        ) // denom
+            p_dph_t.pressure_drop += p_dph_t.syl_pressure
+
+    # C lines ~4268-4270: initialize delta_area_g at start of clause
+    if p_dphsettar.nframb <= 1:
+        p_dph_t.delta_area_g = 0
+
+    # C lines ~4273-4290: compute tmp pressure output (non-TOMBUCHLER path)
+    tmp = p_dph_t.pressure - p_dph_t.pressure_drop + p_dph_t.stress_pulse
+    tmp -= p_dph_t.pressure_gest
+    if (tmp < 100 and nphone > 1) or tmp < 0:
+        p_dph_t.pressure_drop = 0
+        p_dph_t.pressure = 0
+        p_dph_t.syl_pressure = 0
+        tmp = 0
+
+    # C lines ~4279: OUT_F4 = curspdef[SPD_F4]
+    if len(p_dph_t.curspdef) > _SPD_F4:
+        ps[OUT_F4] = p_dph_t.curspdef[_SPD_F4]
+
+    # C lines ~4282-4295: final output writes
+    ps[OUT_PS] = tmp
+    ps[OUT_AN] = p_dph_t.area_n
+
+    # C lines ~4296-4300: per-phone bookkeeping
+    p_dph_t.lastf1 = ps[OUT_F1]
+    p_dph_t.nphonelast = nphone
+
+
+def _phdraw_per_frame_hlsyn_state_machine_unported() -> None:
+    """Deprecated no-op stub for ph_draw.c lines 2350-4300.
+
+    The live implementation is :func:`_phdraw_per_frame_hlsyn_state_machine`;
+    this stub exists only for grep-compatibility with tooling that
+    references the old name.  Calling it is a no-op.
+    """
+    return None
 
 
 def _phdraw_f0_modulation_unported() -> None:
@@ -560,7 +1161,7 @@ def _phdraw_f0_modulation_unported() -> None:
 # ----------------------------------------------------------------------------
 
 
-def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912 — branches mirror C body
+def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branches mirror C body
     """Emit one Klatt parameter frame.
 
     Faithful (partial) translation of ``void phdraw(LPTTS_HANDLE_T)``
@@ -695,11 +1296,22 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912 — branches mirror
     # ----- C lines 761-907: HLSyn area-parameter state machine -----
     _phdraw_hlsyn_area_loop(p_dph_t)
 
-    # ----- C lines 908+: initial-silence anticipation,
-    # per-frame HLSyn state machine, F0 modulation. All deferred.
-    # Calling code that needs strict parity should raise via the helper
-    # stubs above; the default per-frame path returns here so the basic
-    # Klatt parameter trajectory keeps emitting frames.
+    # ----- C lines 908-928: phone-step counter update -----
+    if p_dph_t.nphone != p_dph_t.nphonelast:
+        p_dph_t.phonestep = 0
+        p_dph_t.modulcount = 0
+    else:
+        p_dph_t.phonestep += 1
+
+    # ----- C lines 929-2350: initial-silence anticipation -----
+    # (nphone == 0 block) — still deferred; see
+    # _phdraw_initial_silence_anticipation_unported() above.
+
+    # ----- C lines 2350-4300: per-frame HLSyn state machine -----
+    _phdraw_per_frame_hlsyn_state_machine(p_dph_t, p_dphsettar)
+
+    # F0 event firing + modulation helpers (C lines 4500-4837) remain
+    # deferred; see _phdraw_f0_modulation_unported() above.
 
 
 # Stub helpers naming the still-un-ported C blocks; exported so callers
@@ -711,6 +1323,7 @@ __all__ = [
     "_phdraw_f0_modulation_unported",
     "_phdraw_hlsyn_area_loop_unported",
     "_phdraw_initial_silence_anticipation_unported",
+    "_phdraw_per_frame_hlsyn_state_machine",
     "_phdraw_per_frame_hlsyn_state_machine_unported",
     "phdraw",
 ]
