@@ -67,6 +67,7 @@ convention = "google"
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["D", "ANN", "PLR2004"]  # tests don't need docstrings or magic-value bans
 "src/dectalk/__init__.py" = ["D104"]       # package-level docstring lives in README
+"src/dectalk/cmd/par_process_input.py" = ["E501"]  # faithful C port; long buffer-copy lines are inherent
 
 [tool.ruff.format]
 quote-style = "double"
