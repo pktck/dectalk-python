@@ -204,11 +204,14 @@ def us_special_rules(  # noqa: PLR0912, PLR0915
         param[B2].tspesh = p_dph_t.durfon
         param[B3].tspesh = p_dph_t.durfon
         param[AV].pspesh = 10
-        # FAKE_HLSYN / non-HLSYN build sets B1/B2/B3 pspesh to 150.
-        # The HLSYN build uses 1000/1000/1500. The Linux build is FAKE_HLSYN.
-        param[B1].pspesh = 150
-        param[B2].pspesh = 150
-        param[B3].pspesh = 150
+        # p_us_st1.c lines 1542-1550: the HLSYN build (libtts_us.so,
+        # our target) sets B1/B2/B3 pspesh to 1000/1000/1500. The
+        # FAKE_HLSYN build uses 150 across the board -- a much
+        # narrower voicebar bandwidth. Mirrors HLSYN since that's
+        # what the binary on disk produces.
+        param[B1].pspesh = 1000
+        param[B2].pspesh = 1000
+        param[B3].pspesh = 1500
 
 
 __all__ = ["us_special_rules"]
