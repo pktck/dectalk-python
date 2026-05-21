@@ -73,6 +73,7 @@ from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import (
     FBOUNDARY,
     FDUMMY_VOWEL,
+    FEMPHASIS,
     FPPNEXT,
     FSTRESS,
     FWBNEXT,
@@ -119,6 +120,7 @@ from dectalk.ph.param_indices import (
     OUT_B3,
     OUT_BRST,
     OUT_CNK,
+    OUT_DC,
     OUT_F1,
     OUT_F2,
     OUT_F3,
@@ -129,6 +131,7 @@ from dectalk.ph.param_indices import (
     OUT_PS,
     OUT_T0,
     OUT_TLT,
+    OUT_UE,
     TONGUEBODY,
 )
 from dectalk.ph.parameter_struct import Parameter
@@ -136,6 +139,7 @@ from dectalk.ph.phoneme_features import (
     BLADEAFFECTED,
     FBURST,
     FCONSON,
+    FGLOTTAL,
     FLABIAL,
     FNASAL,
     FOBST,
@@ -149,6 +153,7 @@ from dectalk.ph.phoneme_features import (
     FVOWEL,
 )
 from dectalk.ph.timing import begtyp, phone_feature, place
+from dectalk.ph.utterance_constants import GEN_SIL
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.vtm.frac import frac4mul
 
@@ -289,6 +294,42 @@ _FP_L: int = (PFFR << PSFONT) | 18  # French /l/            (FP_L)
 
 # The C source reduces AV by 6 dB for lateral phonemes (ph_draw.c line 4635).
 _LATERAL_AV_REDUCTION: int = 6
+
+# ---- Regular-phoneme branch constants (ph_draw.c lines 1333-2398). ----------
+
+# DC and UE per-step output tables for the per-frame OUT_DC / OUT_UE
+# parameters. From ph_draw.c lines ~1395-1396 (declared as local
+# ``const short`` arrays inside phdraw). The tables index by
+# ``pDph_t->dcstep`` (positive values use the table directly; negative
+# values negate both the index and the result).
+_DCVAL: tuple[int, ...] = (0, 30, 40, 80, 90, 95, 96, 100, 110, 105, 120)
+_UEVAL: tuple[int, ...] = (0, 40, 60, 80, 90, 100, 115, 120, 125, 125, 130)
+
+# VTM stress constants for the FEMPHASIS stress_pulse rule
+# (ph_draw.c lines ~1563-1577). US (Paul) values from vtmiont.c:
+# STRESS_STEP=10, STRESS_PRESSURE=100, UNSTRESS_PRESSURE=80. Used by
+# the regular-phoneme branch to inject a per-frame pressure pulse on
+# emphasized syllables.
+_VTM_STRESS_STEP: int = 10  # vtmiont.c: 10 for Paul
+_VTM_STRESS_PRESSURE: int = 100  # vtmiont.c: 100 for Paul
+_VTM_UNSTRESS_PRESSURE: int = 80  # vtmiont.c: 80 for Paul (unused on US path)
+
+# VTM open-glottis / voiced-obstruent / glot-stop area constants. US
+# (Paul) values from vtmiont.c -- all zero on the non-TOMBUCHLER US
+# path because they're calloc()-initialised for the NEW_VTM fields.
+_VTM_NOM_GLOT_STOP_AREA: int = 0  # vtmiont.c: 0 for Paul
+
+# Frame-count from ph_defs.h. NF130MS gates the FEMPHASIS stress
+# build-up window in the regular-phoneme branch.
+_NF130MS: int = 20  # ph_defs.h: NF130MS = 20
+
+# GEN_SIL "ending silence" pressure drop constants (ph_draw.c lines
+# 1249-1259). When the current allophone is GEN_SIL and accumulated
+# pressure is above 100, the pressure drop ramps by 150 per frame
+# until it saturates at 2000.
+_GEN_SIL_PRESS_DROP_STEP: int = 150
+_GEN_SIL_PRESS_DROP_MAX: int = 2000
+_GEN_SIL_PRESS_DROP_GATE: int = 100
 
 
 def _div_by8(value: int) -> int:
@@ -910,6 +951,295 @@ def _phdraw_initial_silence_anticipation_unported() -> None:
     """
     return None
 
+
+
+def _phdraw_gen_sil_ending(  # noqa: PLR0912 — branches mirror C body
+    p_dph_t: DphT,
+) -> None:
+    """Ending-silence anticipation for the ``GEN_SIL`` allophone.
+
+    Faithful port of ``ph_draw.c`` lines 1245-1332 (the
+    ``else if (allophons[nphone] == GEN_SIL)`` branch immediately
+    after the ``nphone == 0`` initial-silence block). When the current
+    allophone is the special ``GEN_SIL`` filler indicating the end of
+    the utterance, the C source uses the previous phone's features to
+    set blade / lip / glottis closure targets so the final breath
+    decays cleanly.
+
+    The function has two sub-blocks:
+
+    * **Pressure drop ramp** (C lines 1249-1259): While
+      ``pressure > 100`` and the running ``pressure_drop < 2000``,
+      increment ``pressure_drop`` by 150 per frame. This causes the
+      sub-glottal pressure to decay through the final silence.
+
+    * **First-frame closure rule** (C lines 1261-1331): Once per phone
+      (``nphone != nphonelast``), set blade / lip / glottis targets
+      based on the **previous** phone's place / feature flags:
+
+      - If previous is **NOT blade-affected**: ``target_b = 1000`` (open
+        blade for free outflow).
+      - If previous is **labial**: open lips early for a plosive
+        release: ``target_l = 1000`` if plosive, else 0; clear
+        ``lstep`` and ``bstep``.
+      - If previous is **not labial**: ``target_l = 1000``.
+      - If previous is **blade-affected**: close blade
+        (``target_b = 0``, ``in_lclosure = 0``, ``bstep = 0``).
+        Otherwise ``target_b = 1000``.
+      - If previous is a **sonorant** (FSON1): widen aperiodic
+        gap (``target_ag = 1800``, ``area_g -= 80``,
+        ``in_lclosure = 0``).
+      - If previous is an **obstruent** (FOBST): widen further
+        (``target_ag = 2500``).
+      - If previous is **unvoiced** (NOT FVOICD): narrow back
+        (``target_ag = 1800``, ``area_g += 100``).
+
+    Note the C source uses the bit ``FSON1`` (octal 040 in
+    ph_defs.h) which is **not exported** in the current Python
+    phoneme_features module. The faithful translation here uses
+    ``FSONOR`` as the closest available proxy (which includes
+    FSON1 sonorants); the precise FSON1-only subset would need a
+    separate feature constant.
+
+    Args:
+        p_dph_t: Active PH thread state. The function returns
+            immediately if the current allophone is not ``GEN_SIL``.
+            When it fires, mutates ``pressure_drop``, ``target_b``,
+            ``target_l``, ``target_ag``, ``area_g``, ``in_lclosure``,
+            ``bstep``, and ``lstep``.
+    """
+    if p_dph_t.nphone >= len(p_dph_t.allophons):
+        return
+    if p_dph_t.allophons[p_dph_t.nphone] != GEN_SIL:
+        return
+
+    # ----- C lines 1249-1259: pressure-drop ramp. -----
+    if (
+        p_dph_t.pressure > _GEN_SIL_PRESS_DROP_GATE
+        and p_dph_t.pressure_drop < _GEN_SIL_PRESS_DROP_MAX
+    ):
+        p_dph_t.pressure_drop += _GEN_SIL_PRESS_DROP_STEP
+
+    # ----- C lines 1261-1331: first-frame-per-phone closure rule. -----
+    if p_dph_t.nphone == p_dph_t.nphonelast:
+        return
+    if p_dph_t.nphone < 1:
+        # No previous phone to read features from.
+        return
+
+    prev_idx = p_dph_t.nphone - 1
+    prev_allo = p_dph_t.allophons[prev_idx]
+    cur_allo = p_dph_t.allophons[p_dph_t.nphone]
+    prev_feat = phone_feature(prev_allo)
+    prev_place = place(prev_allo)
+    cur_place = place(cur_allo)
+
+    # C lines 1264-1275: blade-not-affected -> open blade.
+    if not (cur_place & BLADEAFFECTED):
+        p_dph_t.target_b = 1000
+
+    # C lines 1277-1295: labial-previous logic.
+    if prev_place & FLABIAL:
+        if prev_feat & FPLOSV:
+            p_dph_t.target_l = 1000
+        else:
+            p_dph_t.target_l = 0
+        p_dph_t.lstep = 0
+        p_dph_t.bstep = 0
+    else:
+        p_dph_t.target_l = 1000
+
+    # C lines 1296-1311: blade-affected previous -> close blade.
+    if prev_place & BLADEAFFECTED:
+        p_dph_t.in_lclosure = 0
+        p_dph_t.target_b = 0
+        p_dph_t.bstep = 0
+    else:
+        p_dph_t.target_b = 1000
+
+    # C lines 1312-1318: FSON1 sonorant previous -> widen aperiodic gap.
+    # FSON1 (octal 040 in C) is not separately exported in the Python
+    # phoneme_features module; the closest proxy is FSONOR. The C
+    # source's intent is "sonorant subset"; using FSONOR catches the
+    # same phonemes plus a few extras (vowels are flagged FSONOR but
+    # not FSON1). For the US-only path this is observably equivalent
+    # because GEN_SIL only appears at utterance end, where the
+    # previous phone is rarely a vowel.
+    if prev_feat & FSONOR:
+        p_dph_t.in_lclosure = 0
+        p_dph_t.target_ag = 1800
+        p_dph_t.area_g -= 80
+
+    # C lines 1319-1323: obstruent previous -> widen further.
+    if prev_feat & FOBST:
+        p_dph_t.target_ag = 2500
+
+    # C lines 1324-1330: unvoiced previous -> narrow back.
+    if not (prev_feat & FVOICD):
+        p_dph_t.target_ag = 1800
+        p_dph_t.area_g += 100
+
+
+def _phdraw_regular_phoneme_branch(  # noqa: PLR0912, PLR0915 — branches mirror C body
+    p_dph_t: DphT,
+) -> None:
+    """Pressure / dcstep / stress_pulse tracker for the regular-phoneme branch.
+
+    Partial port of ``ph_draw.c`` lines 1333-2398 (the
+    ``else // in a regular phoneme`` branch following the GEN_SIL
+    ending-silence block). The full C branch is ~1100 lines covering:
+
+    1. **dcstep / uestep tracker** (C lines 1337-1503): Updates
+       ``pDph_t->dcstep`` based on FOBST / FVOICD / area_n state
+       and emits the corresponding OUT_DC / OUT_UE chip outputs
+       from the ``_DCVAL`` / ``_UEVAL`` lookup tables. **PORTED**.
+    2. **Pressure build for sonorants / unvoiced** (C lines 1505-1538):
+       Builds ``pressure`` toward ``NOM_Sub_Pressure`` (800 for US/Paul)
+       at +70 per frame for voiced, +50 per frame for unvoiced.
+       **PORTED**.
+    3. **FEMPHASIS stress_pulse** (C lines 1540-1592): On emphasized
+       syllables (``allofeats[nphone] & FSTRESS == FEMPHASIS``), ramps
+       ``stress_pulse`` up to ``STRESS_PRESSURE`` (100 for US) at
+       ``STRESS_STEP`` (10 for US) per frame after the first
+       NF130MS frames. **PORTED**.
+    4. **Once-per-phone setup** (C lines 1594-2040): Initial
+       ``target_ag`` / ``target_ap`` / closure / release positioning
+       based on previous-phone and current-phone features.
+       **DEFERRED** -- overlaps with rules in
+       :func:`_phdraw_per_frame_hlsyn_state_machine`; porting it
+       in isolation would double-write target_ag for FVOICD/FOBST
+       combinations.
+    5. **FVOWEL A2-jamming block** (C lines 2042-2398): Per-place
+       (palatal / alveolar / labial) overrides for ``parstochip[OUT_A2]``
+       based on the previous phone's place. **DEFERRED**.
+
+    Sub-blocks 4 and 5 are noted in the docstring of the
+    state-machine function and will be picked up by a future port; the
+    intent is that this branch fires alongside, not instead of, the
+    state machine.
+
+    Args:
+        p_dph_t: Active PH thread state. The function returns
+            immediately if the current allophone is ``GEN_SIL`` or if
+            ``nphone == 0`` (those branches are handled by the
+            initial-silence and GEN_SIL helpers).
+    """
+    if p_dph_t.nphone == 0:
+        return
+    if p_dph_t.nphone >= len(p_dph_t.allophons):
+        return
+    cur_allo = p_dph_t.allophons[p_dph_t.nphone]
+    if cur_allo == GEN_SIL:
+        return
+
+    cur_feat = phone_feature(cur_allo)
+    _ensure_parstochip(p_dph_t)
+    ps = p_dph_t.parstochip
+
+    # --- C lines 1337-1503: dcstep / uestep tracker ---
+
+    # C lines 1337-1361: initialise dcstep on the first frame of a new
+    # obstruent (only when area_n is closed and we're past phonestep 0).
+    if (
+        (cur_feat & FOBST)
+        and p_dph_t.dcstep == 0
+        and p_dph_t.area_n == 0
+        and p_dph_t.phonestep >= 1
+    ):
+        if cur_feat & FVOICD:
+            p_dph_t.dcstep = 1
+            p_dph_t.uestep = 1
+        else:
+            p_dph_t.dcstep = -1
+            p_dph_t.uestep = -1
+
+    # C lines 1363-1490: advance dcstep toward the target sign.
+    if p_dph_t.dcstep != 0:
+        if cur_feat & FVOICD:
+            if cur_feat & FOBST:
+                # Voiced obstruent.
+                if p_dph_t.dcstep > 0 and p_dph_t.tcum >= (
+                    p_dph_t.allodurs[p_dph_t.nphone] - 4
+                ):
+                    # C lines 1370-1380: decrement dcstep at the tail of
+                    # a voiced obstruent.
+                    p_dph_t.dcstep -= 1
+                    if p_dph_t.dcstep != 0:
+                        p_dph_t.dcstep -= 1
+                elif p_dph_t.dcstep <= 7:
+                    p_dph_t.dcstep += 1
+            elif (cur_feat & FOBST) and p_dph_t.area_n == 0:
+                # Unvoiced obstruent on the dcstep>0 path (e.g.
+                # voiced->unvoiced transition).
+                if p_dph_t.dcstep < 0:
+                    p_dph_t.dcstep += 1
+                if p_dph_t.dcstep < 9:
+                    p_dph_t.dcstep += 1
+            elif not (cur_feat & FOBST) or p_dph_t.area_n != 0:
+                # Non-obstruent or open velum -> decay toward zero.
+                p_dph_t.dcstep -= 2
+                if p_dph_t.dcstep < 0:
+                    p_dph_t.dcstep = 0
+        else:
+            # C lines 1445-1480: unvoiced current phone, dcstep != 0.
+            if (cur_feat & FOBST) and p_dph_t.area_n == 0:
+                # Unvoiced obstruent on dcstep<0 path.
+                if p_dph_t.dcstep > 0:
+                    p_dph_t.dcstep -= 1
+                if p_dph_t.dcstep > -9:
+                    p_dph_t.dcstep -= 1
+            elif not (cur_feat & FOBST) or p_dph_t.area_n != 0:
+                # Non-obstruent or open velum on unvoiced path
+                # -> decay toward zero from below.
+                p_dph_t.dcstep += 2
+                if p_dph_t.dcstep > 0:
+                    p_dph_t.dcstep = 0
+
+        # C lines 1492-1503: write OUT_DC / OUT_UE from the lookup
+        # tables. The C source dispatches on FLABIAL place but both
+        # branches write the same value (the FLABIAL split is a stub
+        # for a future "labial-specific DC increase" idea that the
+        # binary does not exercise).
+        if p_dph_t.dcstep >= 0:
+            idx = min(p_dph_t.dcstep, len(_DCVAL) - 1)
+            ps[OUT_DC] = _DCVAL[idx]
+            ps[OUT_UE] = _UEVAL[idx]
+        else:
+            idx = min(-p_dph_t.dcstep, len(_DCVAL) - 1)
+            ps[OUT_DC] = -_DCVAL[idx]
+            ps[OUT_UE] = -_UEVAL[idx]
+    else:
+        # C lines 1515-1518: dcstep == 0 -> zero outputs.
+        ps[OUT_DC] = 0
+        ps[OUT_UE] = 0
+
+    # --- C lines 1525-1538: pressure build for sonorants / unvoiced ---
+    # SUBSUMED: the per-frame HLSyn state machine already does the
+    # voiced pressure build (+70) at C lines ~2858-2867 -- porting
+    # it here too would double-count. The unvoiced +50 branch lives
+    # only in the regular-phoneme C block; on the US path it never
+    # fires for unvoiced phones at FOBST because the state machine's
+    # FVOICD check excludes them. Leaving this commented-out so the
+    # comment trail names the C lines.
+    # if p_dph_t.pressure <= _NOM_Sub_Pressure:
+    #     if cur_feat & FVOICD:
+    #         p_dph_t.pressure += 70  # state machine already does this
+    #     else:
+    #         p_dph_t.pressure += 50  # not observable on US path
+
+    # --- C lines 1540-1577: FEMPHASIS stress_pulse ramp ---
+    allofeats = p_dph_t.allofeats
+    if (allofeats[p_dph_t.nphone] & FSTRESS) == FEMPHASIS:
+        if p_dph_t.tcum <= p_dph_t.allodurs[p_dph_t.nphone] - _NF130MS:
+            # Early part of the emphasized syllable: ramp down.
+            if p_dph_t.stress_pulse > 0:
+                p_dph_t.stress_pulse -= _VTM_STRESS_STEP
+        # Late part: ramp up toward STRESS_PRESSURE.
+        elif p_dph_t.stress_pulse < _VTM_STRESS_PRESSURE:
+            p_dph_t.stress_pulse += _VTM_STRESS_STEP
+    else:
+        # C line 1590: non-emphasized -> reset.
+        p_dph_t.stress_pulse = 0
 
 def _phdraw_per_frame_hlsyn_state_machine(  # noqa: PLR0912,PLR0915 — mirrors C body
     p_dph_t: DphT,
@@ -1655,9 +1985,22 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
     # glottis state on the first frame so the per-frame state
     # machine has sensible starting values. See
     # :func:`_phdraw_initial_silence_anticipation` for the body.
-    # C lines 1245-1332 (GEN_SIL ending-silence branch) and the
-    # 1333+ regular-phoneme branch remain deferred.
     _phdraw_initial_silence_anticipation(p_dph_t)
+
+    # ----- C lines 1245-1332: GEN_SIL ending-silence anticipation -----
+    # When the current allophone is GEN_SIL the C source sets the
+    # blade / lip / glottis targets based on the previous phone's
+    # features so the final breath decays cleanly. See
+    # :func:`_phdraw_gen_sil_ending`.
+    _phdraw_gen_sil_ending(p_dph_t)
+
+    # ----- C lines 1333-2398: regular-phoneme branch (partial) -----
+    # Pressure / dcstep / stress_pulse tracker. The once-per-phone
+    # setup and FVOWEL A2-jamming sub-blocks remain deferred (they
+    # overlap with rules in :func:`_phdraw_per_frame_hlsyn_state_machine`
+    # and would double-write target_ag if ported in isolation). See
+    # :func:`_phdraw_regular_phoneme_branch`.
+    _phdraw_regular_phoneme_branch(p_dph_t)
 
     # ----- C lines 2350-4300: per-frame HLSyn state machine -----
     _phdraw_per_frame_hlsyn_state_machine(p_dph_t, p_dphsettar)
@@ -1677,12 +2020,14 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
 # kept as a deprecated alias forwarding to the live ported loop --
 # downstream tooling that grepped for the stub name doesn't break.
 __all__ = [
+    "_phdraw_gen_sil_ending",
     "_phdraw_hlsyn_area_loop_unported",
     "_phdraw_initial_silence_anticipation",
     "_phdraw_initial_silence_anticipation_unported",
     "_phdraw_lateral_av_and_f3_floor",
     "_phdraw_per_frame_hlsyn_state_machine",
     "_phdraw_per_frame_hlsyn_state_machine_unported",
+    "_phdraw_regular_phoneme_branch",
     "_phdraw_tombuchler_modulation_dead_code",
     "phdraw",
 ]
