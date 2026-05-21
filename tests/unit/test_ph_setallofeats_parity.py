@@ -293,11 +293,11 @@ def test_phinton_produces_nf0tot_gt_zero_on_hello_world() -> None:
         _orig = phinton_mod.phinton
 
         def _capture(handle: object) -> object:
-            ret = _orig(handle)
+            ret = _orig(handle)  # pyright: ignore[reportArgumentType]
             assert hasattr(handle, "p_ph_thread_data")
             p = handle.p_ph_thread_data  # type: ignore[attr-defined]
             assert p is not None
-            captured["nf0tot"] = p.nf0tot
+            captured["nf0tot"] = p.nf0tot  # pyright: ignore[reportUnknownMemberType]
             return ret
 
         phinton_mod.phinton = _capture  # type: ignore[assignment]
