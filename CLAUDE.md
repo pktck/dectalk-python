@@ -4,7 +4,7 @@ Project-specific operating instructions for Claude Code sessions on this
 repository. Read this at the start of every session.
 
 **See also**:
-- `docs/PLAN.md` — strategic plan for the C→Python port (phases 0-6).
+- `docs/PLAN.md` — strategic plan for the C→Python port (phases A-F).
 - `docs/PLAN-CI-STRATEGY.md` — workflow infrastructure rationale.
 - `docs/PORTING.md` — per-task playbook for translator agents.
 - `docs/TASKS.md` — current open port targets (auto-generated from
