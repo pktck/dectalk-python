@@ -260,8 +260,8 @@ def test_par_match_rule_short_circuits_when_ret_value_is_none() -> None:
         state=BIN_END_OF_RULE,
         input_array=None,
         output_array=None,
-        input_indexes=IndexData(),
-        output_indexes=IndexData(),
+        input_indexes=[IndexData()],
+        output_indexes=[IndexData()],
         match_array=None,
         ret_value=None,
         dict_state_flag=0,
@@ -277,8 +277,8 @@ def test_par_match_rule_marks_fatal_fail_for_null_pointer() -> None:
         state=BIN_END_OF_RULE,
         input_array=bytearray(b"hello"),
         output_array=bytearray(b""),
-        input_indexes=IndexData(),
-        output_indexes=IndexData(),
+        input_indexes=[IndexData()],
+        output_indexes=[IndexData()],
         match_array=MatchArrays(),
         ret_value=ret,
         dict_state_flag=0,
@@ -288,16 +288,18 @@ def test_par_match_rule_marks_fatal_fail_for_null_pointer() -> None:
 
 
 def test_par_match_rule_raises_not_implemented_for_deferred_walk() -> None:
-    """With valid inputs the shim defers the actual rule walk."""
+    """Without tables, a sub-state opcode (> BIN_SETS) raises NotImplementedError."""
     ret = ReturnValue()
-    with pytest.raises(NotImplementedError, match="par_match_rule rule-walk"):
+    # bytes([0x14, 0x00]): 0x14 is BIN_COPY which is > BIN_SETS (0x13) and requires
+    # perform_action_funcs to dispatch to. Without tables it must raise NotImplementedError.
+    with pytest.raises(NotImplementedError, match="deferred"):
         par_match_rule(
-            current_rule=b"\x00",
+            current_rule=bytes([0x14, 0x00]),
             state=BIN_END_OF_RULE,
-            input_array=bytearray(b"hi"),
-            output_array=bytearray(b""),
-            input_indexes=IndexData(),
-            output_indexes=IndexData(),
+            input_array=bytearray(b"hi\x00"),
+            output_array=bytearray(256),
+            input_indexes=[IndexData()] * 8,
+            output_indexes=[IndexData()] * 8,
             match_array=MatchArrays(),
             ret_value=ret,
             dict_state_flag=0,
@@ -305,16 +307,18 @@ def test_par_match_rule_raises_not_implemented_for_deferred_walk() -> None:
 
 
 def test_par_match_rule_notimplemented_cites_c_source() -> None:
-    """The NotImplementedError mentions par_pars1.c so callers know where to look."""
+    """NotImplementedError for sub-state dispatch mentions par_pars1.c."""
     ret = ReturnValue()
+    # 0x14 (BIN_COPY) > BIN_SETS requires perform_action_funcs;
+    # without it raises NotImplementedError.
     try:
         par_match_rule(
-            current_rule=b"\x00",
+            current_rule=bytes([0x14, 0x00]),
             state=BIN_END_OF_RULE,
-            input_array=bytearray(b""),
-            output_array=bytearray(b""),
-            input_indexes=IndexData(),
-            output_indexes=IndexData(),
+            input_array=bytearray(b"hi\x00"),
+            output_array=bytearray(256),
+            input_indexes=[IndexData()] * 8,
+            output_indexes=[IndexData()] * 8,
             match_array=MatchArrays(),
             ret_value=ret,
             dict_state_flag=0,
