@@ -9,18 +9,16 @@ Verifies:
    is non-zero (flutter + f0minimum push it above 0).
 4. A STEP command increments ``tarhat`` on the next frame.
 5. MALE path writes a voiced-frame F0 in ``[LOWEST_F0, HIGHEST_F0]``.
-6. FEMALE path raises ``NotImplementedError``.
+6. FEMALE path runs and also stays within the legal F0 band.
 7. Calling multiple times advances ``nfram`` / ``nframs`` / ``nframg``.
 """
 
 from __future__ import annotations
 
-import pytest
-
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.getcosine import HIGHEST_F0, LOWEST_F0
-from dectalk.ph.numeric_constants import MALE
+from dectalk.ph.numeric_constants import FEMALE, MALE
 from dectalk.ph.param_indices import OUT_T0
 from dectalk.ph.pht0draw import pht0draw
 from dectalk.ph.tts_handle import TtsHandle
@@ -194,15 +192,55 @@ def test_male_f0prime_in_legal_range() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 6 — FEMALE path raises NotImplementedError
+# Test 6 — FEMALE path runs and stays in legal F0 range
 # ---------------------------------------------------------------------------
 
 
-def test_female_raises_not_implemented() -> None:
-    """FEMALE voice path is not yet ported — must raise NotImplementedError."""
-    handle = _make_handle(nf0ev=-2, malfem=0)  # 0 == FEMALE
-    with pytest.raises(NotImplementedError, match="FEMALE"):
+def test_female_f0prime_in_legal_range() -> None:
+    """FEMALE path also clamps f0prime to [LOWEST_F0, HIGHEST_F0]."""
+    handle = _make_handle(nf0ev=-2, malfem=FEMALE, f0minimum=1200, f0scalefac=4096)
+    p_dph_t = handle.p_ph_thread_data
+    assert isinstance(p_dph_t, DphT)
+
+    for _ in range(30):
         pht0draw(handle)
+        assert LOWEST_F0 <= p_dph_t.f0prime <= HIGHEST_F0, (
+            f"FEMALE f0prime={p_dph_t.f0prime!r} out of [{LOWEST_F0}, {HIGHEST_F0}]"
+        )
+
+
+def test_female_hard_init_sets_newnote_1600() -> None:
+    """FEMALE hard init sets newnote=1600 (vs MALE's 1000)."""
+    handle = _make_handle(nf0ev=-2, malfem=FEMALE)
+    p_dph_t = handle.p_ph_thread_data
+    assert isinstance(p_dph_t, DphT)
+    pdphsettar = p_dph_t.pSTphsettar
+    assert isinstance(pdphsettar, DphSettarSt)
+
+    pht0draw(handle)
+
+    # newnote is touched once by hard init and not modified afterwards
+    # when no USER targets fire.
+    assert pdphsettar.newnote == 1600
+
+
+def test_female_avglstop_default_zero() -> None:
+    """FEMALE writes avglstop each frame; with no glottal stop it is 0."""
+    handle = _make_handle(nf0ev=-2, malfem=FEMALE)
+    p_dph_t = handle.p_ph_thread_data
+    assert isinstance(p_dph_t, DphT)
+    pdphsettar = p_dph_t.pSTphsettar
+    assert isinstance(pdphsettar, DphSettarSt)
+
+    pht0draw(handle)
+
+    # tglstp is initialised to -200 and nframg starts small, so
+    # dtglst > 5 in this first frame.
+    dtglst = abs(pdphsettar.nframg - pdphsettar.tglstp)
+    if dtglst > 5:
+        assert p_dph_t.avglstop == 0
+    else:
+        assert p_dph_t.avglstop == 6 - dtglst
 
 
 # ---------------------------------------------------------------------------
