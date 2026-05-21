@@ -26,6 +26,7 @@ from dectalk.kernel.lang_codes import LANG_english
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import (
+    FCBNEXT,
     FHAT_BEGINS,
     FHAT_ENDS,
     FPERNEXT,
@@ -41,7 +42,7 @@ from dectalk.ph.phinton import (
 from dectalk.ph.phoneme_features import FBURST, FPLOSV
 from dectalk.ph.timing import phone_feature
 from dectalk.ph.tts_handle import TtsHandle
-from dectalk.ph.utterance_constants import DECLARATIVE, GEN_SIL
+from dectalk.ph.utterance_constants import COMMACLAUSE, DECLARATIVE, GEN_SIL, QUESTION
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_inton2.c"
 
@@ -291,3 +292,167 @@ def test_phinton_inserts_dummy_schwa_after_clause_final_plosive() -> None:
     dph = cast(DphT, handle.p_ph_thread_data)
     # A schwa got inserted: nallotot grew by 1.
     assert dph.nallotot == 4
+
+
+# -- Rule 4 nesting (issue #50) --------------------------------------------
+#
+# Rule 4 (the comma-impulse pair / interrogative gesture, ph_inton2.c
+# lines 1499-1590) is nested inside the ``if (had_hatend)`` block --
+# brace-tracking proves this in :func:`test_rule4_is_inside_had_hatend_block`.
+# A prior revision of the Python port lifted Rule 4 to the syllable-
+# loop scope, which made it fire on every FCBNEXT phone whether or not
+# a hat-fall was pending. The behavioural tests below exercise both
+# paths to make sure the regression doesn't reappear.
+
+
+@_c_skip
+def test_rule4_is_inside_had_hatend_block() -> None:
+    """ph_inton2.c Rule 4 lives inside the depth-5 ``had_hatend`` block.
+
+    Walks the source brace-by-brace and asserts the Rule 4 comment
+    marker is at the same brace-depth as the ``had_hatend = 0``
+    assignment at the top of Rule 3's body. A prior revision of the
+    Python port lifted Rule 4 out to the loop scope, which made the
+    comma-impulse pair fire on every FCBNEXT phone whether or not a
+    hat-fall was pending.
+    """
+    text = _read_inton2_c()
+    lines = text.split("\n")
+    depth = 0
+    rule4_depth: int | None = None
+    # Find the inner ``had_hatend = 0`` assignment (the one at the top
+    # of Rule 3's body, NOT the per-clause init assignment that lives
+    # before the main loop).
+    rule3_clear_depth: int | None = None
+    seen_rule3_comment = False
+
+    for line in lines:
+        cleaned = re.sub(r"//.*", "", line)
+        cleaned = re.sub(r"/\*.*?\*/", "", cleaned)
+        cleaned = re.sub(r'".*?"', '""', cleaned)
+        cleaned = re.sub(r"'.*?'", "''", cleaned)
+        depth += cleaned.count("{") - cleaned.count("}")
+        if "Rule 3:" in line:
+            seen_rule3_comment = True
+        if (
+            seen_rule3_comment
+            and rule3_clear_depth is None
+            and "had_hatend=0" in cleaned.replace(" ", "")
+        ):
+            rule3_clear_depth = depth
+        if rule4_depth is None and "Rule 4:" in line:
+            rule4_depth = depth
+
+    assert rule3_clear_depth is not None, "Rule 3's had_hatend = 0 assignment not found"
+    assert rule4_depth is not None, "Rule 4 comment marker not found"
+    assert rule4_depth == rule3_clear_depth, (
+        f"Rule 4 should be at depth {rule3_clear_depth} (inside had_hatend), "
+        f"but was at depth {rule4_depth}. A prior revision of the port "
+        f"lifted Rule 4 out of the had_hatend block -- see issue #50."
+    )
+
+
+def test_rule4_comma_impulse_only_fires_with_had_hatend() -> None:
+    """Rule 4 (comma-impulse pair) is gated by ``had_hatend``.
+
+    Builds two interrogative-clause traces with FCBNEXT on the stressed
+    vowel. In the first, the vowel lacks FHAT_ENDS so ``had_hatend``
+    never gets set -- Rule 4 should NOT fire and ``delta_special``
+    should remain at its init value of 0. In the second, FHAT_ENDS is
+    set so ``had_hatend`` is armed when the FCBNEXT vowel runs --
+    Rule 4 fires and ``delta_special`` is set to -50.
+    """
+    allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
+    allodurs = [10, 8, 20, 10]
+
+    # ---- without FHAT_ENDS: had_hatend never set, Rule 4 must NOT fire.
+    allofeats_no_hat = [0, 0, FSTRESS_1 | FCBNEXT, 0]
+    h1 = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats_no_hat)
+    d1 = cast(DphT, h1.p_ph_thread_data)
+    d1.clausetype = QUESTION  # so the C's rule4_a (!= DECLARATIVE) condition flips on.
+    phinton(h1)
+    # delta_special stays at the per-clause init value (0). The Rule 4
+    # comma-pair would set it to -50 if it had fired.
+    assert d1.delta_special == 0, (
+        "Rule 4 fired without had_hatend being armed -- "
+        "the comma-impulse pair leaked out of the had_hatend block."
+    )
+
+    # ---- with FHAT_ENDS: had_hatend gets armed, Rule 4 fires.
+    allofeats_with_hat = [0, 0, FSTRESS_1 | FHAT_ENDS | FCBNEXT, 0]
+    h2 = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats_with_hat)
+    d2 = cast(DphT, h2.p_ph_thread_data)
+    d2.clausetype = QUESTION
+    phinton(h2)
+    assert d2.delta_special == -50, (
+        "Rule 4 didn't fire on FCBNEXT|FHAT_ENDS stressed vowel in a "
+        "non-declarative clause -- the comma-impulse pair was suppressed."
+    )
+    # commacnt incremented once by Rule 4's comma branch.
+    assert d2.commacnt >= 1
+
+
+def test_rule4_question_branch_clears_had_hatend() -> None:
+    """When the stressed vowel is FQUENEXT and had_hatend, Rule 4 fires
+    but the FQUENEXT inner branch leaves ``delta_special`` at 0.
+
+    The Spanish / LA / German question-impulse calls are skipped on
+    the US path; this test verifies we still walk into the Rule 3/4
+    block (proving had_hatend got cleared by it).
+    """
+    from dectalk.ph.feature_bits import FQUENEXT  # noqa: PLC0415
+
+    allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
+    allodurs = [10, 8, 20, 10]
+    allofeats = [0, 0, FSTRESS_1 | FHAT_ENDS | FQUENEXT, 0]
+    handle = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats)
+    dph = cast(DphT, handle.p_ph_thread_data)
+    dph.clausetype = QUESTION  # rule4_b matches regardless of clausetype.
+    phinton(handle)
+    # Rule 3 cleared had_hatend (proves we entered the block).
+    assert dph.had_hatend == 0
+    # Rule 3 set had_in_phrase_final.
+    assert dph.had_in_phrase_final == 1
+    # Rule 3 emitted a GLIDE event (type code 5 from utterance_constants.GLIDE).
+    from dectalk.ph.utterance_constants import GLIDE  # noqa: PLC0415
+
+    glide_events = [i for i in range(dph.nf0tot) if dph.f0type[i] == GLIDE]
+    assert glide_events, "Rule 3 did not emit a GLIDE F0 event"
+
+
+def test_rule4_commaclause_clausetype_triggers_comma_fall() -> None:
+    """COMMACLAUSE clausetype enters the ENGLISH_US Rule 3 comma branch.
+
+    The C source guards the Rule 3 comma-fall on
+    ``((struccur & FBOUNDARY) == FCBNEXT) || (clausetype == COMMACLAUSE)``.
+    Without the COMMACLAUSE branch we'd take the default AFTER_FINAL_FALL
+    path and the GLIDE target would use ``F0_FINAL_FALL >> 1`` (= 275)
+    instead of ``F0_COMMA_FALL`` (= 120). We verify the comma-fall
+    branch by reading the Rule 3 GLIDE event's target.
+    """
+    from dectalk.ph.phinton import _F0_COMMA_FALL  # noqa: PLC0415
+    from dectalk.ph.utterance_constants import GLIDE  # noqa: PLC0415
+
+    allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
+    allodurs = [10, 8, 20, 10]
+    # No FCBNEXT in the feature bits -- only clausetype is COMMACLAUSE.
+    allofeats = [0, 0, FSTRESS_1 | FHAT_ENDS, 0]
+    handle = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats)
+    dph = cast(DphT, handle.p_ph_thread_data)
+    dph.clausetype = COMMACLAUSE
+    phinton(handle)
+    # Rule 3 cleared had_hatend (proves we entered the block).
+    assert dph.had_hatend == 0
+    # Pull the GLIDE event Rule 3 emits and verify its target encodes
+    # the F0_COMMA_FALL path. Target is -(f0fall + hatsize); hatsize
+    # is 0 here because there was no FHAT_BEGINS on a prior phone.
+    # frac4mul(F0_COMMA_FALL, 4096 (=Q12 unity)) == F0_COMMA_FALL.
+    glide_targets = [
+        dph.f0tar[i] for i in range(dph.nf0tot) if dph.f0type[i] == GLIDE and dph.f0tar[i] < 0
+    ]
+    assert glide_targets, "no Rule 3 GLIDE event found"
+    # The first (and only) downward GLIDE is the Rule 3 hat-fall.
+    assert glide_targets[0] == -_F0_COMMA_FALL, (
+        f"expected GLIDE target -F0_COMMA_FALL ({-_F0_COMMA_FALL}), "
+        f"got {glide_targets[0]} (COMMACLAUSE path not taken?)"
+    )
