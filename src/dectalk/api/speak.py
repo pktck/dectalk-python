@@ -202,7 +202,7 @@ def _arpabet_to_us_allophone(name: str) -> int | None:
         return None
 
 
-def _speak_via_python_full(
+def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically long
     text: str,
     rate: float,
     voice: str | VoicePreset | None,
@@ -256,7 +256,11 @@ def _speak_via_python_full(
     from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
     from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
 
-    del voice  # TODO: thread through voice into DphT.curspdef / malfem etc.
+    # TODO: thread voice through DphT.curspdef / malfem etc. For now
+    # only the speaker/sample-rate piece (via _resolve_voice) flows
+    # into the LL synthesizer; the PH module always runs with its
+    # default spdef.
+    voice_preset = _resolve_voice(voice)
 
     if lang != "us":
         raise NotImplementedError(
@@ -288,10 +292,6 @@ def _speak_via_python_full(
     wpm = max(75, min(600, round(_DEFAULT_WPM * rate)))
 
     p_dph_t = DphT()
-    p_dph_t.allophons = allophons
-    p_dph_t.allofeats = [0] * nallotot  # TODO: phalloph for per-allophone features.
-    p_dph_t.allodurs = [0] * nallotot  # init_timing computes per-phone durations.
-    p_dph_t.nallotot = nallotot
     p_dph_t.dipspec = [0] * 256
     p_dph_t.parstochip = [0] * 64
     p_dph_t.last_lang = 0  # forces gettar to load tables on first call.
@@ -306,8 +306,14 @@ def _speak_via_python_full(
     p_ksd_t.lang_curr = LANG_english
     handle.p_kernel_share_data = p_ksd_t
 
-    # 4. Per-clause init: array setup + timing.
+    # 4. Per-clause init -- MUST run before populating ``allophons``
+    # because :func:`init_phclause` zeroes that array (along with
+    # ``allodurs`` / ``allofeats`` / ``f0tar`` / ``f0tim``). The
+    # post-init writes below land in the buffer init_phclause sized.
     init_phclause(p_dph_t)
+    for i, code in enumerate(allophons):
+        p_dph_t.allophons[i] = code
+    p_dph_t.nallotot = nallotot
     init_timing(
         p_dph_t,
         settar,
@@ -315,46 +321,57 @@ def _speak_via_python_full(
         lang_curr=LANG_english,
     )
 
-    # 5. Per-nphone loop: call phsettar end-to-end.
-    for nphone in range(nallotot):
-        p_dph_t.nphone = nphone
-        # init_timing populates allodurs lazily for some phones; use it
-        # as the per-phone durfon when available, else fall back to a
-        # default of 40 frames so phsettar's downstream math is sane.
-        p_dph_t.durfon = p_dph_t.allodurs[nphone] if p_dph_t.allodurs[nphone] > 0 else 40
-        phsettar(handle)
-
-    # 6. phinton: F0 contour generation. Walks the allophone stream
-    # firing pitch events (hat-rise / stress impulses / comma+question
-    # gestures / continuation rises / baseline reset / dummy schwa).
-    # Writes f0tar / f0type / f0length / f0tim on DphT.
+    # 5. phinton: F0 contour generation, ONCE per clause before the
+    # per-frame loop. Walks the allophone stream firing pitch events
+    # (hat-rise / stress impulses / comma+question gestures /
+    # continuation rises / baseline reset / dummy schwa). Writes
+    # f0tar / f0type / f0length / f0tim on DphT.
+    from dectalk.ph.parstochip_to_frames import parstochip_to_llframe  # noqa: PLC0415
+    from dectalk.ph.phdraw import phdraw  # noqa: PLC0415
     from dectalk.ph.phinton import phinton  # noqa: PLC0415
 
     phinton(handle)
 
-    # 7. ph_draw: walk the per-parameter state phsettar wrote into a
-    # Klatt-frame stream. The port is partial -- the outer skeleton
-    # (F1..B3 / AV..TILT trajectories + spectral tilt + formant
-    # scaling) is real, but the four big un-translated chunks
-    # (HLSyn area loop / initial-silence anticipation / per-frame
-    # HLSyn state machine / F0 modulation) each raise
-    # NotImplementedError with a named tag.
-    from dectalk.ph.phdraw import phdraw  # noqa: PLC0415
+    # 6. Per-frame driver loop -- mirrors ph_claus.c's phclause while-
+    # loop (lines 367-505). For each 6.4 ms frame:
+    #
+    #   * Increment tcum. If it has passed the current allophone's
+    #     duration, advance ``nphone`` (returning when allophones run
+    #     out), reset ``tcum``, set ``durfon`` from ``allodurs``, and
+    #     re-run phsettar for the new allophone.
+    #   * Call phdraw to update ``parstochip[]`` for this frame.
+    #     (pht0draw isn't ported yet -- the adapter uses a static
+    #     122 Hz fallback when OUT_T0 stays zero.)
+    #   * Convert ``parstochip[]`` to an LLFrame and append.
+    #
+    # The first iteration enters the "advance" branch (tcum starts at
+    # -1, durfon at 0), so phsettar gets called for nphone=0 inside
+    # the loop -- matching the C init_pars() setup.
+    p_dph_t.tcum = -1
+    p_dph_t.nphone = -1
+    p_dph_t.durfon = 0
+    frames: list[object] = []
+    # Cap the loop to keep buggy state from running away during the
+    # multi-month port. 8000 frames is ~51 s of audio -- well past
+    # any reasonable clause.
+    max_frames = 8000
+    for _ in range(max_frames):
+        p_dph_t.tcum += 1
+        if p_dph_t.tcum >= p_dph_t.durfon:
+            p_dph_t.nphone += 1
+            if p_dph_t.nphone >= nallotot:
+                break
+            p_dph_t.tcum -= p_dph_t.durfon
+            p_dph_t.durfon = (
+                p_dph_t.allodurs[p_dph_t.nphone] if p_dph_t.allodurs[p_dph_t.nphone] > 0 else 40
+            )
+            phsettar(handle)
+        phdraw(handle)
+        frames.append(parstochip_to_llframe(p_dph_t.parstochip))
 
-    phdraw(handle)
-
-    # 8. (Pending.) phdraw populates DphT.parstochip with raw param
-    # words rather than emitting list[LLFrame] directly. Once the
-    # four phdraw chunks land plus a parstochip->LLFrame adapter,
-    # the call below pumps frames through ll_synthesize. For now
-    # we surface the named gap.
-    raise NotImplementedError(
-        "DECTALK_FULL_PIPELINE: phdraw completed its outer skeleton "
-        f"for {nallotot} allophones, populating DphT.parstochip. The "
-        "remaining work is (a) finish the four named ph_draw chunks "
-        "and (b) write a parstochip -> LLFrame adapter so "
-        "_pump_frames_to_samples() can synthesise audio."
-    )
+    # 7. Pump the collected Klatt frames through ll_synthesize for
+    # int16 PCM output.
+    return _pump_frames_to_samples(frames, voice_preset)
 
 
 def _speak_via_python(
