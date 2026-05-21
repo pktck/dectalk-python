@@ -25,17 +25,21 @@ This Python port is a **partial faithful translation**:
   deterministic per-frame work that has well-defined inputs from
   phsettar and well-defined outputs to ``parstochip[]``.
 
-* Lines 759-4837 (the bulk of the C body) cover the HLSyn area-
-  parameter state machine (PAREAL / PAREAB / PTONGUEBODY plus the
-  pressure / glottis / nasal area trackers), F0-event emission, and
-  the language-specific coarticulation rules. Most of this logic
-  reads ``DphT`` fields that depend on intermediate state computed
-  by ``phinton`` / ``pht0draw`` / phalloph helpers that themselves
-  are only partially ported. Calling those branches before their
+* Lines 761-907 (the HLSyn area-parameter loop -- PAREAL / PAREAB /
+  PTONGUEBODY closure / release / friction flag updates) are now
+  ported, gated by the same drawinitsw / tspesh state phsettar
+  populates. See :func:`_phdraw_hlsyn_area_loop`.
+
+* Lines 908-4837 (the remaining bulk of the C body) cover the
+  initial-silence anticipation block, the per-frame HLSyn state
+  machine (pressure / glottis / nasal area trackers), and F0-event
+  emission. Most of this logic reads ``DphT`` fields that depend on
+  intermediate state computed by ``pht0draw`` and the un-ported
+  pieces of phalloph; calling those branches before their
   dependencies land would silently emit wrong values, so the port
   here raises :class:`NotImplementedError` from per-block helpers
   named after their C-source line numbers. See the individual
-  ``_phdraw_hlsyn_*`` helpers below for the precise gaps.
+  ``_phdraw_*_unported`` helpers below for the precise gaps.
 
 The function signature mirrors the C source: ``phdraw(phTTS)`` takes
 a populated :class:`~dectalk.ph.tts_handle.TtsHandle` and mutates
@@ -72,6 +76,8 @@ from dectalk.ph.numeric_constants import (
     TILT,
 )
 from dectalk.ph.param_indices import (
+    AREAB,
+    AREAL,
     OUT_A2,
     OUT_A3,
     OUT_A4,
@@ -89,10 +95,38 @@ from dectalk.ph.param_indices import (
     OUT_FZ,
     OUT_T0,
     OUT_TLT,
+    TONGUEBODY,
 )
 from dectalk.ph.parameter_struct import Parameter
+from dectalk.ph.phoneme_features import (
+    BLADEAFFECTED,
+    FBURST,
+    FCONSON,
+    FLABIAL,
+    FNASAL,
+    FPLOSV,
+    FSTOP,
+)
+from dectalk.ph.timing import phone_feature, place
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.vtm.frac import frac4mul
+
+# ---- HLSyn area loop constants (ph_draw.c lines 761-907). ------------------
+
+# ``pVtm_t->NOM_Fricative_Opening`` from vtm/vtminst.h. The C source loads
+# this from the active speaker's voice-def table (vtm/vtmiont.c lines
+# 3055-3334). Every per-language assignment in the libtts_us.so build
+# resolves to 100 (the lone exception, line 3334, is the German trill
+# voice at 110 -- not on the US path). Hard-coding 100 here mirrors the
+# US path until the VtmT struct itself gets a Python mirror; the comment
+# names the C lines a future VtmT port should claim.
+_NOM_FRICATIVE_OPENING: int = 100
+
+# ``bplos_build_time`` from ph_draw.c line 156 (``const short
+# bplos_build_time=7``). Used by the area loop to pre-anticipate the
+# burst window so the closure flags get set slightly before the
+# actual burst frame.
+_BPLOS_BUILD_TIME: int = 7
 
 # ---- Output-buffer offsets in DphT.parstochip[] for each param slot. -------
 
@@ -349,18 +383,127 @@ def _apply_formant_scaling(p_dph_t: DphT) -> None:
 # ----------------------------------------------------------------------------
 
 
-def _phdraw_hlsyn_area_loop_unported() -> None:
-    """Stub for ph_draw.c lines 761-907 (HLSyn AREAL/AREAB/PTONGUEBODY loop).
+# ruff: noqa: SIM102 — the nested-if style here mirrors the C source's
+# three-level switch on (np-branch / np->tspesh / pDph_t->tcum vs.
+# tspesh window). Flattening with ``and`` would obscure the C-source
+# structure that future bit-parity work needs to re-read in lockstep.
 
-    The block walks the HLSyn area-parameter range setting per-frame
-    closure / release / friction state for the labial / blade /
-    tongue-body articulators. It depends on ``pVtm_t->NOM_*`` voice
-    constants that have no Python mirror yet.
+
+def _phdraw_hlsyn_area_loop(  # noqa: PLR0912, PLR0915 — branchy by design
+    p_dph_t: DphT,
+) -> None:
+    """HLSyn area-parameter state-machine loop.
+
+    Faithful port of ph_draw.c lines 761-907 (``#ifdef HLSYN``
+    block immediately after the formant-scaling step). Walks the
+    HLSyn area-parameter range (``PAREAB`` through ``PTONGUEBODY``)
+    and sets per-frame closure / release flags on ``DphT`` that
+    the downstream per-frame HLSyn state machine (lines 2350-4500
+    -- still un-ported) consumes.
+
+    The loop has three observable side effects:
+
+    * **``np == &PAREAL``** (lines 769-816): if the param's special-
+      rule window has expired (``tcum >= tspesh``), clear the lip
+      closure / burst-release flags and -- depending on whether the
+      current phoneme is a plosive consonant -- set ``in_lrelease``
+      and load ``target_l`` with ``NOM_Fricative_Opening``. If we're
+      still inside the burst-build window
+      (``tcum >= tspesh - bplos_build_time``), set the closure
+      flag instead.
+    * **``np == &PAREAB``** (lines 818-876): mirror of the PAREAL
+      branch for the labial (bilabial) closure / release / friction
+      flags. Adds the ``bstep = -1`` initialisation and an
+      affricate-special branch (FCONSON without FPLOSV).
+    * **``np == &PTONGUEBODY``** (lines 878-905): manages the
+      tongue-body closure / release flags for velar stops. Sets
+      ``target_tb = 100`` and ``tbstep = -1`` on the release frame;
+      sets ``in_tbclosure = 1`` and ``tbstep = -2`` on the very
+      first frame of a stop allophone.
+
+    The PAREAG and PAREAN slots fall through the loop with no
+    handler (the C source has no ``np == &PAREAG`` / ``np ==
+    &PAREAN`` branch).
+
+    Args:
+        p_dph_t: Active PH thread state. Mutates the
+            ``in_brelease``, ``in_lclosure``, ``in_lrelease``,
+            ``target_l``, ``in_bclosure``, ``target_b``, ``bstep``,
+            ``in_tbclosure``, ``in_tbrelease``, ``target_tb``, and
+            ``tbstep`` fields.
     """
-    raise NotImplementedError(
-        "phdraw: HLSyn area loop (ph_draw.c lines 761-907) is not yet ported; "
-        "requires pVtm_t (VTM thread data) which has no Python mirror."
+    cur_allo = p_dph_t.allophons[p_dph_t.nphone]
+    next_allo = (
+        p_dph_t.allophons[p_dph_t.nphone + 1]
+        if (p_dph_t.nphone + 1) < len(p_dph_t.allophons)
+        else 0
     )
+    cur_feat = phone_feature(cur_allo)
+    next_feat = phone_feature(next_allo) if next_allo else 0
+    next_place = place(next_allo) if next_allo else 0
+
+    # ----- PAREAL branch -- C lines 769-816 -----
+    p_areal = p_dph_t.param[AREAL]
+    if p_areal.tspesh:
+        if p_dph_t.tcum >= p_areal.tspesh:
+            p_dph_t.in_brelease = 0
+            p_dph_t.in_lclosure = 0
+            if cur_feat & FCONSON:
+                if cur_feat & FPLOSV:
+                    # Plosive: release it if next phone is not a
+                    # plosive AND not homorganic (labial-labial).
+                    if not (next_feat & FPLOSV) and not (next_place & FLABIAL):
+                        p_dph_t.in_lrelease = 1
+                        p_dph_t.target_l = _NOM_FRICATIVE_OPENING
+            elif not (next_feat & FNASAL):
+                p_dph_t.in_lrelease = 1
+        elif p_dph_t.tcum >= (p_areal.tspesh - _BPLOS_BUILD_TIME) and (cur_feat & FBURST):
+            p_dph_t.in_lclosure = 1
+            p_dph_t.in_lrelease = 0
+            p_dph_t.in_brelease = 0
+
+    # ----- PAREAB branch -- C lines 818-876 -----
+    p_areab = p_dph_t.param[AREAB]
+    if p_areab.tspesh:
+        if p_dph_t.tcum >= p_areab.tspesh:
+            p_dph_t.in_lrelease = 0
+            p_dph_t.in_bclosure = 0
+            if cur_feat & FCONSON:
+                if cur_feat & FPLOSV:
+                    # Plosive: release if next is not a stop AND not
+                    # homorganic (next phone's place not affected by
+                    # the blade).
+                    if not (next_feat & FSTOP) and not (next_place & BLADEAFFECTED):
+                        p_dph_t.in_brelease = 1
+                        p_dph_t.bstep = -1
+                        p_dph_t.target_b = _NOM_FRICATIVE_OPENING
+                else:
+                    # Affricate: always release.
+                    p_dph_t.in_brelease = 1
+                    p_dph_t.bstep = -1
+                    p_dph_t.target_b = _NOM_FRICATIVE_OPENING
+            elif not (next_feat & FNASAL):
+                p_dph_t.in_brelease = 1
+        elif p_dph_t.tcum >= (p_areab.tspesh - (_BPLOS_BUILD_TIME + 1)) and (cur_feat & FBURST):
+            p_dph_t.in_bclosure = 1
+            p_dph_t.in_brelease = 0
+            p_dph_t.in_lrelease = 0
+
+    # ----- PTONGUEBODY branch -- C lines 878-905 -----
+    p_tongue = p_dph_t.param[TONGUEBODY]
+    if p_tongue.tspesh:
+        if p_dph_t.tcum >= p_tongue.tspesh and not (next_feat & FSTOP):
+            # Coarticulate a velar plos followed by a stop.
+            p_dph_t.in_tbclosure = 0
+            p_dph_t.in_lrelease = 0
+            p_dph_t.target_tb = 100
+            if p_dph_t.tbstep <= -2:
+                p_dph_t.tbstep = -1
+            p_dph_t.in_tbrelease = 1
+        elif p_dph_t.tcum == 0 and (cur_feat & FSTOP):
+            p_dph_t.in_tbclosure = 1
+            p_dph_t.in_tbrelease = 0
+            p_dph_t.tbstep = -2
 
 
 def _phdraw_initial_silence_anticipation_unported() -> None:
@@ -549,17 +692,21 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912 — branches mirror
     # ----- C lines 750-757: formant scaling -----
     _apply_formant_scaling(p_dph_t)
 
-    # ----- C lines 761+: HLSyn area loop, initial-silence anticipation,
+    # ----- C lines 761-907: HLSyn area-parameter state machine -----
+    _phdraw_hlsyn_area_loop(p_dph_t)
+
+    # ----- C lines 908+: initial-silence anticipation,
     # per-frame HLSyn state machine, F0 modulation. All deferred.
     # Calling code that needs strict parity should raise via the helper
     # stubs above; the default per-frame path returns here so the basic
     # Klatt parameter trajectory keeps emitting frames.
 
 
-# Stub helpers naming the un-ported C blocks (the four _phdraw_*_unported
-# functions) are exported so callers that want strict parity can opt
-# into the NotImplementedError rather than the silent-skip default; also
-# gives the next port an unambiguous place to claim a sub-block.
+# Stub helpers naming the still-un-ported C blocks; exported so callers
+# that want strict parity can opt into the NotImplementedError rather
+# than the silent-skip default. ``_phdraw_hlsyn_area_loop_unported`` is
+# kept as a deprecated alias forwarding to the live ported loop --
+# downstream tooling that grepped for the stub name doesn't break.
 __all__ = [
     "_phdraw_f0_modulation_unported",
     "_phdraw_hlsyn_area_loop_unported",
@@ -567,3 +714,15 @@ __all__ = [
     "_phdraw_per_frame_hlsyn_state_machine_unported",
     "phdraw",
 ]
+
+
+def _phdraw_hlsyn_area_loop_unported() -> None:
+    """Deprecated alias for ``_phdraw_hlsyn_area_loop``.
+
+    Kept for grep-compatibility with the previous stub; the live
+    loop is now in :func:`_phdraw_hlsyn_area_loop` and runs as part
+    of ``phdraw()``. Calling this directly is a no-op; the previous
+    behaviour was to raise ``NotImplementedError`` with a "not yet
+    ported" message.
+    """
+    return None

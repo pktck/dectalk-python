@@ -461,3 +461,75 @@ def test_c_body_has_formant_scaling() -> None:
         r"pDph_t->fnscale",
         body,
     )
+
+
+# ----- HLSyn area-loop tests (ph_draw.c lines 761-907) -----------------------
+
+
+def test_hlsyn_area_loop_skipped_when_no_tspesh() -> None:
+    """Loop is a no-op when neither AREAL/AREAB/TONGUEBODY has tspesh > 0."""
+    from dectalk.ph.param_indices import AREAB, AREAL, TONGUEBODY  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.param[AREAL].tspesh = 0
+    p_dph_t.param[AREAB].tspesh = 0
+    p_dph_t.param[TONGUEBODY].tspesh = 0
+    # Pre-seed the flags so we can detect if the loop touched them.
+    p_dph_t.in_brelease = 7
+    p_dph_t.in_lclosure = 7
+    p_dph_t.target_l = 42
+    phdraw(handle)
+    assert p_dph_t.in_brelease == 7
+    assert p_dph_t.in_lclosure == 7
+    assert p_dph_t.target_l == 42
+
+
+def test_hlsyn_area_loop_pareab_clears_lrelease_when_tspesh_window_expired() -> None:
+    """When ``tcum >= tspesh`` and current phone has no consonant feature, the
+    PAREAB branch should clear ``in_lrelease`` and ``in_bclosure``."""
+    from dectalk.ph.param_indices import AREAB  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.allophons = [0, 0, 0]
+    p_dph_t.nphone = 1
+    p_dph_t.param[AREAB].tspesh = 5
+    p_dph_t.tcum = 10  # past tspesh
+    p_dph_t.in_lrelease = 1
+    p_dph_t.in_bclosure = 1
+    phdraw(handle)
+    assert p_dph_t.in_lrelease == 0
+    assert p_dph_t.in_bclosure == 0
+
+
+def test_hlsyn_area_loop_ptongebody_sets_closure_at_tcum_zero_for_stop() -> None:
+    """When ``tcum == 0`` and current phone has FSTOP, set
+    ``in_tbclosure = 1`` and ``tbstep = -2``."""
+    from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
+    from dectalk.ph.param_indices import TONGUEBODY  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    # A velar stop /K/ has FSTOP set; pick the US allophone code.
+    k_code = (PFUSA << 8) | int(USPhoneme["K"])
+    p_dph_t.allophons = [0, k_code, 0]
+    p_dph_t.nphone = 1
+    p_dph_t.param[TONGUEBODY].tspesh = 8
+    p_dph_t.tcum = 0
+    p_dph_t.in_tbclosure = 0
+    p_dph_t.in_tbrelease = 1
+    phdraw(handle)
+    assert p_dph_t.in_tbclosure == 1
+    assert p_dph_t.in_tbrelease == 0
+    assert p_dph_t.tbstep == -2
+
+
+@pytest.mark.skipif(
+    not _C_FILE.exists(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
+def test_c_body_has_hlsyn_area_loop() -> None:
+    """C body has the ``for (; np <= &PTONGUEBODY; np++)`` HLSyn area loop."""
+    body = _extract_body()
+    assert re.search(
+        r"for\s*\(\s*;\s*np\s*<=\s*&PTONGUEBODY\s*;\s*np\+\+\s*\)",
+        body,
+    )
