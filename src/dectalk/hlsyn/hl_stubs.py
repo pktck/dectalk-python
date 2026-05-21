@@ -9,10 +9,38 @@ count the C entry points as ported.
 Each stub returns 0. The actual HL->LL mapping is performed by
 ``libtts_us.so`` under the hood. Phase E will replace these stubs
 with faithful translations of the C bodies in ``hlframe.c``,
-``nasalf1x.c``, ``inithl.c`` and ``circuit.c``.
+``inithl.c`` and ``circuit.c``.
+
+The nasalf1x.c functions (``SetNasals_f1x``, ``NasalFirstFormant``,
+``NasalPole``, ``SusceptanceSum``, ``FiniteBracketFNP``) are already
+ported in :mod:`dectalk.hlsyn.nasalf1x` and re-exported from here.
 """
 
 from __future__ import annotations
+
+from dectalk.hlsyn.nasalf1x import (
+    FiniteBracketFNP,
+    NasalFirstFormant,
+    NasalPole,
+    SetNasals_f1x,
+    SusceptanceSum,
+)
+
+__all__ = [
+    "FiniteBracketFNP",
+    "FricativeFilters",
+    "GlottalInteraction",
+    "HLSynthesizeLLFrame",
+    "InitializeHLSynthesizer",
+    "InterpolateAF",
+    "NasalFirstFormant",
+    "NasalPole",
+    "SetNasals_f1x",
+    "SourceAmplitudes",
+    "SourceSpecifics",
+    "SpeechCircuit",
+    "SusceptanceSum",
+]
 
 
 def HLSynthesizeLLFrame(*args: object, **kwargs: object) -> int:  # noqa: N802
@@ -57,54 +85,7 @@ def InitializeHLSynthesizer(*args: object, **kwargs: object) -> int:  # noqa: N8
     return 0
 
 
-def SetNasals_f1x(*args: object, **kwargs: object) -> int:  # noqa: N802
-    """No-op: top-level nasal pole/zero setter."""
-    del args, kwargs
-    return 0
-
-
-def NasalFirstFormant(*args: object, **kwargs: object) -> int:  # noqa: N802
-    """No-op: places the nasal first formant F1."""
-    del args, kwargs
-    return 0
-
-
-def NasalPole(*args: object, **kwargs: object) -> int:  # noqa: N802
-    """No-op: places the nasal pole FNP via Brent root-finding."""
-    del args, kwargs
-    return 0
-
-
-def SusceptanceSum(*args: object, **kwargs: object) -> int:  # noqa: N802
-    """No-op: Brent target function for the nasal-branch susceptance sum."""
-    del args, kwargs
-    return 0
-
-
-def FiniteBracketFNP(*args: object, **kwargs: object) -> int:  # noqa: N802
-    """No-op: walks outward to find a finite bracket for Brent."""
-    del args, kwargs
-    return 0
-
-
 def SpeechCircuit(*args: object, **kwargs: object) -> int:  # noqa: N802
     """No-op: glottal / vocal-tract aerodynamic equivalent-circuit solver."""
     del args, kwargs
     return 0
-
-
-__all__ = [
-    "FiniteBracketFNP",
-    "FricativeFilters",
-    "GlottalInteraction",
-    "HLSynthesizeLLFrame",
-    "InitializeHLSynthesizer",
-    "InterpolateAF",
-    "NasalFirstFormant",
-    "NasalPole",
-    "SetNasals_f1x",
-    "SourceAmplitudes",
-    "SourceSpecifics",
-    "SpeechCircuit",
-    "SusceptanceSum",
-]
