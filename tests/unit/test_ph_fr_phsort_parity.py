@@ -2,8 +2,8 @@
 
 Re-parses the C body via brace-depth tracking and asserts the
 French-specific sort engine still exists in the develop branch and
-returns TRUE at the end. Also checks the Python shim raises
-``NotImplementedError`` as documented.
+returns TRUE at the end. Also checks the Python port runs without
+error against a minimally-populated handle.
 
 Skips cleanly when ``DECTALK_SRC`` / ``/tmp/dectalk-src`` is absent.
 """
@@ -13,9 +13,14 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from dectalk.kernel.ksd_t import KsdT
+from dectalk.kernel.lang_codes import LANG_french
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
 from dectalk.ph.fr_phsort import fr_phsort
 from dectalk.ph.tts_handle import TtsHandle
 
@@ -88,16 +93,45 @@ def test_french_engine_comment_present() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
+def _make_handle() -> TtsHandle:
+    """Return a minimally-populated handle keyed for ``LANG_french``."""
+    p_dph_t = DphT()
+    p_dph_t.pSTphsettar = DphSettarSt()
+    p_dph_t.symbols = []
+    p_dph_t.nsymbtot = 0
+    p_dph_t.user_durs = []
+    p_dph_t.user_f0 = []
+    p_dph_t.sentstruc = [0] * 32
+    p_ksd_t = KsdT()
+    p_ksd_t.lang_curr = LANG_french
+    p_ksd_t.sprate = 200
     handle = TtsHandle()
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
-        fr_phsort(handle)
+    handle.p_kernel_share_data = p_ksd_t
+    handle.p_ph_thread_data = p_dph_t
+    return handle
 
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError) as exc_info:
-        fr_phsort(handle)
-    assert "Phase E" in str(exc_info.value)
+def test_empty_input_returns_true() -> None:
+    """An empty symbol stream returns TRUE (1) without raising."""
+    handle = _make_handle()
+    assert fr_phsort(handle) == 1
+
+
+def test_halting_aborts_returning_false() -> None:
+    """Setting ``halting`` on the kernel handle short-circuits to FALSE."""
+    handle = _make_handle()
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    p_ksd_t = cast(KsdT, handle.p_kernel_share_data)
+    p_dph_t.symbols = [5, 0x70]  # phoneme + FrontMot
+    p_dph_t.nsymbtot = len(p_dph_t.symbols)
+    p_ksd_t.halting = 1
+    assert fr_phsort(handle) == 0
+
+
+def test_f0mode_set_to_normal_on_entry() -> None:
+    """The clause sweep resets ``f0mode`` to NORMAL (1)."""
+    handle = _make_handle()
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    p_dph_t.f0mode = 99  # poison value
+    fr_phsort(handle)
+    assert p_dph_t.f0mode == 1  # NORMAL

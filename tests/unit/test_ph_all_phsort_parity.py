@@ -3,8 +3,8 @@
 Re-parses the C body via brace-depth tracking and asserts the
 default per-language sort engine still exists in the develop
 branch with the expected entry / argument types / per-language
-branches. Also checks the Python shim raises ``NotImplementedError``
-as documented.
+branches. Also checks the Python port runs without error against
+a minimally-populated handle.
 
 Skips cleanly when ``DECTALK_SRC`` / ``/tmp/dectalk-src`` is absent.
 """
@@ -14,10 +14,17 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
+from dectalk.include.phoneme_codes import PERIOD, S1, WBOUND, USPhoneme
+from dectalk.kernel.ksd_t import KsdT
+from dectalk.kernel.lang_codes import LANG_english
 from dectalk.ph.all_phsort import all_phsort
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
+from dectalk.ph.prosody_constants import DECLARATIVE
 from dectalk.ph.tts_handle import TtsHandle
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_sort.c"
@@ -101,17 +108,45 @@ def test_function_is_long() -> None:
 # -- Python behavioural tests ----------------------------------------------
 
 
-def test_python_shim_raises_not_implemented() -> None:
-    """Shim raises ``NotImplementedError`` per the deferred-port contract."""
+def _make_handle(lang: int = LANG_english) -> TtsHandle:
+    """Return a minimally-populated handle that ``all_phsort`` accepts."""
+    p_dph_t = DphT()
+    p_dph_t.pSTphsettar = DphSettarSt()
+    p_dph_t.symbols = []
+    p_dph_t.nsymbtot = 0
+    p_dph_t.user_durs = []
+    p_dph_t.user_f0 = []
+    p_ksd_t = KsdT()
+    p_ksd_t.lang_curr = lang
+    p_ksd_t.sprate = 200
     handle = TtsHandle()
-    with pytest.raises(NotImplementedError, match=r"dectalk\._capi"):
-        all_phsort(handle)
+    handle.p_kernel_share_data = p_ksd_t
+    handle.p_ph_thread_data = p_dph_t
+    return handle
 
 
-def test_python_shim_error_mentions_phase_plan() -> None:
-    """Error message points at the plan file so callers can find context."""
-    handle = TtsHandle()
-    with pytest.raises(NotImplementedError) as exc_info:
-        all_phsort(handle)
-    assert "Phase E" in str(exc_info.value)
-    assert "smooth-hoare" in str(exc_info.value)
+def test_empty_input_returns_true() -> None:
+    """An empty symbol stream returns TRUE (1) without raising."""
+    handle = _make_handle()
+    assert all_phsort(handle) == 1
+
+
+def test_halting_aborts_returning_false() -> None:
+    """Setting ``halting`` on the kernel handle short-circuits to FALSE."""
+    handle = _make_handle()
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    p_ksd_t = cast(KsdT, handle.p_kernel_share_data)
+    p_dph_t.symbols = [S1, int(USPhoneme.AE), WBOUND, PERIOD]
+    p_dph_t.nsymbtot = len(p_dph_t.symbols)
+    p_ksd_t.halting = 1
+    assert all_phsort(handle) == 0
+
+
+def test_clausetype_set_on_period() -> None:
+    """A clause-ending PERIOD sets ``clausetype == DECLARATIVE``."""
+    handle = _make_handle()
+    p_dph_t = cast(DphT, handle.p_ph_thread_data)
+    p_dph_t.symbols = [WBOUND, S1, int(USPhoneme.AE), WBOUND, PERIOD]
+    p_dph_t.nsymbtot = len(p_dph_t.symbols)
+    all_phsort(handle)
+    assert p_dph_t.clausetype == DECLARATIVE
