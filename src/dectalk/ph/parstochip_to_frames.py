@@ -11,10 +11,14 @@ elaborate path: a one-frame "delay buffer" shuffles every parameter
 except ``AV``, ``TILT`` and ``T0`` by one frame, the parstochip is
 written into the SPC packet queue, and ``hlframe.c`` performs the HL
 → LL parameter conversion (formant adjustment, ag/agf/agm gating,
-etc.). The Python port collapses those stages: the one-frame delay
-is currently a no-op (it shifts timing by 6.4 ms, audible only at
-clause boundaries), and the HL → LL conversion is delegated to
-sensible defaults until that port lands.
+etc.). The Python port now provides two paths:
+
+- :func:`parstochip_to_llframe_delayed` — the legacy direct-copy path
+  (no HL→LL gating). Still the default for the full pipeline driver.
+- :func:`parstochip_to_llframe_via_hl` — the new path that builds an
+  :class:`~dectalk.ph.hlsyn_structs.HLFrame` from parstochip and runs
+  the full :func:`~dectalk.hlsyn.hlframe.hl_synthesize_ll_frame`
+  conversion (AV/AH/AF gating, formant bandwidth adjustments, OQ/TL/DI).
 
 OUT_T0 holds the fundamental period in deciHz (10x Hz) when HLSyn
 is enabled (``ph_drwt02.c`` line 1409); :class:`LLFrame.F0` uses
@@ -27,7 +31,11 @@ from __future__ import annotations
 
 from typing import Final
 
+from dectalk.hlsyn.hlframe import hl_synthesize_ll_frame
+from dectalk.hlsyn.initialize_hl_synthesizer import initialize_hl_synthesizer
 from dectalk.hlsyn.llsyn import LLFrame
+from dectalk.ph.hl_speaker import HLSpeaker
+from dectalk.ph.hlsyn_structs import HLFrame, HLState
 from dectalk.ph.param_indices import (
     OUT_A2,
     OUT_A3,
@@ -35,17 +43,26 @@ from dectalk.ph.param_indices import (
     OUT_A5,
     OUT_A6,
     OUT_AB,
+    OUT_AG,
+    OUT_AL,
+    OUT_AN,
     OUT_AP,
+    OUT_ATB,
     OUT_AV,
     OUT_B1,
     OUT_B2,
     OUT_B3,
+    OUT_DC,
     OUT_F1,
     OUT_F2,
     OUT_F3,
+    OUT_F4,
     OUT_FZ,
+    OUT_PLACE,
+    OUT_PS,
     OUT_T0,
     OUT_TLT,
+    OUT_UE,
 )
 from dectalk.ph.parameter_tables import lineartilt
 
@@ -217,4 +234,152 @@ def parstochip_to_llframe_delayed(
     )
 
 
-__all__ = ["parstochip_to_llframe", "parstochip_to_llframe_delayed"]
+def _build_hl_frame_from_parstochip(parstochip: list[int]) -> HLFrame:
+    """Build an :class:`~dectalk.ph.hlsyn_structs.HLFrame` from parstochip.
+
+    Extracts the NEW_VTM HLSyn slots (OUT_AG, OUT_AL, OUT_AN, OUT_ATB,
+    OUT_PS, OUT_DC, OUT_UE, OUT_PLACE) and the classic formant/F0 slots,
+    converting integer parstochip values to the float fields HLFrame uses.
+
+    Areas (AG, AL, AN, ATB, AP) are in mm^2 on the parstochip; HLFrame uses
+    mm^2 as well.  PS (subglottal pressure) is in 10x cmH2O on the
+    parstochip (phdraw stores it scaled by 10); HLFrame.ps is in cmH2O, so
+    we divide by 10.
+
+    T0 (fundamental period) on the parstochip is stored in deciHz (10xHz);
+    HLFrame.f0 uses the same deciHz units.
+
+    Args:
+        parstochip: Integer array indexed by ``OUT_*`` constants.  Must be
+            at least ``OUT_PLACE + 1 = 38`` entries for NEW_VTM slots;
+            shorter arrays fall back to 0.0 for out-of-range indices.
+
+    Returns:
+        Freshly constructed :class:`~dectalk.ph.hlsyn_structs.HLFrame`.
+    """
+    n = len(parstochip)
+
+    def _safe(idx: int, default: float = 0.0) -> float:
+        return float(parstochip[idx]) if idx < n else default
+
+    return HLFrame(
+        ag=_safe(OUT_AG),
+        al=_safe(OUT_AL),
+        an=_safe(OUT_AN),
+        atb=_safe(OUT_ATB),
+        # parstochip stores AP as aspiration amplitude (dB), not area (mm^2).
+        # HLFrame.ap is aspiration area; we pass through as-is here — the
+        # ShimmedSpeechCircuit path uses it only for posterior-glottal TL
+        # corrections where the order-of-magnitude matters more than exact
+        # units.
+        ap=_safe(OUT_AP),
+        ps=_safe(OUT_PS) / 10.0,  # deciHz->cmH2O (phdraw stores x10)
+        dc=_safe(OUT_DC),
+        ue=_safe(OUT_UE),
+        place=int(_safe(OUT_PLACE)),
+        f0=float(parstochip[OUT_T0] if parstochip[OUT_T0] > 0 else _DEFAULT_F0_DECIHZ),
+        f1=float(_clamp(parstochip[OUT_F1], 100, 1300)),
+        f2=float(_clamp(parstochip[OUT_F2], 500, 3000)),
+        f3=float(_clamp(parstochip[OUT_F3], 1300, 4500)),
+        f4=float(_safe(OUT_F4, _DEFAULT_F4)),
+    )
+
+
+def _build_hl_state_from_parstochip(
+    parstochip: list[int],
+    speaker: HLSpeaker,
+) -> HLState:
+    """Approximate :class:`~dectalk.ph.hlsyn_structs.HLState` from parstochip.
+
+    Because SpeechCircuit (``circuit.c``) is not yet ported, we cannot solve
+    for the aerodynamic running state (mouth pressure ``Pm``, exact glottal
+    flow area ``agx`` / ``agf``) from first principles.  Instead we use the
+    glottal area that phdraw already computed:
+
+    - ``state.agf = state.agx = parstochip[OUT_AG]`` (mm^2).
+    - ``state.Pm = 0`` (no mouth pressure when SpeechCircuit is shimmed).
+    - ``state.f1c = 0`` (tongue_acx_f1c in hl_synthesize_ll_frame fills it).
+    - ``state.f1x = 0``, ``state.b1x = 0`` (filled by hl_synthesize_ll_frame
+      after tongue_acx_f1c runs; the shim checks for zero and falls back to
+      frame.f1 / speaker.B1m).
+
+    Args:
+        parstochip: Integer array indexed by ``OUT_*`` constants.
+        speaker: Initialized :class:`~dectalk.ph.hl_speaker.HLSpeaker`
+            (used for ``loc`` initialization if needed).
+
+    Returns:
+        Freshly constructed :class:`~dectalk.ph.hlsyn_structs.HLState`.
+    """
+    ag = float(parstochip[OUT_AG]) if len(parstochip) > OUT_AG else 0.0
+    state = HLState()
+    state.agx = ag
+    state.agf = ag
+    state.Pm = 0.0
+    state.f1c = 0.0
+    state.f1x = 0.0
+    state.b1x = 0.0
+    return state
+
+
+def parstochip_to_llframe_via_hl(
+    parstochip: list[int],
+    previous_parstochip: list[int] | None,
+    speaker: HLSpeaker | None = None,
+) -> LLFrame:
+    """Build a :class:`LLFrame` via the full HL→LL conversion path.
+
+    Constructs an :class:`~dectalk.ph.hlsyn_structs.HLFrame` from the
+    current parstochip, builds an approximated
+    :class:`~dectalk.ph.hlsyn_structs.HLState`, and calls
+    :func:`~dectalk.hlsyn.hlframe.hl_synthesize_ll_frame` to run the full
+    AV/AH/AF gating, formant bandwidth adjustments, OQ/TL/DI computation.
+
+    The one-frame delay (``AV``, ``T0``, ``TLT`` from the current frame;
+    formant slots from the previous) mirrors :func:`parstochip_to_llframe_delayed`.
+
+    Args:
+        parstochip: Current frame's integer parstochip.
+        previous_parstochip: Previous frame's parstochip, or ``None`` on the
+            first call (falls back to the current frame for formant slots).
+        speaker: :class:`~dectalk.ph.hl_speaker.HLSpeaker` to use; defaults
+            to the module-level male singleton initialized from ``inithl.c``.
+
+    Returns:
+        :class:`LLFrame` produced by the HL→LL mapper.
+    """
+    if speaker is None:
+        speaker, _oldframe, _oldstate = initialize_hl_synthesizer(is_male=True)
+
+    feed = previous_parstochip if previous_parstochip is not None else parstochip
+
+    # Build HLFrame: "real-time" fields from current parstochip, delayed
+    # formant fields from the previous frame, matching the delay-buffer pattern
+    # in send_pars().
+    frame = _build_hl_frame_from_parstochip(parstochip)
+    # Override F1/F2/F3 from the delayed feed.
+    frame.f1 = float(_clamp(feed[OUT_F1], 100, 1300))
+    frame.f2 = float(_clamp(feed[OUT_F2], 500, 3000))
+    frame.f3 = float(_clamp(feed[OUT_F3], 1300, 4500))
+    if len(feed) > OUT_AG:
+        frame.ag = float(feed[OUT_AG])
+    if len(feed) > OUT_AN:
+        frame.an = float(feed[OUT_AN])
+    if len(feed) > OUT_AP:
+        frame.ap = float(feed[OUT_AP])
+
+    # Use current parstochip for oldframe as well (best approximation without
+    # a full running state history; see SpeechCircuit shim in hlframe.py).
+    oldframe = _build_hl_frame_from_parstochip(parstochip)
+
+    state = _build_hl_state_from_parstochip(feed, speaker)
+    oldstate = _build_hl_state_from_parstochip(parstochip, speaker)
+
+    return hl_synthesize_ll_frame(frame, oldframe, speaker, state, oldstate)
+
+
+__all__ = [
+    "parstochip_to_llframe",
+    "parstochip_to_llframe_delayed",
+    "parstochip_to_llframe_via_hl",
+]
