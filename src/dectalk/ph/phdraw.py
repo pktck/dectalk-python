@@ -59,8 +59,11 @@ from dectalk.include.usp_codes import (
     USP_DF,
     USP_DH,
     USP_DX,
+    USP_DZ,
     USP_LL,
     USP_LX,
+    USP_M,
+    USP_N,
     USP_R,
     USP_TH,
     USP_W,
@@ -143,6 +146,7 @@ from dectalk.ph.phoneme_features import (
     FSYLL,
     FVELAR,
     FVOICD,
+    FVOWEL,
 )
 from dectalk.ph.timing import begtyp, phone_feature, place
 from dectalk.ph.tts_handle import TtsHandle
@@ -158,6 +162,19 @@ from dectalk.vtm.frac import frac4mul
 # US path until the VtmT struct itself gets a Python mirror; the comment
 # names the C lines a future VtmT port should claim.
 _NOM_FRICATIVE_OPENING: int = 100
+
+# ``pVtm_t->NOM_Open_Glottis`` from vtm/vtminst.h, populated by
+# ``ph_vset.c`` line 603 as ``pDph_t->curspdef[SPD_AGUO]``. For the
+# US Paul voice, ``SPD_AGUO`` (index 33 in ``p_us_vdf_dectalk43.c::paul``)
+# is **0**, so the constant resolves to 0 on the US path. See
+# `p_us_vdf_dectalk43.c` line 418 ("aguo" entry) for the default.
+_NOM_OPEN_GLOTTIS: int = 0
+
+# ``pVtm_t->NOM_VOICED_OBSTRUENT`` from vtm/vtminst.h, populated by
+# ``ph_vset.c`` line 602 as ``pDph_t->curspdef[SPD_AGVO]``. For the
+# US Paul voice, ``SPD_AGVO`` (index 32) is also **0**. See
+# `p_us_vdf_dectalk43.c` line 417 ("agvo" entry) for the default.
+_NOM_VOICED_OBSTRUENT: int = 0
 
 # ``bplos_build_time`` from ph_draw.c line 156 (``const short
 # bplos_build_time=7``). Used by the area loop to pre-anticipate the
@@ -611,20 +628,288 @@ def _phdraw_hlsyn_area_loop(  # noqa: PLR0912, PLR0915 — branchy by design
             p_dph_t.tbstep = -2
 
 
-def _phdraw_initial_silence_anticipation_unported() -> None:
-    """Stub for ph_draw.c lines 929-2350 (the ``nphone == 0`` anticipation block).
+def _phdraw_initial_silence_anticipation(  # noqa: PLR0912, PLR0915 — branches mirror C body
+    p_dph_t: DphT,
+) -> None:
+    """Pre-position HLSyn area / glottis state on the initial-silence frame.
 
-    On the first frame of a clause (initial silence), the C source
-    pre-positions every area parameter / glottis state / pressure
-    trajectory based on the *next* phone's feature flags, so the
-    real synthesis frames have a sensible starting point. Each
-    sub-block (FOBST, FVOICD, FNASAL, FVOWEL...) needs the same
-    pVtm_t voice constants the area loop wants.
+    Faithful port of ``ph_draw.c`` lines 929-1244 (the
+    ``if(pDph_t->nphone == 0)`` branch, inside ``#ifdef HLSYN``).
+
+    On the very first call of a clause (``nphone == 0``) and only on
+    the first frame of that phone (``nphone != nphonelast``), the C
+    source pre-positions every area parameter, glottis state, and
+    pressure trajectory based on the **next** phone's feature flags.
+    This gives the real synthesis frames sensible starting points so
+    the per-frame state machine doesn't have to ramp through
+    unrealistic transients.
+
+    The function has three sub-blocks, all gated on
+    ``nphone != nphonelast``:
+
+    * **Defaults** (C lines 940-963): Set ``last_real_phon = 1000``
+      and zero out / load defaults for every HLSyn area / closure /
+      release state. Pressure starts at 200, areas at 1000 (open),
+      glottis closed (area_g = 0, target_ag = 400).
+
+    * **Next-phone-is-obstruent anticipation** (C lines 975-1098):
+
+      - With a burst + stop (FBURST | FSTOP):
+        * Voiced -> open glottis to ``NOM_VOIC_GLOT_AREA``, ap=100,
+          agspeed=2.
+        * Unvoiced -> open glottis to ``NOM_Open_Glottis``,
+          agspeed=3.
+        * Labial -> close lips (in_lclosure=1, area_l=0, etc.).
+        * Blade-affected -> close blade (in_bclosure=1, area_b=0).
+        * Velar -> close tongue body (in_tbclosure=1, area_tb=0).
+      - Without a burst, blade-affected -> partially open blade to
+        ``NOM_Fricative_Opening + 300``.
+
+    * **Next-phone-is-voiced anticipation** (C lines 1107-1224):
+      Sets target_ag based on whether the next phone is an obstruent
+      (``NOM_VOICED_OBSTRUENT``) or not (``NOM_VOIC_GLOT_AREA``),
+      then layers on labial / vowel / nasal-specific adjustments.
+      Unvoiced next -> open glottis (area_g = 1410).
+
+    * **DH / TH / DZ next-phone special closure rule** (C lines
+      1226-1242): Sets ``target_b = 0`` for these dental fricatives
+      (US codes USP_DH / USP_TH / USP_DZ on the US path; the
+      UKP_* variants are also referenced in the C source but the
+      US-only build ignores them).
+
+    The previous-phone GEN_SIL branch (C lines 1245-1332, the ending
+    silence anticipation) and the regular-phoneme branch (C lines
+    1333+) are **not** ported here -- the regular-phoneme branch
+    has been partially ported in
+    :func:`_phdraw_per_frame_hlsyn_state_machine`, and the GEN_SIL
+    ending-silence branch is still deferred.
+
+    Args:
+        p_dph_t: Active PH thread state. Mutates a wide swath of
+            HLSyn-state fields when ``nphone == 0`` and this is the
+            first frame of the silence.
     """
-    raise NotImplementedError(
-        "phdraw: initial-silence anticipation (ph_draw.c lines 929-2350) "
-        "is not yet ported; requires pVtm_t voice constants."
-    )
+    if p_dph_t.nphone != 0:
+        return  # Not in initial silence; nothing to do.
+
+    allophons = p_dph_t.allophons
+    nphone = p_dph_t.nphone
+    next_idx = nphone + 1
+    if next_idx >= len(allophons):
+        # Defensive: no next phone to anticipate. The C source has
+        # no bounds check (it indexes into a static buffer), but the
+        # Python translation guards to avoid IndexError on edge-case
+        # test fixtures.
+        return
+    next_allo = allophons[next_idx]
+
+    # ----- C lines 940-963: per-phone-once defaults -----
+    if p_dph_t.nphone != p_dph_t.nphonelast:
+        p_dph_t.last_real_phon = 1000
+        p_dph_t.delta_area_gst = 0
+        p_dph_t.delta_area_gstop = 0
+        p_dph_t.delta_area_g = 0
+        p_dph_t.area_n = 0
+        p_dph_t.in_bclosure = 0
+        p_dph_t.in_lclosure = 0
+        p_dph_t.pressure = 200
+        p_dph_t.pressure_drop = 0
+        p_dph_t.target_ag = 400
+        p_dph_t.area_g = 0
+        p_dph_t.area_ap = 0
+        p_dph_t.target_ap = 0
+        p_dph_t.area_b = 1000
+        p_dph_t.target_b = 1000
+        p_dph_t.area_l = 1000
+        p_dph_t.target_l = 1000
+        p_dph_t.in_lrelease = 0
+        p_dph_t.in_brelease = 0
+        p_dph_t.in_tbrelease = 0
+        p_dph_t.in_tbclosure = 0
+        p_dph_t.area_tb = 1000
+        p_dph_t.target_tb = 1000
+        p_dph_t.syl_pressure = 0
+
+        next_feat = phone_feature(next_allo)
+        next_place = place(next_allo)
+
+        # ----- C lines 975-1098: next-phone-is-obstruent anticipation -----
+        if next_feat & FOBST:
+            if (next_feat & FBURST) and (next_feat & FSTOP):
+                # Total blockage with a burst -- shut something.
+                if next_feat & FVOICD:
+                    # C lines 985-994: voiced burst+stop.
+                    p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+                    p_dph_t.area_g = _NOM_VOIC_GLOT_AREA
+                    p_dph_t.agspeed = 2
+                    p_dph_t.target_ap = 100
+                else:
+                    # C lines 998-1009: unvoiced burst+stop -- open
+                    # glottis to anticipate the plosive.
+                    p_dph_t.target_ag = _NOM_OPEN_GLOTTIS
+                    p_dph_t.area_g = _NOM_OPEN_GLOTTIS
+                    p_dph_t.agspeed = 3
+
+                # C lines 1011-1029: labial next-phone -> close lips.
+                if next_place & FLABIAL:
+                    p_dph_t.in_lclosure = 1
+                    p_dph_t.area_l = 0
+                    p_dph_t.area_b = 1000
+                    p_dph_t.target_l = 0
+                    p_dph_t.target_narea = 0
+                    p_dph_t.lstep = 0
+                    p_dph_t.bstep = 0
+                    p_dph_t.pressure = 200
+
+                # C lines 1031-1045: blade-affected next-phone.
+                if next_place & BLADEAFFECTED:
+                    p_dph_t.in_bclosure = 1
+                    p_dph_t.area_b = 0
+                    p_dph_t.target_b = 0
+                    p_dph_t.target_l = 1000
+                    p_dph_t.target_narea = 0
+                    p_dph_t.bstep = 0
+
+                # C lines 1047-1068: velar next-phone -> close tongue
+                # body. Note the C source sets target_tb twice (line
+                # 1055 to 1000 then line 1058 to 0); the final value
+                # is 0. Faithful translation keeps both writes.
+                if next_place & FVELAR:
+                    p_dph_t.in_tbclosure = 1
+                    p_dph_t.tstep = 0
+                    p_dph_t.in_bclosure = 0
+                    p_dph_t.area_b = 1000
+                    p_dph_t.target_b = 1000
+                    p_dph_t.target_l = 1000
+                    p_dph_t.target_tb = 1000
+                    p_dph_t.target_narea = 0
+                    p_dph_t.tbstep = 0
+                    p_dph_t.target_tb = 0
+                    p_dph_t.area_tb = 0
+                    p_dph_t.bstep = 0
+                    p_dph_t.lstep = 0
+            else:
+                # C lines 1071-1097: obstruent without a burst.
+                if next_place & BLADEAFFECTED:
+                    p_dph_t.in_bclosure = 0
+                    p_dph_t.target_b = _NOM_FRICATIVE_OPENING + 300
+                    p_dph_t.area_b = _NOM_FRICATIVE_OPENING + 300
+                    p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+                    p_dph_t.area_g = _NOM_VOIC_GLOT_AREA
+                    p_dph_t.agspeed = 3
+                    p_dph_t.target_l = 1000
+                    p_dph_t.target_narea = 0
+                    p_dph_t.bstep = 0
+                    p_dph_t.pressure = 200
+
+    # NOTE: the next chunks (lines 1107-1224 and 1226-1242) are
+    # **outside** the ``nphone != nphonelast`` once-per-phone guard
+    # in the C source (the closing brace at C line 1102 ends the
+    # outer per-phone block, and line 1107 reopens at the outer
+    # ``if(nphone == 0)`` level). They fire on every frame of the
+    # initial silence, not just the first.
+
+    next_feat = phone_feature(next_allo)
+    next_place = place(next_allo)
+
+    # ----- C lines 1107-1224: next-phone-is-voiced anticipation -----
+    if next_feat & FVOICD:
+        p_dph_t.in_tbclosure = 0
+        p_dph_t.in_tbrelease = 0
+        # Note: the C source sets in_tbclosure to 0 twice (lines 1109
+        # and 1111) -- faithful translation keeps the duplicate.
+        p_dph_t.in_tbclosure = 0
+        p_dph_t.in_lclosure = 0
+        p_dph_t.target_narea = 0
+        p_dph_t.agspeed = 2
+        p_dph_t.lstep = 0
+        p_dph_t.bstep = 0
+        if next_feat & FOBST:
+            p_dph_t.target_ag = _NOM_VOICED_OBSTRUENT
+        else:
+            p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+
+        # C lines 1135-1152: labial-voiced next.
+        if next_place & FLABIAL:
+            p_dph_t.in_lclosure = 0
+            p_dph_t.area_l = _NOM_FRICATIVE_OPENING
+            p_dph_t.area_b = 1000
+            p_dph_t.target_l = 150
+            p_dph_t.target_narea = 0
+            p_dph_t.lstep = 0
+            p_dph_t.pressure = 300
+
+        # C lines 1154-1167: vowel next.
+        if next_feat & FVOWEL:
+            p_dph_t.in_lclosure = 0
+            p_dph_t.target_narea = 0
+            p_dph_t.bstep = 0
+            p_dph_t.lstep = 0
+            p_dph_t.area_g = 0
+            p_dph_t.agspeed = 1
+            p_dph_t.area_l = 1000
+            p_dph_t.area_b = 1000
+            p_dph_t.target_l = 1000
+            p_dph_t.area_n = 0
+            p_dph_t.nasal_step = 0
+
+        # C lines 1168-1214: nasal next.
+        if next_feat & FNASAL:
+            p_dph_t.area_n = 200
+
+            if next_allo in (USP_M, USP_N):
+                # C lines 1172-1183.
+                p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+
+            # C lines 1185-1206: UK_N / UK_NX vs. /m/ branch.
+            # The C source compares against UK_N / UK_NX which are the
+            # raw small integers (32, 33) defined in l_all_ph.h. The
+            # US allophone codes carry the PFUSA font prefix
+            # (USP_N = 0x1E20 = 7712, USP_NX = 0x1E21 = 7713), so on
+            # the US path neither the UK_N nor the UK_NX comparison
+            # ever matches a US allophone -- the `else` branch always
+            # fires when the next phone is any nasal (including
+            # USP_M, USP_N, USP_NX). The C source's intent here is
+            # "if it's an /n/-class nasal close the blade; otherwise
+            # (it's /m/) close the lips", but the UK-codes-without-
+            # font-prefix bug means the `else` runs for everything on
+            # the US path. Faithful translation preserves that
+            # behaviour (zero lips for every nasal).
+            p_dph_t.area_l = 0
+            p_dph_t.target_l = 0
+
+            p_dph_t.target_narea = 240
+            p_dph_t.nasal_step = 7
+        else:
+            # C line 1214.
+            p_dph_t.nasal_step = 0
+    else:
+        # C lines 1216-1224: next phone unvoiced -> open glottis wide.
+        p_dph_t.area_g = 1410
+        p_dph_t.target_ag = 1410
+
+    # ----- C lines 1226-1242: DH / TH / DZ special closure rule -----
+    # The C source also checks UKP_DH / UKP_TH / UKP_DZ; these UK
+    # codes are not in the Python codebase. On the US-only path the
+    # US codes are sufficient.
+    if next_allo in (USP_DH, USP_TH, USP_DZ):
+        p_dph_t.target_b = 0
+
+
+def _phdraw_initial_silence_anticipation_unported() -> None:
+    """Deprecated alias for :func:`_phdraw_initial_silence_anticipation`.
+
+    The live implementation is now :func:`_phdraw_initial_silence_anticipation`.
+    This stub remains as a grep-compatible name; calling it is a no-op.
+
+    Previously raised ``NotImplementedError("phdraw: initial-silence
+    anticipation (ph_draw.c lines 929-2350) is not yet ported")``; the
+    nphone == 0 branch (C lines 929-1244) is now ported. C lines
+    1245-1332 (the GEN_SIL ending-silence branch) and the regular-
+    phoneme branch (1333+, partially handled in
+    :func:`_phdraw_per_frame_hlsyn_state_machine`) remain deferred.
+    """
+    return None
 
 
 def _phdraw_per_frame_hlsyn_state_machine(  # noqa: PLR0912,PLR0915 — mirrors C body
@@ -1366,9 +1651,14 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
     else:
         p_dph_t.phonestep += 1
 
-    # ----- C lines 929-2350: initial-silence anticipation -----
-    # (nphone == 0 block) — still deferred; see
-    # _phdraw_initial_silence_anticipation_unported() above.
+    # ----- C lines 929-1244: initial-silence anticipation -----
+    # (the ``nphone == 0`` branch). Pre-positions HLSyn area /
+    # glottis state on the first frame so the per-frame state
+    # machine has sensible starting values. See
+    # :func:`_phdraw_initial_silence_anticipation` for the body.
+    # C lines 1245-1332 (GEN_SIL ending-silence branch) and the
+    # 1333+ regular-phoneme branch remain deferred.
+    _phdraw_initial_silence_anticipation(p_dph_t)
 
     # ----- C lines 2350-4300: per-frame HLSyn state machine -----
     _phdraw_per_frame_hlsyn_state_machine(p_dph_t, p_dphsettar)
@@ -1389,6 +1679,7 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
 # downstream tooling that grepped for the stub name doesn't break.
 __all__ = [
     "_phdraw_hlsyn_area_loop_unported",
+    "_phdraw_initial_silence_anticipation",
     "_phdraw_initial_silence_anticipation_unported",
     "_phdraw_lateral_av_and_f3_floor",
     "_phdraw_per_frame_hlsyn_state_machine",
