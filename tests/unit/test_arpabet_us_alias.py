@@ -95,7 +95,7 @@ def test_every_arpabet_symbol_from_hello_world_resolves() -> None:
     """The audit's headline case: every ARPABET from ``"hello world"``
     must resolve to a non-None US allophone code.
 
-    Before the alias table this dropped 3 / 8 phones (HH + 2×L), a
+    Before the alias table this dropped 3 / 8 phones (HH + 2xL), a
     38% loss. After the fix all 8 ARPABET symbols resolve.
     """
     arpabet = text_to_phonemes("hello world")
