@@ -297,6 +297,17 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     p_dph_t.parstochip = [0] * 64
     p_dph_t.last_lang = 0  # forces gettar to load tables on first call.
     p_dph_t.sprate = wpm
+    # ``fnscale`` is the per-voice Q12 formant-frequency scaler. The C
+    # source loads it from the speaker-def table at clause init via
+    # vtm_i.c line 625. The Python port hasn't ported the speaker-def
+    # loader yet, so seed it to 4096 (Q12 unity) so phdraw's formant-
+    # scaling step ``frac4mul(F_n, fnscale) + complement_n`` reduces
+    # to the identity: F_n -> F_n + 0 -- the formant trajectory's
+    # tarcur value flows through unchanged. Without this seed, fnscale
+    # stayed at the default 0, which made every formant collapse to
+    # ``(4096 - 0) >> N`` (256 for F1, 512 for F2, 0 for F3) regardless
+    # of the per-phone target.
+    p_dph_t.fnscale = 4096
     settar = DphSettarSt()
     settar.initsw = 1  # Skip the very-first-call getbegtar seeding loop.
     p_dph_t.pSTphsettar = settar
