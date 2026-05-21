@@ -35,10 +35,15 @@ class TtsHandle:
             kernel-shared state block. ``None`` until ``init`` runs.
         p_ph_thread_data: Pointer to the per-thread ``DPH_T`` PH
             instance state. ``None`` until ``phinit`` runs.
+        bInTypingMode: ``volatile BOOL`` from tts.h line 397 (only
+            present when the C build defines ``TYPING_MODE``). When
+            true, ``us_phtiming`` overrides per-allophone durations
+            with a uniform short value so each phone fires quickly.
     """
 
     p_kernel_share_data: object | None = None
     p_ph_thread_data: object | None = None
+    bInTypingMode: bool = False  # noqa: N815 — C field name preserved
 
 
 __all__ = ["TtsHandle"]
