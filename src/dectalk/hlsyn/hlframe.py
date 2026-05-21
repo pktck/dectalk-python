@@ -131,12 +131,7 @@ def _map_glottal_formants_not_f1(
     # hlframe.c lines 215-217: adjust f1c for tracheal coupling.
     # Only when nasal area is small (an < 3), f1c is in the low-F1 regime
     # (< 185 Hz), agf exceeds modal threshold, and f1c < tracheal pole F1T.
-    if (
-        frame.an < 3.0
-        and state.f1c < 185.0
-        and state.agf > speaker.agm
-        and state.f1c < speaker.F1T
-    ):
+    if frame.an < 3.0 and state.f1c < 185.0 and state.agf > speaker.agm and state.f1c < speaker.F1T:
         state.f1c += speaker.KdF * (1.0 - state.f1c / speaker.F1T) * (state.agf - speaker.agm)
 
     # hlframe.c lines 219-223: copy f2/f3/f4/F5; C (short) cast truncates.
@@ -190,8 +185,7 @@ def _fricative_filters(  # noqa: PLR0912, PLR0915
             place = frame.place
             if place == 40:
                 if frame.f2 > (
-                    speaker.PalVelar_f2Offset
-                    + speaker.PalVelar_f2Overf3_Slope * frame.f3
+                    speaker.PalVelar_f2Offset + speaker.PalVelar_f2Overf3_Slope * frame.f3
                 ):
                     llframe.NA3F = int(speaker.PalVelarA3F)
                 else:
@@ -332,8 +326,7 @@ def _source_amplitudes(
             30.0 * dt_f_log10(ps_minus_pm)
             + speaker.Kv
             - speaker.KdAV * _mmsq_to_cmsq(speaker.agAVModalOffsetOnOff)
-            - speaker.KdAV1
-            * _mmsq_to_cmsq(state.agx - speaker.agm - speaker.agAVModalOffsetOnOff)
+            - speaker.KdAV1 * _mmsq_to_cmsq(state.agx - speaker.agm - speaker.agAVModalOffsetOnOff)
         )
 
     # hlframe.c lines 461-466: clamp AV at 0; zero F0 when AV is 0.
@@ -356,9 +349,7 @@ def _source_amplitudes(
         llframe.NAH = 0
     else:
         llframe.NAH = int(
-            30.0 * dt_f_log10(ps_abs)
-            + 10.0 * dt_f_log10(_mmsq_to_cmsq(state.agf))
-            + speaker.Ka
+            30.0 * dt_f_log10(ps_abs) + 10.0 * dt_f_log10(_mmsq_to_cmsq(state.agf)) + speaker.Ka
         )
 
     llframe.NAH = max(llframe.NAH, 0)
@@ -410,14 +401,12 @@ def _glottal_interaction(
         denom_f1 = ptransg + b * f1x_sq
         denom_f2 = ptransg + b * f2_sq
         llframe.NB1 = int(
-            state.b1x
-            + a * agf_minus_agm_cmsq * sqrt_ptransg / denom_f1
+            state.b1x + a * agf_minus_agm_cmsq * sqrt_ptransg / denom_f1
             if denom_f1 > 0.0
             else state.b1x
         )
         llframe.NB2 = int(
-            speaker.B2m
-            + a * agf_minus_agm_cmsq * sqrt_ptransg / denom_f2
+            speaker.B2m + a * agf_minus_agm_cmsq * sqrt_ptransg / denom_f2
             if denom_f2 > 0.0
             else speaker.B2m
         )
@@ -447,9 +436,10 @@ def _source_specifics(
     # ---- TL ----------------------------------------------------------------
     acx_an_max = state.acx if state.acx > frame.an else frame.an
     if acx_an_max < speaker.TLBreakArea:
-        tl_float = speaker.TLm + (
-            (speaker.TLBreakArea - acx_an_max) + (state.agx - speaker.agm)
-        ) * speaker.KTL
+        tl_float = (
+            speaker.TLm
+            + ((speaker.TLBreakArea - acx_an_max) + (state.agx - speaker.agm)) * speaker.KTL
+        )
     else:
         tl_float = speaker.TLm + (state.agx - speaker.agm) * speaker.KTL
 
@@ -470,9 +460,7 @@ def _source_specifics(
 
     denom = rk_ap_cubed_over_rho + rv_ap_cubed_over_rho
     if denom > 0.0:
-        six_k_hz_pi_t = (
-            6000.0 * math.pi * ap_cgs2 * (m * ap_cgs + speaker.Lvg) / denom
-        )
+        six_k_hz_pi_t = 6000.0 * math.pi * ap_cgs2 * (m * ap_cgs + speaker.Lvg) / denom
     else:
         six_k_hz_pi_t = 1.0
 

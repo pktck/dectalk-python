@@ -117,16 +117,45 @@ def initialize_hl_synthesizer(  # noqa: PLR0915
 
     # inithl.c lines 226-261: an,K2 table (17 rows).
     _ank2_an = [
-        0.0, 5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0,
-        40.0, 45.0, 50.0, 55.0, 60.0, 65.0, 70.0, 75.0, 80.0,
+        0.0,
+        5.0,
+        10.0,
+        15.0,
+        20.0,
+        25.0,
+        30.0,
+        35.0,
+        40.0,
+        45.0,
+        50.0,
+        55.0,
+        60.0,
+        65.0,
+        70.0,
+        75.0,
+        80.0,
     ]
     _ank2_k2 = [
-        0.0, 1.8, 3.5, 4.8, 6.0, 7.3, 8.5, 9.7,
-        10.8, 11.7, 12.5, 13.8, 14.0, 14.6, 15.1, 15.6, 16.1,
+        0.0,
+        1.8,
+        3.5,
+        4.8,
+        6.0,
+        7.3,
+        8.5,
+        9.7,
+        10.8,
+        11.7,
+        12.5,
+        13.8,
+        14.0,
+        14.6,
+        15.1,
+        15.6,
+        16.1,
     ]
     speaker.anK2Table = [
-        TableRow(Column1=an, Column2=k2)
-        for an, k2 in zip(_ank2_an, _ank2_k2, strict=True)
+        TableRow(Column1=an, Column2=k2) for an, k2 in zip(_ank2_an, _ank2_k2, strict=True)
     ]
 
     # inithl.c line 263.
@@ -269,8 +298,8 @@ def initialize_hl_synthesizer(  # noqa: PLR0915
 
 
 # Module-level singleton for the most common case (US-English male voice).
-_DEFAULT_MALE_SPEAKER, _DEFAULT_MALE_OLDFRAME, _DEFAULT_MALE_OLDSTATE = (
-    initialize_hl_synthesizer(is_male=True)
+_DEFAULT_MALE_SPEAKER, _DEFAULT_MALE_OLDFRAME, _DEFAULT_MALE_OLDSTATE = initialize_hl_synthesizer(
+    is_male=True
 )
 
 
