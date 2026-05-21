@@ -254,6 +254,7 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
     from dectalk.ph.init_timing import init_timing  # noqa: PLC0415
     from dectalk.ph.phsettar import phsettar  # noqa: PLC0415
     from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
+    from dectalk.ph.us_phtiming import us_phtiming  # noqa: PLC0415
     from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
 
     # TODO: thread voice through DphT.curspdef / malfem etc. For now
@@ -320,6 +321,14 @@ def _speak_via_python_full(  # noqa: PLR0915 — orchestration is intrinsically 
         sprate_ref=[wpm],
         lang_curr=LANG_english,
     )
+
+    # 4b. Per-allophone duration rules (us_phtiming). Walks the clause
+    # applying the 26 named duration rules and writing per-phone frame
+    # durations into pDph_t.allodurs. Must run AFTER init_timing (which
+    # seeds sprat0/sprat1/sprat2) and BEFORE the per-frame loop below
+    # (which needs durfon = allodurs[nphone] for its target/transition
+    # math and frame-advance bookkeeping).
+    us_phtiming(handle)
 
     # 5. phinton: F0 contour generation, ONCE per clause before the
     # per-frame loop. Walks the allophone stream firing pitch events
