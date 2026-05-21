@@ -166,6 +166,24 @@ container suspended between turn-end and webhook delivery. The
 background-poll completion notification is more reliable because
 it's a direct wake on your session, not a queued external event.
 
+### Mandatory pattern after every PR push
+
+After pushing **any** PR (draft or open), do all three of these in
+the same turn before ending it:
+
+1. `subscribe_pr_activity` for the PR.
+2. Kick off a foreground `run_in_background: true` Bash `until`
+   poll that exits on green CI (see "Closing the merge loop"
+   above for the exact pattern).
+3. **Immediately start the next port target** — branch, edit,
+   run tests. Do not end a turn whose only outstanding work is
+   a webhook subscription; webhook delivery to a suspended
+   remote container is best-effort, and a "Status:" recap
+   message is a stop tell.
+
+If you find yourself drafting an end-of-turn status summary, that
+itself is the trigger to start the next port instead.
+
 ## CI throttling — do not saturate Actions
 
 CI is two-tier (see `docs/PLAN-CI-STRATEGY.md` §1):
