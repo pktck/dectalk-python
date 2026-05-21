@@ -45,6 +45,7 @@ from typing import cast
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import FSENTENDS, FSTRESS
+from dectalk.ph.frame_counts import NF25MS, NF30MS
 from dectalk.ph.getbegtar import getbegtar
 from dectalk.ph.gettar import gettar
 from dectalk.ph.init_variables import init_variables
@@ -157,7 +158,20 @@ def phsettar(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915
 
             np_param.tarend = np_param.tarcur
 
-        # 5. Forward smooth.
+        # 5a. Forward-smooth default bouval / durtran -- mirrors
+        # ph_setar.c lines 1003-1004:
+        #     bouval = (tarlas + tarcur) >> 1   # halfway by default
+        #     durtran = NF30MS                  # 30 ms transition
+        # The smoothing rule below may overwrite either based on the
+        # phone-pair coarticulation context. Pre-fix the Python port
+        # skipped this init, so bouval/durtran inherited from the
+        # previous loop iteration (or even the previous nphone's
+        # phsettar call) when the smoothing rule's branches all
+        # fell through.
+        p_dphsettar.bouval = (np_param.tarlas + np_param.tarcur) >> 1
+        p_dphsettar.durtran = NF30MS
+
+        # 5b. Forward smooth.
         us_forw_smooth_rules(
             phTTS=phTTS,
             shrif=p_dph_t.shrif,
@@ -169,19 +183,45 @@ def phsettar(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915
             feanex=feanex,
         )
 
-        # 6. Compute dftran from durtran via divtab + mlsh1.
-        np_param.ftran = p_dphsettar.bouval
+        # 6. Convert bouval/durtran into phdraw-consumable
+        # ``ftran``/``dftran`` (ph_setar.c lines 1060-1078). The shape:
+        #
+        #     ftran = 0
+        #     if durtran > 0:
+        #         ftran = (bouval - tarcur) << 3
+        #         if ftran != 0:
+        #             dftran = mlsh1(ftran, divtab[durtran])
+        #             ftran = dftran * durtran
+        #
+        # Pre-fix the Python port used ``ftran = bouval`` and
+        # ``dftran = (tarend - bouval) << 3 / durtran`` -- the wrong
+        # endpoint and the wrong sign. Each frame phdraw does ``ftran
+        # -= dftran``, so the wrong sign made ftran *grow* every
+        # frame, saturating the synthesizer. The corrected formula
+        # mirrors the C source line-for-line.
+        np_param.ftran = 0
         if p_dphsettar.durtran > 0:
-            p_dph_t.arg1 = (np_param.tarend - p_dphsettar.bouval) << 3
-            if p_dphsettar.durtran < _DIVTAB_THRESHOLD:
-                p_dph_t.arg2 = divtab[p_dphsettar.durtran]
-                np_param.dftran = mlsh1(p_dph_t.arg1, p_dph_t.arg2)
-            else:
-                np_param.dftran = p_dph_t.arg1 // p_dphsettar.durtran
-        else:
-            np_param.dftran = 0
+            np_param.ftran = (p_dphsettar.bouval - np_param.tarcur) << 3
+            if np_param.ftran != 0:
+                p_dph_t.arg1 = np_param.ftran
+                if p_dphsettar.durtran < _DIVTAB_THRESHOLD:
+                    p_dph_t.arg2 = divtab[p_dphsettar.durtran]
+                    np_param.dftran = mlsh1(p_dph_t.arg1, p_dph_t.arg2)
+                else:
+                    np_param.dftran = p_dph_t.arg1 // p_dphsettar.durtran
+                np_param.ftran = np_param.dftran * p_dphsettar.durtran
 
-        # 7. Backward smooth.
+        # 7a. Backward-smooth default bouval / durtran -- mirrors
+        # ph_setar.c lines 1122-1123:
+        #     bouval = (tarend + tarnex) >> 1   # halfway by default
+        #     durtran = NF25MS                  # 25 ms transition
+        # Same fix as 5a: pre-fix the Python port skipped this init
+        # so the back-smooth rule's fall-through paths reused stale
+        # values from forward smoothing.
+        p_dphsettar.bouval = (np_param.tarend + np_param.tarnex) >> 1
+        p_dphsettar.durtran = NF25MS
+
+        # 7b. Backward smooth.
         us_back_smooth_rules(
             phTTS=phTTS,
             shrib=p_dph_t.shrib,
@@ -190,17 +230,30 @@ def phsettar(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915
             strucnex=strucnex,
         )
 
-        # 8. Compute dbtran from durtran via divtab + mlsh1.
-        np_param.btran = p_dphsettar.bouval
+        # 8. Convert bouval/durtran into phdraw-consumable
+        # ``btran``/``dbtran`` (ph_setar.c lines 1186-1199). The shape
+        # differs from forward smoothing: ``btran`` stays zero (the
+        # backward trajectory is purely driven by ``dbtran`` per-frame
+        # accumulation), and the temp uses ``tarend`` (not
+        # ``tarcur``):
+        #
+        #     btran = 0
+        #     dbtran = 0
+        #     if durtran > 0:
+        #         temp = (bouval - tarend) << 3
+        #         if temp != 0:
+        #             dbtran = mlsh1(temp, divtab[durtran])
+        np_param.btran = 0
+        np_param.dbtran = 0
         if p_dphsettar.durtran > 0:
-            p_dph_t.arg1 = (np_param.tarend - p_dphsettar.bouval) << 3
-            if p_dphsettar.durtran < _DIVTAB_THRESHOLD:
-                p_dph_t.arg2 = divtab[p_dphsettar.durtran]
-                np_param.dbtran = mlsh1(p_dph_t.arg1, p_dph_t.arg2)
-            else:
-                np_param.dbtran = p_dph_t.arg1 // p_dphsettar.durtran
-        else:
-            np_param.dbtran = 0
+            temp = (p_dphsettar.bouval - np_param.tarend) << 3
+            if temp != 0:
+                p_dph_t.arg1 = temp
+                if p_dphsettar.durtran < _DIVTAB_THRESHOLD:
+                    p_dph_t.arg2 = divtab[p_dphsettar.durtran]
+                    np_param.dbtran = mlsh1(p_dph_t.arg1, p_dph_t.arg2)
+                else:
+                    np_param.dbtran = p_dph_t.arg1 // p_dphsettar.durtran
 
     # 9. Special rules — called once after the per-parameter loop.
     us_special_rules(

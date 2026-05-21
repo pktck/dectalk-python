@@ -118,10 +118,16 @@ name is intentional — don't autocorrect the spelling.
 Do **not** spam — send once per blocking event, not on every
 intermediate progress update.
 
-## PR cadence (target: 1 PR per 1-4h wall-clock)
+## PR cadence (target: 1 PR per 1-4h wall-clock, 1000+ LOC)
 
 PRs trigger the full `ci.yml` matrix (9-way test, 16-shard c-oracle,
 ~10-15 min of compute total). Don't open one for every commit.
+
+**Hard rule:** a PR should contain **multiple commits** totalling
+**1000+ lines of changes** (insertions + deletions). A single-commit
+PR with a 5-line fix is almost always wrong — stack the fix on a
+working branch with related ports until the diff reaches milestone
+size, then open one PR.
 
 **Open a PR only for a milestone**, not for incremental progress.
 A milestone is something like:
@@ -136,6 +142,12 @@ after several hours of work is the right shape; don't open a fresh
 PR every 20-30 minutes. If a branch grows past ~4h of accumulated
 work without a clear stopping point, prefer to ship what's done and
 start fresh.
+
+**Anti-pattern**: opening separate PRs for (a) a 50-line bug fix,
+(b) a 100-line LUT port, (c) a 30-line wiring tweak in the same
+turn. Each triggers the full matrix; the user pays for 3x the CI
+compute and reviews 3x the merge events. Stack them on one branch
+and open one PR with three commits.
 
 The CI throttling section below describes the per-tier cost so you
 can pick the right cadence.
