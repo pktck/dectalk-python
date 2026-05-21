@@ -785,7 +785,7 @@ def _pht0draw_female(p_dph_t: DphT, pdphsettar: DphSettarSt) -> None:  # noqa: P
                 # FEMALE does NOT clear delimp here (only tarimp); this is
                 # a faithful difference vs the MALE branch.
                 if pdphsettar.f0command < 0:
-                    if pdphsettar.tarimp > 0:
+                    if pdphsettar.tarimp > 0:  # noqa: PLR1730 — mirror C nested-if
                         pdphsettar.tarimp = 0
                 elif pdphsettar.tarimp < 0:
                     pdphsettar.tarimp = 0

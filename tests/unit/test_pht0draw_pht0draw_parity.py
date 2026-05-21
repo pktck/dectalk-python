@@ -24,7 +24,7 @@ from dectalk.ph.dph_t import DphT
 from dectalk.ph.getcosine import HIGHEST_F0, LOWEST_F0
 from dectalk.ph.numeric_constants import FEMALE, MALE
 from dectalk.ph.param_indices import OUT_T0
-from dectalk.ph.pht0draw import pht0draw
+from dectalk.ph.pht0draw import _frac4mul_ph, pht0draw
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.us_f0_segtars import us_f0fsegtars, us_f0msegtars
 from dectalk.ph.utterance_constants import EXCLAIMCLAUSE, GEN_SIL
@@ -256,8 +256,6 @@ def test_female_excl_scale_offset_smaller_than_male() -> None:
     EXCLAIM output should be smaller for FEMALE than MALE (because the
     multiplier 4096+500 < 4096+1000).
     """
-    from dectalk.ph.pht0draw import _frac4mul_ph
-
     f0minimum = 800
     f0prime_pre = 2000
     f0scalefac = 4096
