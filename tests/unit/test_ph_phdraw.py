@@ -1133,7 +1133,7 @@ def test_gen_sil_skipped_when_not_gen_sil() -> None:
     from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    _handle, p_dph_t, _ = _build_handle()
     p_dph_t.nphone = 1
     p_dph_t.allophons = [USP_AA, USP_AA, USP_AA]
     p_dph_t.pressure = 500
@@ -1148,9 +1148,7 @@ def test_gen_sil_pressure_drop_ramps_when_pressure_above_gate() -> None:
     from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
 
-    _handle, p_dph_t, _ = _build_gen_sil_handle(
-        USP_AA, pressure=500, pressure_drop=0
-    )
+    _handle, p_dph_t, _ = _build_gen_sil_handle(USP_AA, pressure=500, pressure_drop=0)
     p_dph_t.nphonelast = p_dph_t.nphone  # Skip first-frame block.
     _phdraw_gen_sil_ending(p_dph_t)
     assert p_dph_t.pressure_drop == 150
@@ -1161,9 +1159,7 @@ def test_gen_sil_pressure_drop_saturates_at_2000() -> None:
     from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
 
-    _handle, p_dph_t, _ = _build_gen_sil_handle(
-        USP_AA, pressure=500, pressure_drop=2000
-    )
+    _handle, p_dph_t, _ = _build_gen_sil_handle(USP_AA, pressure=500, pressure_drop=2000)
     p_dph_t.nphonelast = p_dph_t.nphone
     _phdraw_gen_sil_ending(p_dph_t)
     assert p_dph_t.pressure_drop == 2000  # Did not increment further.
@@ -1174,9 +1170,7 @@ def test_gen_sil_pressure_drop_gated_below_100() -> None:
     from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_gen_sil_ending  # noqa: PLC0415
 
-    _handle, p_dph_t, _ = _build_gen_sil_handle(
-        USP_AA, pressure=50, pressure_drop=0
-    )
+    _handle, p_dph_t, _ = _build_gen_sil_handle(USP_AA, pressure=50, pressure_drop=0)
     p_dph_t.nphonelast = p_dph_t.nphone
     _phdraw_gen_sil_ending(p_dph_t)
     assert p_dph_t.pressure_drop == 0  # Gate kept the increment off.
@@ -1228,7 +1222,7 @@ def test_regular_branch_skipped_at_nphone_zero() -> None:
     """No mutation when ``nphone == 0`` (the initial-silence branch handles it)."""
     from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    _handle, p_dph_t, _ = _build_handle()
     p_dph_t.nphone = 0
     p_dph_t.dcstep = 0
     p_dph_t.pressure = 100
@@ -1241,7 +1235,7 @@ def test_regular_branch_skipped_for_gen_sil() -> None:
     from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
     from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    _handle, p_dph_t, _ = _build_handle()
     p_dph_t.nphone = 1
     p_dph_t.allophons = [0, GEN_SIL, 0]
     p_dph_t.pressure = 100
@@ -1258,7 +1252,7 @@ def test_regular_branch_pressure_build_subsumed_by_state_machine() -> None:
     from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    _handle, p_dph_t, _ = _build_handle()
     p_dph_t.nphone = 1
     p_dph_t.allophons = [USP_AA, USP_AA, USP_AA]
     p_dph_t.allofeats = [0, 0, 0]
@@ -1276,7 +1270,7 @@ def test_regular_branch_dcstep_init_for_voiced_obstruent() -> None:
     from dectalk.include.usp_codes import USP_Z  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    _handle, p_dph_t, _ = _build_handle()
     p_dph_t.nphone = 1
     p_dph_t.allophons = [USP_Z, USP_Z, USP_Z]
     p_dph_t.allofeats = [0, 0, 0]
@@ -1298,7 +1292,7 @@ def test_regular_branch_dcstep_init_for_unvoiced_obstruent() -> None:
     from dectalk.include.usp_codes import USP_S  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    _handle, p_dph_t, _ = _build_handle()
     p_dph_t.nphone = 1
     p_dph_t.allophons = [USP_S, USP_S, USP_S]
     p_dph_t.allofeats = [0, 0, 0]
@@ -1320,7 +1314,7 @@ def test_regular_branch_emphasis_stress_pulse_ramps_up() -> None:
     from dectalk.ph.feature_bits import FEMPHASIS  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    _handle, p_dph_t, _ = _build_handle()
     p_dph_t.nphone = 1
     p_dph_t.allophons = [USP_AA, USP_AA, USP_AA]
     p_dph_t.allofeats = [0, FEMPHASIS, 0]
@@ -1340,7 +1334,7 @@ def test_regular_branch_non_emphasis_resets_stress_pulse() -> None:
     from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
     from dectalk.ph.phdraw import _phdraw_regular_phoneme_branch  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    _handle, p_dph_t, _ = _build_handle()
     p_dph_t.nphone = 1
     p_dph_t.allophons = [USP_AA, USP_AA, USP_AA]
     p_dph_t.allofeats = [0, 0, 0]  # No FEMPHASIS bits.
