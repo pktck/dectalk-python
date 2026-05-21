@@ -31,6 +31,7 @@ from pathlib import Path
 
 import pytest
 
+from dectalk.include.usp_codes import USP_DH, USP_TH
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
@@ -917,3 +918,186 @@ def test_c_body_has_f3_f2_floor() -> None:
         r"parstochip\[OUT_F3\]\s*-\s*pDph_t->parstochip\[OUT_F2\]\s*<\s*300",
         body,
     )
+
+
+# ----- Initial-silence anticipation tests (ph_draw.c lines 929-1244) --------
+# These exercise :func:`_phdraw_initial_silence_anticipation`, which fires
+# only when ``nphone == 0``. Each test sets up a fresh DphT with
+# ``nphone = 0`` and a specific feature on ``allophons[1]`` (the next
+# phone), then asserts the expected HLSyn-state pre-positioning.
+
+
+def _build_init_silence_handle(
+    next_allo: int,
+    next_feat_override: int | None = None,
+) -> tuple[TtsHandle, DphT, DphSettarSt]:
+    """Construct a handle with ``nphone == 0`` for initial-silence tests.
+
+    Args:
+        next_allo: The allophone code to place at ``allophons[1]``.
+            For tests that need a synthetic phone with custom features
+            (not in the real US allophone table), the caller can
+            monkey-patch ``phone_feature`` via the override.
+        next_feat_override: If set, force ``phone_feature(next_allo)``
+            to return this value (used by tests that need a specific
+            feature bitmap without depending on the US allophone table).
+    """
+    handle, p_dph_t, p_dphsettar = _build_handle()
+    p_dph_t.nphone = 0
+    p_dph_t.nphonelast = -1  # Force the once-per-phone init block to fire.
+    p_dph_t.allophons = [0, next_allo, 0]
+    p_dph_t.allofeats = [0, 0, 0]
+    return handle, p_dph_t, p_dphsettar
+
+
+def test_initial_silence_defaults_set_when_first_frame() -> None:
+    """First frame of nphone==0 sets the documented HLSyn defaults."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_init_silence_handle(USP_AA)
+    # Pre-populate with sentinel values that should be reset.
+    p_dph_t.last_real_phon = 5
+    p_dph_t.area_g = 999
+    p_dph_t.in_lclosure = 1
+    # Call the anticipation block directly so the per-frame state
+    # machine (which would mutate pressure further) doesn't run.
+    _phdraw_initial_silence_anticipation(p_dph_t)
+    assert p_dph_t.last_real_phon == 1000
+    # The "next voiced -> vowel" sub-branch zeros area_g (line 1160).
+    assert p_dph_t.area_g == 0
+    # in_lclosure is zeroed by the defaults block (940-963) and the
+    # voiced-next sub-block (1112).
+    assert p_dph_t.in_lclosure == 0
+    # Pressure default from C line 947 (the voiced-vowel branch
+    # doesn't touch pressure).
+    assert p_dph_t.pressure == 200
+
+
+def test_initial_silence_skipped_when_nphone_nonzero() -> None:
+    """No mutation when ``nphone != 0``."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_init_silence_handle(USP_AA)
+    p_dph_t.nphone = 1  # Override -- not in initial silence.
+    p_dph_t.nphonelast = 1
+    p_dph_t.last_real_phon = 5
+    p_dph_t.area_g = 999
+    phdraw(handle)
+    # Defaults block must not fire.
+    assert p_dph_t.last_real_phon == 5
+
+
+def test_initial_silence_voiced_vowel_next_opens_glottis() -> None:
+    """Voiced vowel next-phone branch (C lines 1107, 1154-1167)."""
+    from dectalk.include.usp_codes import USP_AA  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_init_silence_handle(USP_AA)
+    _phdraw_initial_silence_anticipation(p_dph_t)
+    # FVOWEL & FVOICD next -> area_g = 0, agspeed = 1, area_l = 1000.
+    assert p_dph_t.area_g == 0
+    assert p_dph_t.agspeed == 1
+    assert p_dph_t.area_l == 1000
+    assert p_dph_t.area_b == 1000
+    assert p_dph_t.target_l == 1000
+    assert p_dph_t.area_n == 0
+    assert p_dph_t.nasal_step == 0
+
+
+def test_initial_silence_dh_next_clamps_target_b_to_zero() -> None:
+    """USP_DH next-phone triggers the special closure rule (C lines 1226-1242)."""
+    from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_init_silence_handle(USP_DH)
+    _phdraw_initial_silence_anticipation(p_dph_t)
+    assert p_dph_t.target_b == 0
+
+
+def test_initial_silence_th_next_clamps_target_b_to_zero() -> None:
+    """USP_TH next-phone triggers the special closure rule (C lines 1226-1242)."""
+    from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_init_silence_handle(USP_TH)
+    _phdraw_initial_silence_anticipation(p_dph_t)
+    assert p_dph_t.target_b == 0
+
+
+def test_initial_silence_unvoiced_next_opens_glottis_wide() -> None:
+    """Unvoiced next-phone -> area_g = target_ag = 1410 (C lines 1216-1224)."""
+    from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
+
+    # USP_TH is unvoiced fricative (FOBST but not FVOICD).
+    handle, p_dph_t, _ = _build_init_silence_handle(USP_TH)
+    _phdraw_initial_silence_anticipation(p_dph_t)
+    # The unvoiced-else branch fires (line 1218); but the DH/TH
+    # special-rule below it sets target_b = 0 -- doesn't touch area_g.
+    assert p_dph_t.area_g == 1410
+    assert p_dph_t.target_ag == 1410
+
+
+def test_initial_silence_m_next_drops_lips() -> None:
+    """USP_M next-phone (nasal labial) zeros area_l + target_l (C line 1200-1206)."""
+    from dectalk.include.usp_codes import USP_M as _USP_M  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_init_silence_handle(_USP_M)
+    _phdraw_initial_silence_anticipation(p_dph_t)
+    # FNASAL + FVOICD; USP_M sets target_ag = NOM_VOIC_GLOT_AREA = 0.
+    assert p_dph_t.target_ag == 0
+    # The /m/ branch (else of line 1185) zeros lips.
+    assert p_dph_t.area_l == 0
+    assert p_dph_t.target_l == 0
+    # nasal_step = 7, area_n = 200 (set before /m/ branch).
+    assert p_dph_t.nasal_step == 7
+    assert p_dph_t.target_narea == 240
+
+
+def test_initial_silence_n_next_sets_target_ag() -> None:
+    """USP_N next-phone sets target_ag to NOM_VOIC_GLOT_AREA (C lines 1172-1183).
+
+    Also exercises the UK_N-bug branch: because the C source's
+    ``== UK_N`` comparison is against the unshifted small integer
+    32 (l_all_ph.h:163), it never matches a US allophone (which
+    carries the PFUSA font prefix). The ``else`` branch fires and
+    zeros the lips, not the blade.
+    """
+    from dectalk.include.usp_codes import USP_N as _USP_N  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_initial_silence_anticipation  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_init_silence_handle(_USP_N)
+    _phdraw_initial_silence_anticipation(p_dph_t)
+    # USP_N matches the C source's `==USP_N` branch (line 1173).
+    assert p_dph_t.target_ag == 0  # NOM_VOIC_GLOT_AREA on US.
+    # The UK_N comparison never matches on the US path -> lips zeroed.
+    assert p_dph_t.area_l == 0
+    assert p_dph_t.target_l == 0
+
+
+@pytest.mark.skipif(
+    not _C_FILE.exists(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
+def test_c_body_has_initial_silence_branch() -> None:
+    """C body has the ``nphone == 0`` branch (ph_draw.c lines 929-1244)."""
+    body = _extract_body()
+    assert "pDph_t->nphone == 0" in body
+    assert "in intial silence anticipate" in body
+    # Sanity-check a few of the unique field writes we ported.
+    assert "pDph_t->last_real_phon = 1000" in body
+    assert re.search(r"pDph_t->target_ag\s*=\s*400", body)
+    assert "USP_DH" in body
+    assert "USP_TH" in body
+
+
+@pytest.mark.skipif(
+    not _C_FILE.exists(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
+def test_c_body_has_initial_silence_nom_constants() -> None:
+    """C body references the NOM_* VTM constants the port mirrors."""
+    body = _extract_body()
+    assert "NOM_VOIC_GLOT_AREA" in body
+    assert "NOM_Open_Glottis" in body
+    assert "NOM_VOICED_OBSTRUENT" in body
+    assert "NOM_Fricative_Opening" in body
