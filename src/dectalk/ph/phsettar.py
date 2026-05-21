@@ -255,6 +255,32 @@ def phsettar(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915
                 else:
                     np_param.dbtran = p_dph_t.arg1 // p_dphsettar.durtran
 
+        # 8b. F2-only vowel-to-vowel coarticulation across a consonant
+        # (ph_setar.c lines 1205-1226). The backward smoothing rule
+        # for F2 calls setloc -> vv_coartic_across_c which writes
+        # vvbouval/vvdurtran on the per-clause settar struct. This
+        # block converts those into the per-frame ``bvvtran`` /
+        # ``dbvvtran`` / ``tvvbacktr`` fields on DphT that phdraw
+        # adds to F2 every frame after ``tvvbacktr``. Reset
+        # vvbouval/vvdurtran to zero at the end so the next phone's
+        # F2 starts clean.
+        if np_idx == F2:
+            p_dph_t.bvvtran = 0
+            p_dph_t.dbvvtran = 0
+            p_dph_t.tvvbacktr = p_dph_t.durfon
+            if p_dphsettar.vvdurtran > p_dph_t.durfon:
+                p_dphsettar.vvdurtran = p_dph_t.durfon
+            if p_dphsettar.vvdurtran > 0 and p_dphsettar.vvbouval != 0:
+                p_dph_t.tvvbacktr = p_dph_t.durfon - p_dphsettar.vvdurtran
+                p_dph_t.arg1 = p_dphsettar.vvbouval << 3
+                if p_dphsettar.vvdurtran < _DIVTAB_THRESHOLD:
+                    p_dph_t.arg2 = divtab[p_dphsettar.vvdurtran]
+                    p_dph_t.dbvvtran = mlsh1(p_dph_t.arg1, p_dph_t.arg2)
+                else:
+                    p_dph_t.dbvvtran = p_dph_t.arg1 // p_dphsettar.vvdurtran
+            p_dphsettar.vvdurtran = 0
+            p_dphsettar.vvbouval = 0
+
     # 9. Special rules — called once after the per-parameter loop.
     us_special_rules(
         phTTS=phTTS,
