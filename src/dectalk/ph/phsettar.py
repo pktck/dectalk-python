@@ -268,8 +268,7 @@ def phsettar(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915
             p_dph_t.bvvtran = 0
             p_dph_t.dbvvtran = 0
             p_dph_t.tvvbacktr = p_dph_t.durfon
-            if p_dphsettar.vvdurtran > p_dph_t.durfon:
-                p_dphsettar.vvdurtran = p_dph_t.durfon
+            p_dphsettar.vvdurtran = min(p_dphsettar.vvdurtran, p_dph_t.durfon)
             if p_dphsettar.vvdurtran > 0 and p_dphsettar.vvbouval != 0:
                 p_dph_t.tvvbacktr = p_dph_t.durfon - p_dphsettar.vvdurtran
                 p_dph_t.arg1 = p_dphsettar.vvbouval << 3
