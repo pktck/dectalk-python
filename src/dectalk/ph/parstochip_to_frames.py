@@ -34,6 +34,7 @@ from typing import Final
 from dectalk.hlsyn.hlframe import hl_synthesize_ll_frame
 from dectalk.hlsyn.initialize_hl_synthesizer import initialize_hl_synthesizer
 from dectalk.hlsyn.llsyn import LLFrame
+from dectalk.ph.getcosine import HIGHEST_F0, LOWEST_F0
 from dectalk.ph.hl_speaker import HLSpeaker
 from dectalk.ph.hlsyn_structs import HLFrame, HLState
 from dectalk.ph.param_indices import (
@@ -133,7 +134,9 @@ def parstochip_to_llframe(parstochip: list[int]) -> LLFrame:
     tl = lineartilt[tilt_idx]
 
     return LLFrame(
-        F0=_clamp(f0, 500, 5000),  # 50-500 Hz in deciHz.
+        # Range matches ph_drwt02.c:242-243 (LOWEST_F0..HIGHEST_F0,
+        # deciHz = Hz x 10, so 50.0..512.1 Hz).
+        F0=_clamp(f0, LOWEST_F0, HIGHEST_F0),
         AV=_clamp(parstochip[OUT_AV], 0, 80),
         Ah=_clamp(parstochip[OUT_AP], 0, 80),
         OQ=_DEFAULT_OQ,
@@ -204,7 +207,8 @@ def parstochip_to_llframe_delayed(
 
     return LLFrame(
         # Real-time slots from the current parstochip.
-        F0=_clamp(f0, 500, 5000),
+        # F0 clamp range from ph_drwt02.c:242-243 (LOWEST_F0..HIGHEST_F0).
+        F0=_clamp(f0, LOWEST_F0, HIGHEST_F0),
         AV=_clamp(parstochip[OUT_AV], 0, 80),
         TL=tl,
         # Delayed slots from the previous parstochip.
