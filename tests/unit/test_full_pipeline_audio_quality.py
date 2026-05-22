@@ -33,12 +33,17 @@ def _speak(text: str, monkeypatch: pytest.MonkeyPatch) -> np.ndarray:
 @pytest.mark.parametrize(
     ("text", "min_samples", "max_samples"),
     [
-        # Upper bounds widened in issue #72: the trailing-silence pad
-        # adds ~6-9k samples per clause so the pure-Python pipeline now
-        # closer matches the C reference's trailing-pad behaviour.
-        # Further widened after PRs #102 (trailing-silence pad) and #107
-        # (SpdChip defaults) expanded sample counts by another ~10-15%;
-        # bounds carry ~30% headroom over current measured values.
+        # Upper bounds widened to cover all of:
+        #   - issue #72 (trailing-silence pad adds ~6-9k samples/clause),
+        #   - issue #69 (phalloph2 chain replaces the ph_setallofeats
+        #     stop-gap and emits the full set of allophones — HH / L /
+        #     NG no longer drop — plus proper stress markers, so
+        #     durations sum higher than the previous stop-gap path),
+        #   - PRs #102 (trailing-silence pad) and #107 (SpdChip
+        #     defaults) which expanded sample counts another ~10-15%.
+        # Bounds carry ~30% headroom over current measured values.
+        # C reference targets (for context): "hello world" → 13845,
+        # "test one two three" → ~14697.
         ("hi", 2000, 18000),
         ("hello world", 7000, 33000),
         ("good morning", 7000, 32000),

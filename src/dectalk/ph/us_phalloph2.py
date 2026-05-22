@@ -1,0 +1,343 @@
+# ruff: noqa: N803 -- ``phTTS`` matches the C source's handle parameter name
+"""Wire ARPABET front-end through the full ``phsort + phalloph`` chain.
+
+This module is the orchestrator that replaces the
+:mod:`dectalk.ph.ph_setallofeats` stop-gap merged in PR #66. Where
+the stop-gap derived :data:`~dectalk.ph.dph_t.DphT.allofeats` directly
+from the ARPABET stress digits and word grouping, this module drives
+the **real** C-source pipeline:
+
+1. Encode the ARPABET word groups into a DECtalk ``symbols[]`` stream
+   (US allophone codes plus :data:`~dectalk.include.phoneme_codes.WBOUND` /
+   :data:`~dectalk.include.phoneme_codes.S1` / :data:`~dectalk.include.phoneme_codes.S2` /
+   :data:`~dectalk.include.phoneme_codes.PERIOD` / :data:`~dectalk.include.phoneme_codes.QUEST`
+   markers — the format the C kernel hands to ``phsort``).
+2. Call :func:`dectalk.ph.all_phsort.all_phsort` (the language-default
+   PH-sort engine, US path of ``ph_sort.c`` lines 428-1712). This walks
+   the symbol stream emitting :data:`~dectalk.ph.dph_t.DphT.phonemes`
+   and :data:`~dectalk.ph.dph_t.DphT.sentstruc` — one entry per phoneme,
+   with the stress / syllable-position / word-boundary feature word
+   composed via :func:`dectalk.ph.make_phone.add_feature`.
+3. Call :func:`dectalk.ph.us_phalloph.us_phalloph` (translated from
+   ``ph_aloph1.c`` lines 444-1546). Walks ``phonemes[]`` /
+   ``sentstruc[]`` applying the ~30 US-English allophonic substitution
+   rules (post-vocalic /R/, flap rule, /dh/-after-/t,d,n/, vowel
+   unreduction in citation mode, hat-rise / hat-fall markers, ...) and
+   appends per-phone allophone + feature words to
+   :data:`~dectalk.ph.dph_t.DphT.allophons` / :data:`~dectalk.ph.dph_t.DphT.allofeats`
+   via :func:`dectalk.ph.make_out_phonol.make_out_phonol`.
+
+The end result: ``allophons[]`` and ``allofeats[]`` are populated by
+the same chain the DECtalk binary uses (with the
+``OLD_INTONATION_AND_TIMING`` build flag active — see
+``ph_aloph.c`` line 14), enabling :func:`dectalk.ph.phinton.phinton`
+downstream to see the FBOUNDARY / FSTRESS / FHAT_BEGINS bits it needs
+to emit a real F0 contour.
+
+Why the wrapper module
+======================
+
+The C kernel feeds ``phsort`` from ``symbols[]``, which is the
+DECtalk-native phonetic stream (allophone + control codes interleaved
+with WBOUND / S1 / PERIOD markers). The Python pipeline currently
+runs on **ARPABET** (CMU-style symbols with stress digits embedded in
+vowel names). Bridging the two formats is the only new work this
+module does on top of the already-ported ``all_phsort`` +
+``us_phalloph``.
+
+Per the partial-port allowance in issue #69, only the US-English
+control flow is implemented; UK / German / Spanish / French
+extensions are deferred (the existing ``all_phsort`` body has runtime
+guards that short-circuit those paths via ``lang_curr`` checks).
+
+Tracks issue #69.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+from dectalk.include.phoneme_codes import (
+    PERIOD,
+    PFUSA,
+    QUEST,
+    S1,
+    S2,
+    WBOUND,
+    USPhoneme,
+)
+from dectalk.ph.all_phsort import all_phsort
+from dectalk.ph.us_phalloph import us_phalloph
+
+if TYPE_CHECKING:
+    from dectalk.ph.tts_handle import TtsHandle
+
+# Maximum slots we'll allocate for the symbol stream. NPHON_MAX is the
+# C kernel's upper bound on phonemes per clause; reserve enough slack
+# (WBOUND between every word + S1/S2 stress markers + leading/trailing
+# silence + PERIOD/QUEST) to fit any sane corpus prompt.
+_SYMBOLS_RESERVE: int = 8
+
+# Map ARPABET stress digits (CMUdict convention) to DECtalk's per-phone
+# stress marker. Digit ``0`` (unstressed) emits no marker; digits ``1``
+# / ``2`` emit S1 / S2 before the phone, matching how the C source's
+# ``ls_*`` LTS stage writes the symbol stream (e.g. for stressed AH the
+# stream is ``S1, AH``).
+_STRESS_DIGIT_TO_MARKER: dict[str, int] = {
+    "1": S1,  # primary
+    "2": S2,  # secondary
+    # digit "0" -> no marker (unstressed)
+    # digit "3" reserved for tertiary stress (Spanish quote marker S3
+    # in C; not emitted by the US-English ARPABET front-end).
+}
+
+
+def _arpabet_to_us_offset(name: str) -> int | None:
+    """Map an ARPABET symbol to the US allophone enum offset (0-70).
+
+    Strips any trailing CMU stress digit (``"AH1"`` -> ``"AH"``),
+    upper-cases, then looks up in :class:`~dectalk.include.phoneme_codes.USPhoneme`.
+    Returns ``None`` when the symbol has no DECtalk allophone
+    counterpart (e.g. CMU symbols only present under their alias name
+    — those are handled upstream by ``_speak_via_python_full``'s
+    ``_ARPABET_ALIAS`` table).
+    """
+    if not name:
+        return None
+    bare = name.rstrip("0123456789").upper()
+    # Pause marker emitted by the kernel tokenizer for punct tokens.
+    if bare == "SIL":
+        return int(USPhoneme.SIL)
+    try:
+        return int(USPhoneme[bare])
+    except KeyError:
+        return None
+
+
+# Aliases for ARPABET symbols that don't share their bare name with
+# the DECtalk allophone enum. Kept in sync with
+# ``dectalk.api.speak._ARPABET_ALIAS`` — the two tables resolve the
+# same set of CMU-39 ARPABET symbols.
+_ARPABET_ALIAS_OFFSET: dict[str, int] = {
+    "HH": int(USPhoneme.HX),  # /h/ → DECtalk HX
+    "L": int(USPhoneme.LL),  # /l/ → DECtalk LL (light L)
+    "NG": int(USPhoneme.NX),  # /ŋ/ → DECtalk NX
+}
+
+
+def _resolve_arpabet_offset(name: str) -> int | None:
+    """Resolve an ARPABET symbol to its US allophone offset, with alias fallback."""
+    if not name:
+        return None
+    bare = name.rstrip("0123456789").upper()
+    if bare in _ARPABET_ALIAS_OFFSET:
+        return _ARPABET_ALIAS_OFFSET[bare]
+    return _arpabet_to_us_offset(name)
+
+
+def _arpabet_words_to_symbols(
+    arpabet_words: list[list[str]],
+    *,
+    is_sentence_final: bool = True,
+    is_question: bool = False,
+) -> tuple[list[int], int]:
+    """Convert ARPABET word groups to a DECtalk ``symbols[]`` stream.
+
+    The C kernel's ``phsort`` expects its input in
+    ``pDph_t->symbols[]`` — a packed array of either:
+
+    - **Phoneme codes**: ``(font << 8) | offset`` where ``font = PFUSA``
+      (= 0x1E) for US English and ``offset`` is the 0-70
+      :class:`~dectalk.include.phoneme_codes.USPhoneme` index.
+    - **Control markers**: ``S1`` / ``S2`` / ``WBOUND`` / ``PERIOD`` /
+      ``QUEST`` / ``EXCLAIM`` — single-byte values >= 100 (above
+      :data:`~dectalk.include.all_phon_counts.MAX_PHONES`), used by
+      ``all_phsort``'s ``curr_in_sym < MAX_PHONES`` dispatch.
+
+    The Python front-end (``_tokens_to_phoneme_words``) already emits
+    per-word ARPABET groups. This helper:
+
+    1. Inserts a leading ``WBOUND`` (matching ``all_phsort``'s
+       defensive insert at C lines 493-495).
+    2. For each word, emits the per-phoneme ``S1`` / ``S2`` stress
+       marker (from the ARPABET stress digit) followed by the
+       allophone code with the US font shifted into the high byte.
+    3. Emits a ``WBOUND`` between adjacent words (but not after the
+       last word, where the sentence-end marker goes instead).
+    4. Closes with ``PERIOD`` (declarative) or ``QUEST`` (yes/no
+       question) per the caller's flags.
+
+    Args:
+        arpabet_words: ARPABET word groups in clause order. Pause
+            tokens emitted as ``["SIL"]`` are passed through as
+            standalone silence words — ``all_phsort`` handles them as
+            ordinary phonemes.
+        is_sentence_final: ``True`` if the clause ends a complete
+            sentence — emits a trailing ``PERIOD``. ``False`` is for
+            mid-sentence clauses (the caller wires the appropriate
+            marker separately if needed).
+        is_question: ``True`` if the sentence ends in ``?`` — emits
+            ``QUEST`` instead of ``PERIOD``. Mutually exclusive with
+            ``is_sentence_final == False``.
+
+    Returns:
+        ``(symbols, nsymbtot)`` — the populated stream and its
+        length. ``nsymbtot`` is what the caller writes onto
+        :data:`~dectalk.ph.dph_t.DphT.nsymbtot` before calling
+        :func:`all_phsort`.
+    """
+    symbols: list[int] = []
+    # Leading GEN_SIL phoneme: ``ph_task.c`` lines 437-439 seed
+    # ``symbols[0] = GEN_SIL`` before the LTS layer appends words.
+    # ``phsort``'s output_pass walks this in the FSYLL/FNON-FSYLL
+    # branch and emits a leading silence phone via
+    # :func:`make_phone`, which downstream ``us_phalloph`` re-emits
+    # as ``allophons[0] = GEN_SIL``. Without this, the clause is
+    # missing its leading 213-sample silence prefix.
+    symbols.append((PFUSA << 8) | int(USPhoneme.SIL))
+    # Leading WBOUND: ``all_phsort`` defensively inserts this when
+    # absent (C lines 493-495), but emitting it ourselves keeps the
+    # cleanup pass quiet.
+    symbols.append(WBOUND)
+
+    last_word_idx = len(arpabet_words) - 1
+    for word_idx, word in enumerate(arpabet_words):
+        emitted_any = False
+        for name in word:
+            offset = _resolve_arpabet_offset(name)
+            if offset is None:
+                # ARPABET symbol that doesn't map to a DECtalk
+                # allophone — skip rather than emit garbage. Mirrors
+                # the ARPABET-alias-gap behaviour from the existing
+                # _speak_via_python_full path.
+                continue
+            # Emit a stress marker (S1 / S2) before the phone if the
+            # ARPABET symbol carries a trailing digit. DECtalk's
+            # symbols[] holds stress as a separate marker token; the
+            # ``add_feature(p_dph_t, FSTRESS_*, nphonetot)`` call in
+            # ``all_phsort`` (lines 1413-1418) attaches it to the
+            # NEXT-emitted phone.
+            digit = name[-1] if name and name[-1].isdigit() else ""
+            marker = _STRESS_DIGIT_TO_MARKER.get(digit)
+            if marker is not None:
+                symbols.append(marker)
+            symbols.append((PFUSA << 8) | offset)
+            emitted_any = True
+        # Insert a WBOUND between adjacent words (but not after the
+        # last word — the sentence-end marker goes there).
+        if emitted_any and word_idx < last_word_idx:
+            symbols.append(WBOUND)
+
+    # Sentence-end marker. WBOUND-before-PERIOD is redundant per
+    # ``all_phsort``'s cleanup pass (C lines 599-603 collapse it), so
+    # emit just the boundary marker.
+    if is_sentence_final:
+        symbols.append(QUEST if is_question else PERIOD)
+
+    return symbols, len(symbols)
+
+
+def phalloph2(
+    phTTS: TtsHandle,
+    arpabet_words: list[list[str]],
+    *,
+    is_sentence_final: bool = True,
+    is_question: bool = False,
+) -> None:
+    """Drive the full ``phsort + phalloph`` chain from ARPABET word groups.
+
+    Replacement for the stop-gap :func:`dectalk.ph.ph_setallofeats.ph_setallofeats`
+    helper merged in PR #66. Where the stop-gap only populated
+    :data:`~dectalk.ph.dph_t.DphT.allofeats` with a minimum FSTRESS /
+    FWBNEXT / FPERNEXT bit pattern, this function runs the **real**
+    PH-stage chain (translated from ``ph_sort.c`` + ``ph_aloph1.c``),
+    which:
+
+    - Emits every phoneme's full feature word (FSTRESS_1 / FSTRESS_2 /
+      FWINITC / FTYPESYL / FBOUNDARY / FSENTENDS / FHAT_BEGINS /
+      FHAT_ENDS / FBLOCK / FEMPHASIS).
+    - Applies the US-English allophonic substitution rules to
+      :data:`~dectalk.ph.dph_t.DphT.allophons` (postvocalic R collapse,
+      flap rule, citation-mode unreduce, etc.).
+    - Writes through to :data:`~dectalk.ph.dph_t.DphT.nallotot` so
+      downstream :func:`dectalk.ph.phinton.phinton` and
+      :func:`dectalk.ph.us_phtiming.us_phtiming` see the proper phone
+      count.
+
+    The caller is expected to have:
+
+    1. Run :func:`dectalk.ph.init_phclause.init_phclause` so the per-
+       clause arrays exist and are zero-initialised.
+    2. Allocated separate :data:`~dectalk.ph.dph_t.DphT.symbols` /
+       :data:`~dectalk.ph.dph_t.DphT.phonemes` /
+       :data:`~dectalk.ph.dph_t.DphT.sentstruc` /
+       :data:`~dectalk.ph.dph_t.DphT.user_durs` /
+       :data:`~dectalk.ph.dph_t.DphT.user_f0` buffers — the Python
+       port's ``init_phclause`` aliases ``phonemes`` to ``allophons``,
+       which would cause ``us_phalloph`` to read and overwrite the
+       same slot. This function reallocates them as independent
+       arrays before calling the chain.
+    3. Set :data:`~dectalk.ph.dph_t.DphT.pSTphsettar` (the
+       ``DphSettarSt`` state needed by ``all_phsort``'s delete /
+       insert helpers).
+    4. Set :data:`~dectalk.kernel.ksd_t.KsdT.lang_curr` to
+       :data:`~dectalk.kernel.lang_codes.LANG_english`.
+
+    Args:
+        phTTS: TTS handle with ``p_ph_thread_data`` (DphT) and
+            ``p_kernel_share_data`` (KsdT) populated.
+        arpabet_words: Per-word ARPABET symbol groups in clause order
+            (from ``_tokens_to_phoneme_words``). Each group is a list
+            of CMU-style ARPABET symbols with embedded stress digits.
+        is_sentence_final: ``True`` (default) emits a trailing
+            ``PERIOD`` / ``QUEST`` marker so ``phsort`` attaches
+            FSENTENDS to the final stressed vowel and ``phinton``'s
+            Rule 4 (final fall) fires.
+        is_question: ``True`` if the sentence ends in ``?``; emits
+            ``QUEST`` so ``phsort`` sets ``cbsymbol = 1`` (which
+            ``phinton`` reads to switch to question-final rising
+            intonation).
+    """
+    from dectalk.ph.dph_t import DphT  # noqa: PLC0415
+
+    p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
+
+    # 1. Encode ARPABET word groups into a DECtalk symbols[] stream.
+    symbols, nsymbtot = _arpabet_words_to_symbols(
+        arpabet_words,
+        is_sentence_final=is_sentence_final,
+        is_question=is_question,
+    )
+
+    # 2. Pad to the size the C kernel uses (NPHON_MAX + SAFETY + 2 ~
+    # 256 slots). all_phsort indexes up to nsymbtot, so just need the
+    # populated entries; the rest get zero padding.
+    p_dph_t.symbols = list(symbols)
+    p_dph_t.nsymbtot = nsymbtot
+
+    # 3. Reallocate ``phonemes`` / ``sentstruc`` / ``user_durs`` /
+    # ``user_f0`` as INDEPENDENT buffers — Python's init_phclause
+    # aliases them to ``allophons`` / ``allofeats`` / ``allodurs`` /
+    # ``f0tar`` which would cause us_phalloph to clobber its own
+    # input as it walks the phoneme stream. The C source uses
+    # ``&allophons[SAFETY]`` for ``phonemes`` (8-slot offset) so the
+    # two never alias; the Python port doesn't model that offset.
+    buf_size = max(nsymbtot + _SYMBOLS_RESERVE, 256)
+    p_dph_t.phonemes = [0] * buf_size
+    p_dph_t.sentstruc = [0] * buf_size
+    p_dph_t.user_durs = [0] * buf_size
+    p_dph_t.user_f0 = [0] * buf_size
+
+    # 4. Run the PH-sort engine. Walks symbols[] cleanup-pass then
+    # output-pass, writing phonemes[] / sentstruc[] / user_durs[] /
+    # user_f0[]. Sets nphonetot to the count emitted.
+    all_phsort(phTTS)
+
+    # 5. Run the allophonic-substitution pass. Walks phonemes[] /
+    # sentstruc[] applying the US-English rules; writes allophons[]
+    # and allofeats[] with the per-phone allophone + feature word,
+    # setting nallotot.
+    us_phalloph(phTTS)
+
+
+__all__ = ["phalloph2"]

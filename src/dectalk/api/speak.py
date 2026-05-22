@@ -196,8 +196,15 @@ def _pump_frames_to_samples(  # pyright: ignore[reportUnusedFunction]
     return out
 
 
-def _arpabet_to_us_allophone(name: str) -> int | None:
+def _arpabet_to_us_allophone(name: str) -> int | None:  # pyright: ignore[reportUnusedFunction]
     """Map an ARPABET phoneme symbol (e.g. ``"AH"``, ``"HH1"``) to a USP code.
+
+    Retained after issue #69 wired the full ``phsort + us_phalloph`` chain
+    in :mod:`dectalk.ph.us_phalloph2` (which moved the active alias
+    handling to that module). The reference implementation here remains
+    so that tests under ``tests/unit/test_arpabet_us_alias.py`` and any
+    diagnostic / debug paths still resolve.
+
 
     Strips a trailing stress digit, upper-cases, and looks up the name in
     the :class:`~dectalk.include.phoneme_codes.USPhoneme` enum. Several
@@ -262,89 +269,6 @@ def _build_arpabet_alias() -> dict[str, USPhoneme]:
 # (the include module already imports cleanly today but keeping the
 # closure local matches the rest of this file's style).
 _ARPABET_ALIAS: dict[str, USPhoneme] = _build_arpabet_alias()
-
-
-def _build_symbols_from_arpabet(
-    p_dph_t: object,
-    arpabet_words: list[list[str]],
-    *,
-    is_sentence_final: bool,
-) -> None:
-    """Populate ``p_dph_t.symbols[]`` / ``nsymbtot`` from ARPABET words.
-
-    Emits a minimal symbol stream matching the shape the C ``ph_sort.c``
-    pipeline would build (leading WBOUND, then per-word
-    ``[S1|S2,] phoneme...`` with WBOUND between words, then a trailing
-    PERIOD). Used solely as input to :func:`all_phsort` for its clause-
-    level bookkeeping side effects (``number_words``, ``clausetype``,
-    ``cbsymbol`` — issue #94).
-
-    The symbol codes here are bare 8-bit values matching the C macros:
-    ``WBOUND = 111``, ``S1 = 103``, ``S2 = 102``, ``PERIOD = 116``, and
-    the per-phoneme :class:`USPhoneme` enum values (0..70). The high-
-    byte ``PFUSA`` font code is NOT applied because all_phsort's
-    ``curr_in_sym = curr_in_phone & PVALUE`` extraction (ph_sort.c line
-    1389) discards the font bits anyway, and ``make_phone`` is gated on
-    ``curr_in_sym < MAX_PHONES`` (= 99) — both work on the bare value.
-
-    Args:
-        p_dph_t: The PH thread-state instance (DphT). Must be a
-            :class:`~dectalk.ph.dph_t.DphT` instance — typed as
-            ``object`` here to keep the import lazy.
-        arpabet_words: Per-word ARPABET symbol groups in clause order.
-        is_sentence_final: When True, the closing punctuation symbol
-            is :data:`PERIOD`. (No other punctuation is currently
-            distinguishable from the ARPABET stream alone — the
-            comma/question/exclaim path will be wired alongside
-            cmd-parser routing.)
-    """
-    from dectalk.include.phoneme_codes import (  # noqa: PLC0415
-        PERIOD,
-        WBOUND,
-        USPhoneme,
-    )
-    from dectalk.ph.dph_t import DphT  # noqa: PLC0415
-
-    assert isinstance(p_dph_t, DphT)
-
-    # NOTE: we deliberately omit the C source's inline stress markers
-    # (S1=103, S2=102) from this stream. ``all_phsort`` is being run
-    # solely for its clause-level bookkeeping side effects --
-    # ``number_words`` (from WBOUND symbol count), ``clausetype`` (from
-    # the trailing punctuation), and ``cbsymbol`` (question flag). The
-    # current Python port of :func:`init_med_final` walks symbols[]
-    # forward through stress markers and calls ``phone_feature`` on the
-    # raw value; the in-port ``us_featb`` LUT is short of the C
-    # ``PHO_SYM_TOT = 122`` size, so any 100-118 marker in the stream
-    # raises IndexError. Until init_med_final's forward walk learns to
-    # skip non-phoneme codes (or us_featb is widened to PHO_SYM_TOT),
-    # we keep the symbol stream stress-marker-free. all_phsort emits
-    # FSTRESS_1/FSTRESS_2 into sentstruc[] only for stream-inline S1/S2
-    # symbols (ph_sort.c lines 1486-1492), so they would be discarded
-    # by our subsequent allofeats zeroing anyway.
-    symbols: list[int] = [WBOUND]
-    for word_idx, word in enumerate(arpabet_words):
-        for name in word:
-            bare = name.rstrip("0123456789").upper()
-            alias = _ARPABET_ALIAS.get(bare)
-            if alias is not None:
-                code = int(alias)
-            else:
-                try:
-                    code = int(USPhoneme[bare])
-                except KeyError:
-                    continue  # unknown ARPABET symbol; skip
-            symbols.append(code)
-        # Word boundary between words; the final WBOUND before the
-        # punctuation is added below.
-        if word_idx < len(arpabet_words) - 1:
-            symbols.append(WBOUND)
-    symbols.append(WBOUND)
-    if is_sentence_final:
-        symbols.append(PERIOD)
-
-    p_dph_t.symbols = symbols
-    p_dph_t.nsymbtot = len(symbols)
 
 
 def _speak_via_python_full(
@@ -468,7 +392,6 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     from dectalk.ph.phsettar import phsettar  # noqa: PLC0415
     from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
     from dectalk.ph.us_phtiming import us_phtiming  # noqa: PLC0415
-    from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
 
     # TODO: thread voice through DphT.curspdef / malfem etc. For now
     # only the speaker/sample-rate piece (via _resolve_voice) flows
@@ -492,14 +415,16 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     if not arpabet_phones:
         return np.zeros(0, dtype=np.int16)
 
-    # 2. ARPABET -> US allophone codes.
-    allophons: list[int] = [GEN_SIL]
-    for name in arpabet_phones:
-        code = _arpabet_to_us_allophone(name)
-        if code is not None:
-            allophons.append(code)
-    allophons.append(GEN_SIL)
-    nallotot = len(allophons)
+    # 2. We no longer build the allophone stream by hand here. The
+    # ``phalloph2`` chain (see step 4a below) consumes the ARPABET
+    # word groups directly, encodes them into a DECtalk
+    # ``symbols[]`` stream, and runs the real ``phsort`` +
+    # ``us_phalloph`` chain to populate ``allophons[]`` /
+    # ``allofeats[]`` (issue #69). The unused ARPABET-flat list and
+    # the leading/trailing GEN_SIL sentinels are produced by that
+    # chain instead. Keep ``arpabet_phones`` accessible for any
+    # diagnostic / fallback paths.
+    _ = arpabet_phones  # retained for diagnostic introspection
 
     # 3. Build engine state.
     # Map rate (multiplier; 1.0 == _DEFAULT_WPM nominal, 2.0 == half-
@@ -562,60 +487,43 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     p_ksd_t.lang_curr = LANG_english
     handle.p_kernel_share_data = p_ksd_t
 
-    # 4. Per-clause init -- MUST run before populating ``allophons``
-    # because :func:`init_phclause` zeroes that array (along with
-    # ``allodurs`` / ``allofeats`` / ``f0tar`` / ``f0tim``). The
-    # post-init writes below land in the buffer init_phclause sized.
+    # 4. Per-clause init -- MUST run before the phalloph2 chain
+    # because :func:`init_phclause` zeroes / sizes the per-clause
+    # arrays (``allophons`` / ``allofeats`` / ``allodurs`` / ``f0tar``
+    # / ``f0tim``). The phalloph2 chain then writes through those
+    # arrays as it walks the symbol stream.
     init_phclause(p_dph_t)
 
-    # 4a-pre. Build a minimal symbols[] stream from the ARPABET words and
-    # run ``all_phsort`` for its clause-level bookkeeping side effects --
-    # ``number_words`` (counted from WBOUND symbols), ``clausetype``
-    # (DECLARATIVE / QUESTION / EXCLAIMCLAUSE from the trailing
-    # punctuation symbol), and ``cbsymbol`` (question flag). Without this,
-    # ``phinton``'s ``if pDph_t.number_words > 2`` guard at line 360
-    # short-circuits every hat-rise / stress-impulse rule, leaving only
-    # the two F0_RESET events from silence boundaries (issue #94).
+    # 4a. Run the full ``phsort + us_phalloph`` chain (issue #69 --
+    # replaces the ``ph_setallofeats`` stop-gap from PR #66). Encodes
+    # the ARPABET word groups into a DECtalk ``symbols[]`` stream
+    # (US allophone codes + WBOUND / S1 / S2 / PERIOD markers), then
+    # runs:
     #
-    # ``all_phsort`` writes into ``phonemes[]`` / ``sentstruc[]`` which in
-    # this port alias ``allophons[]`` / ``allofeats[]`` (see
-    # init_phclause); we run it first so the subsequent allophons + ph_setallofeats
-    # writes overwrite anything all_phsort emitted. The retained mutations
-    # are clause-scoped scalars (number_words, clausetype, cbsymbol,
-    # f0mode, hat_seen, newparagsw) which the downstream phinton consumes.
-    from dectalk.ph.all_phsort import all_phsort  # noqa: PLC0415
-
-    _build_symbols_from_arpabet(p_dph_t, arpabet_words, is_sentence_final=True)
-    all_phsort(handle)
-
-    for i, code in enumerate(allophons):
-        p_dph_t.allophons[i] = code
-    p_dph_t.nallotot = nallotot
-    # Re-zero allofeats since all_phsort's output pass may have written
-    # FSTRESS_1/FWBNEXT/FHAT_BEGINS bits into sentstruc[] (which aliases
-    # allofeats[]). ph_setallofeats below re-derives the bits we actually
-    # use from the ARPABET stream + word grouping.
-    for i in range(len(p_dph_t.allofeats)):
-        p_dph_t.allofeats[i] = 0
-
-    # 4a. Populate allofeats[] from the ARPABET stream (issue #63).
-    # In the C reference, phalloph2/make_out_phonol writes the
-    # per-allophone feature word at the same time it emits each
-    # allophone. The Python pipeline skips phalloph for now, so we
-    # derive the minimum feature set phinton needs (FSTRESS from the
-    # ARPABET stress digit, FWBNEXT / FPERNEXT from word/sentence
-    # boundaries) directly from the front-end data. Must run after
-    # init_phclause (which zeroes allofeats) and the allophons copy
-    # above, but before us_phtiming (which reads FSTRESS for
-    # stressed-vowel duration bumps).
+    #   - ``all_phsort`` (``ph_sort.c`` lines 428-1712) -- walks the
+    #     symbol stream emitting ``phonemes[]`` / ``sentstruc[]``
+    #     with the full per-phone feature word.
+    #   - ``us_phalloph`` (``ph_aloph1.c`` lines 444-1546) -- applies
+    #     the US-English allophonic-substitution rules and writes
+    #     through to ``allophons[]`` / ``allofeats[]`` (setting
+    #     ``nallotot``). The chain also handles the leading-silence
+    #     prefix and trailing-PERIOD silence pad that the C kernel
+    #     wires in ``ph_task.c`` lines 437-439.
+    #
+    # ``FBOUNDARY`` / ``FPERNEXT`` / ``FSENTENDS`` are also imported here
+    # because the trailing-silence pad fix below (issue #72) OR-clears
+    # FBOUNDARY then OR-s FPERNEXT|FSENTENDS onto ``allofeats[nallotot-2]``
+    # so ``us_phtiming`` Rule 1 picks the long ``nfperiod + perpause``
+    # pause instead of the 15-frame default.
     from dectalk.ph.feature_bits import (  # noqa: PLC0415
         FBOUNDARY,
         FPERNEXT,
         FSENTENDS,
     )
-    from dectalk.ph.ph_setallofeats import ph_setallofeats  # noqa: PLC0415
+    from dectalk.ph.us_phalloph2 import phalloph2  # noqa: PLC0415
 
-    ph_setallofeats(p_dph_t, arpabet_words, is_sentence_final=True)
+    phalloph2(handle, arpabet_words, is_sentence_final=True, is_question=False)
+    nallotot = p_dph_t.nallotot
 
     # 4a-bis. End-of-clause sentence-boundary marker on the allophone
     # immediately before the trailing GEN_SIL sentinel (issue #72).
