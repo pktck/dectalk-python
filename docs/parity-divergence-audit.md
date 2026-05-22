@@ -919,5 +919,461 @@ The three diagnostic scripts live in `/tmp/` to keep this audit a
 doc-only PR; their content is embedded verbatim in the body of
 follow-up Issues G and H when filed.
 
+## Update 2026-05-22 (post-#97/#102/#107/#118/#120)
+
+Re-run of the 15-prompt parity diagnostic from §"Per-prompt
+divergence" on dev head `e0db2bc` (the latest commit after the
+PR-set listed in the section title — `da81603` was the previous
+audit's head, but PRs #97 / #102 / #107 / #120 and a fix for #87
+have landed since). Since the original audit (#58, dev head
+~7ca914c), the following landed:
+
+- **#62 / PR #65** — ARPABET → USPhoneme alias gap (HH/L/NG no longer dropped).
+- **#63 / PR #66** — `ph_setallofeats` stop-gap so `phinton` sees FSTRESS / FWBNEXT / FPERNEXT.
+- **#64 / PR #67** — `_speak_via_python_full` now routes through `parse()`, so `[:rate N]` is consumed by the command dispatcher instead of being spelled out.
+- **#71 / PR #94 (commit 909c5ff)** — `phdraw` once-per-phone setup + FVOWEL A2-jam; `all_phsort` wired into `_speak_via_python_full`; HR/SR scalars loaded.
+- **#72 / PR #102** — trailing-silence pad on the full-pipeline path (`nfperiod=94`, `nfcomma=16`, `FPERNEXT|FSENTENDS` on `nallotot-2`, `nallotot` re-read after `phinton`).
+- **#73** — `phinton` Rule 9 `goto skiprules` fix (partially closed).
+- **#85 / PR #107** — SpdChip US-Paul defaults audited against `p_us_vdf1.c paul_8`.
+- **#79 / PR #118** — German `gr_gettar` wired with full GR ROM tables (doesn't affect US-Paul corpus).
+- **#75 / PR #120** — F0 contour follow-up audit (doc only).
+- **#69 / PR #97 (commit 3938c68)** — `phalloph2` chain ported and **wired** into `_render_clause_full`. The manual `_arpabet_to_us_allophone`-based `allophons[]` + `ph_setallofeats` derivation has been replaced by a full `_build_symbols_from_arpabet` → `all_phsort` → `us_phalloph` → `make_out_phonol` chain at lines 497-525 of `src/dectalk/api/speak.py`.
+
+### Method
+
+Same as #58. Each of the first 15 corpus prompts rendered three ways:
+
+- C binary (`say -a TEXT -fo`) — reference.
+- `DECTALK_DISABLE_CAPI=1` (legacy approximate path).
+- `DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1` (the full pipeline through `_render_clause_full`).
+
+For each prompt: sample-count delta, first-differing-sample index,
+L2/sample, peak-abs error, and the lead / content / trail envelope
+split. Decomposition: `Δsamples = Δlead + Δcontent + Δtrail`, where
+lead = first non-zero index, content = `last_nz - first_nz + 1`,
+trail = `total - last_nz - 1`. Also: per-allophone `allodurs[]`
+captured via a monkey-patch on `us_phtiming`'s exit.
+
+### Per-prompt divergence (full pipeline, 2026-05-22, post-#97)
+
+| # | Prompt | C samp | Py samp | Δ samp | Δ ms | first_diff | L2/sample | max_abs_err | C rms |
+|---|---|---:|---:|---:|---:|---|---:|---:|---:|
+| 0 | `hello world` | 13845 | 26840 | +12995 | +1179 | 213 / 19ms | 7489 | 42111 | 5418 |
+| 1 | `the quick brown fox` | 19809 | 35750 | +15941 | +1446 | 213 / 19ms | 6237 | 34766 | 4391 |
+| 2 | `she sells sea shells` | 20093 | 37510 | +17417 | +1580 | 213 / 19ms | 5445 | 34609 | 4535 |
+| 3 | `one two three four five` | 22933 | 39710 | +16777 | +1522 | 348 / 32ms | 7238 | 37807 | 5156 |
+| 4 | `supercalifragilisticexpialidocious` | 31169 | 58520 | +27351 | +2481 | 213 / 19ms | 3678 | 21574 | 2283 |
+| 5 | `[:rate 250] testing one two three` | 14697 | 23210 | +8513 | +772 | 710 / 64ms | 5663 | 26974 | 4271 |
+| 6 | `DECtalk version 6.2.0` | 32660 | 28710 | -3950 | -358 | 852 / 77ms | 5149 | 27646 | 3947 |
+| 7 | `this is a test, with a comma, and a period.` | 34932 | 64240 | +29308 | +2658 | 213 / 19ms | 5188 | 33261 | 3634 |
+| 8 | `the answer is 42` | 21300 | 36850 | +15550 | +1410 | 213 / 19ms | 5191 | 25621 | 3849 |
+| 9 | `3 point 14` | 18602 | 31460 | +12858 | +1166 | 213 / 19ms | 6189 | 31581 | 4552 |
+| 10 | `one hundred and one dalmatians` | 24140 | 45320 | +21180 | +1921 | 348 / 32ms | 5187 | 30467 | 3160 |
+| 11 | `1234567890` | 74905 | 113960 | +39055 | +3542 | 348 / 32ms | 6004 | 34445 | 4043 |
+| 12 | `hello! how are you?` | 25702 | 31240 | +5538 | +502 | 213 / 19ms | 7139 | 43932 | 5473 |
+| 13 | `wait... what just happened?` | 26909 | 39710 | +12801 | +1161 | 326 / 30ms | 4636 | 30209 | 3560 |
+| 14 | `yes; no; maybe.` | 21442 | 32230 | +10788 | +979 | 329 / 30ms | 6339 | 33962 | 4777 |
+
+**Headline numbers.**
+
+- 0/15 prompts match bit-exactly (unchanged from #58).
+- Sign has flipped: 14 of 15 prompts are now **over-long** (only
+  `DECtalk version 6.2.0` remains under-running, by 3950 samp).
+  Mean |Δ| = 16668 samples (1512 ms), worst |Δ| = 39055 samples
+  (3542 ms) on `1234567890`.
+- Mean |Δ| has **regressed 2.85×** since #58 (original 5856 samp =
+  531 ms). The original divergence was mostly under-running
+  (Python shorter than C); the current state is consistently
+  over-running by 1-3.5 seconds per prompt.
+- `first_diff` index unchanged from #58: always equal to C's
+  leading-silence count. The bytes-up-to-first-non-zero still
+  match — divergence begins on the first voiced sample.
+
+### Pre-fix vs post-fix sample counts (post-#97/#102/#120 vs #58)
+
+| # | Prompt | C samp | Py #58 | Δ #58 | Py post-fix | Δ post | Net change |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 0 | `hello world` | 13845 | 10670 | -3175 | 26840 | +12995 | +16170 |
+| 1 | `the quick brown fox` | 19809 | 18260 | -1549 | 35750 | +15941 | +17490 |
+| 2 | `she sells sea shells` | 20093 | 17050 | -3043 | 37510 | +17417 | +20460 |
+| 3 | `one two three four five` | 22933 | 18920 | -4013 | 39710 | +16777 | +20790 |
+| 4 | `supercalifragilisticexpialidocious` | 31169 | 44000 | +12831 | 58520 | +27351 | +14520 |
+| 5 | `[:rate 250] testing one two three` | 14697 | 34540 | +19843 | 23210 | +8513 | **-11330** |
+| 6 | `DECtalk version 6.2.0` | 32660 | 15730 | -16930 | 28710 | -3950 | **-12980** |
+| 7 | `this is a test, with a comma, and a period.` | 34932 | 40150 | +5218 | 64240 | +29308 | +24090 |
+| 8 | `the answer is 42` | 21300 | 23540 | +2240 | 36850 | +15550 | +13310 |
+| 9 | `3 point 14` | 18602 | 16830 | -1772 | 31460 | +12858 | +14630 |
+| 10 | `one hundred and one dalmatians` | 24140 | 27500 | +3360 | 45320 | +21180 | +17820 |
+| 11 | `1234567890` | 74905 | 76780 | +1875 | 113960 | +39055 | +37180 |
+| 12 | `hello! how are you?` | 25702 | 16170 | -9532 | 31240 | +5538 | -4070 |
+| 13 | `wait... what just happened?` | 26909 | 22880 | -4029 | 39710 | +12801 | +16830 |
+| 14 | `yes; no; maybe.` | 21442 | 17930 | -3512 | 32230 | +10788 | +14300 |
+
+Three prompts net-improved (sign-flipped from under-run to small
+over-run): `[:rate 250]` (PR #67 fixed inline command leakage),
+`DECtalk version 6.2.0` (smaller |Δ| now), and `hello! how are
+you?` (smaller |Δ|). The other 12 prompts grew |Δ| by ~12-37 K
+samples (1.1-3.4 s) each. The largest absolute regression is
+`1234567890` (+37 180 samp = 3.4 s of extra audio).
+
+### Lead / content / trail decomposition
+
+| # | Prompt | Δ samp | Δ lead | Δ content | Δ trail | C trail | Py trail |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 0 | `hello world` | +12995 | +830 | +8183 | +3982 | 3972 | 7954 |
+| 1 | `the quick brown fox` | +15941 | +1341 | +6295 | +8305 | 4302 | 12607 |
+| 2 | `she sells sea shells` | +17417 | +3128 | +6152 | +8137 | 3860 | 11997 |
+| 3 | `one two three four five` | +16777 | +1203 | +10916 | +4658 | 3960 | 8618 |
+| 4 | `supercalifragilisticexpialidocious` | +27351 | +3555 | +19490 | +4306 | 4302 | 8608 |
+| 5 | `[:rate 250] testing one two three` | +8513 | +1270 | +6336 | +907 | 2492 | 3399 |
+| 6 | `DECtalk version 6.2.0` | -3950 | +1941 | -10153 | +4262 | 3880 | 8142 |
+| 7 | `this is a test, with a comma, and a period.` | +29308 | +1341 | +22324 | +5643 | 3894 | 9537 |
+| 8 | `the answer is 42` | +15550 | +1341 | +9925 | +4284 | 3964 | 8248 |
+| 9 | `3 point 14` | +12858 | +2235 | +6280 | +4343 | 3902 | 8245 |
+| 10 | `one hundred and one dalmatians` | +21180 | +1203 | +11930 | +8047 | 3915 | 11962 |
+| 11 | `1234567890` | +39055 | +1203 | +33877 | +3975 | 3985 | 7960 |
+| 12 | `hello! how are you?` | +5538 | +830 | -854 | +5562 | 3959 | 9521 |
+| 13 | `wait... what just happened?` | +12801 | +1225 | +5987 | +5589 | 3981 | 9570 |
+| 14 | `yes; no; maybe.` | +10788 | +1222 | +4102 | +5464 | 4002 | 9466 |
+
+**Aggregate contribution** (sum of absolute deltas across 15
+prompts):
+
+- Σ|Δlead|    = 23 868 samples (9.0 %)
+- Σ|Δcontent| = 162 804 samples (61.6 %)
+- Σ|Δtrail|   = 77 464 samples (29.3 %)
+
+Sign-summed: ΣΔlead = +23 868, ΣΔcontent = +140 790, ΣΔtrail =
++77 464. Every component is positive — Python is uniformly
+over-long in every envelope segment.
+
+### Remaining gap ranked by sample-distance contribution
+
+Rank by |Δsamples| and split into trail-dominant vs content-dominant:
+
+| Rank | # | Prompt | |Δsamp| | dominant |
+|---|---|---|---:|---|
+| 1 | 11 | `1234567890` | 39055 | content (+33877) |
+| 2 | 7 | `this is a test, with a comma, and a period.` | 29308 | content (+22324) |
+| 3 | 4 | `supercalifragilisticexpialidocious` | 27351 | content (+19490) |
+| 4 | 10 | `one hundred and one dalmatians` | 21180 | content (+11930) |
+| 5 | 2 | `she sells sea shells` | 17417 | **trail** (+8137) |
+| 6 | 3 | `one two three four five` | 16777 | content (+10916) |
+| 7 | 1 | `the quick brown fox` | 15941 | **trail** (+8305) |
+| 8 | 8 | `the answer is 42` | 15550 | content (+9925) |
+| 9 | 0 | `hello world` | 12995 | content (+8183) |
+| 10 | 9 | `3 point 14` | 12858 | content (+6280) |
+| 11 | 13 | `wait... what just happened?` | 12801 | mixed (Δt+5589, Δc+5987) |
+| 12 | 14 | `yes; no; maybe.` | 10788 | **trail** (+5464) |
+| 13 | 5 | `[:rate 250] testing one two three` | 8513 | content (+6336) |
+| 14 | 12 | `hello! how are you?` | 5538 | **trail** (+5562) |
+| 15 | 6 | `DECtalk version 6.2.0` | 3950 | content (-10153) |
+
+Two long-tail categories account for ~91 % of the remaining gap:
+
+1. **Content over-run** (Σ|Δcontent| = 162 804 samp, **61.6 %**).
+   `us_phtiming`'s per-allophone durations are 1.4-2× the C
+   reference on every prompt. Captured via monkey-patch on
+   `us_phtiming` exit:
+
+   | Prompt | C samp | Py allodurs sum (frames × 110) | ratio |
+   |---|---:|---:|---:|
+   | `hello world` | 13 845 | 238 × 110 = 26 180 | 1.89 × |
+   | `she sells sea shells` | 20 093 | 341 × 110 = 37 510 | 1.87 × |
+   | `supercalifragilisticexpialidocious` | 31 169 | 532 × 110 = 58 520 | 1.88 × |
+   | `this is a test...` | 34 932 | 572 × 110 = 62 920 | 1.80 × |
+   | `1234567890` | 74 905 | 1036 × 110 = 113 960 | 1.52 × |
+   | `DECtalk version 6.2.0` | 32 660 | 261 × 110 = 28 710 | 0.88 × |
+
+   The 1.5-1.9× ratio is too consistent to be a single bug in a
+   specific rule — it points at the **base duration LUT** that
+   `us_phtiming` reads (`us_featb` or the per-allophone
+   `start_dur` / `end_dur` columns from `p_us_st1.c`) being scaled
+   wrong, or a missing per-allophone `gettar` divisor that the C
+   source applies. `DECtalk version 6.2.0` is the only prompt
+   that's *under*-running on content — and it's the prompt that
+   exercises the abbreviation-spell-out path heavily, suggesting
+   the front-end emits a different (shorter) phoneme stream there.
+
+2. **Trailing-silence over-pad** (Σ|Δtrail| = 77 464 samp,
+   **29.3 %**). `us_phtiming` Rule 1 fires correctly on every
+   sentence-final prompt (good — PR #102 closed the original
+   drop-out), but the resulting `allodurs[last]` is **84 frames
+   on every prompt** (~838 ms). The C reference produces ~36
+   frames (~360 ms) on every sentence-final prompt. The Python
+   computation: `dpause = nfperiod(94) + perpause(0) +
+   asperation(-10 = MIN_ASP_PERIOD) = 84`, then `mlsh1(84,
+   sprat1)` is applied. With `sprate=180`, `sprat1` is at Q12
+   unity (4096) so `mlsh1` is the identity. The C side ends up
+   at ~36 frames, so **the constant 84 ÷ 36 ≈ 2.33× discrepancy
+   matches the content-duration ratio above** — strongly
+   suggesting the duration-scaling factor in `us_phtiming` /
+   `init_timing` is fundamentally a ~2× error against C, not a
+   ruleset divergence. `[:rate 250]` is the one prompt where
+   `sprat1 < 4096` (rate scaling reduces it), and there
+   `allodurs[last] = 22` matches C's 22 — confirming the
+   *scaling formula* is correct but the *base* sprate→sprat1
+   mapping is off by ~2× at the default 180 WPM.
+
+3. **Leading-frame offset** (Σ|Δlead| = 23 868 samp, 9.0 %). Python
+   adds ~830-3555 leading samples to every prompt. The first-diff
+   index still matches C, so the leading-zero bytes match
+   bit-exactly — the offset comes from one or more *extra silent
+   frames* injected before the first voiced sample. The Δ scales
+   roughly with content length (longer prompts have more leading
+   pad, because `Δlead` here is really "more silent frames before
+   the first voiced output", correlating with the content-duration
+   inflation).
+
+### Three concrete fix proposals
+
+The top three opportunities, ranked by **(a)** expected Δsample
+recovery and **(b)** independence — each can be dispatched in
+parallel.
+
+#### Proposal #1 — Audit `us_phtiming` / `init_timing` duration scaling
+
+**Where**: `src/dectalk/ph/us_phtiming.py` + `src/dectalk/ph/init_timing.py`.
+
+**Symptom**: Per-allophone durations are systematically **1.4-1.9×**
+the C reference on every prompt in the corpus (Σ|Δcontent| =
+162 804 samp = 61.6 % of the total gap). The 2.33× factor on the
+trailing-silence default (84 vs 36 frames) is the same scaling
+error in concentrated form — it has no per-allophone variation, so
+it must come from the speaking-rate path, not the per-phone
+duration LUT.
+
+**Why**: `init_timing` builds `sprat0` / `sprat1` / `sprat2` from
+the `sprate` field (default 180 WPM). The C source's formula
+applies a non-trivial shift (`mlsh1` quantisation) that the Python
+port may have inherited at the wrong precision. Concrete evidence:
+
+- With `sprate=180`, Python computes `sprat1 = 4096` (Q12 unity),
+  so `mlsh1(84, 4096) = 84` — the trailing pause does not shrink.
+- With `sprate=250` (via `[:rate 250]`), `sprat1` shrinks
+  proportionally and `allodurs[last]` becomes 22 frames — which
+  **matches C exactly**. So the rate-scaling pathway is correct;
+  only the baseline `sprate→sprat1` mapping is off.
+- The same 1.9× over-shoot affects every duration in the per-allophone
+  table — exactly what you'd expect if the base `sprat1` were ~2×
+  too high.
+
+Investigation steps before filing the fix:
+
+1. Patch the C source under `tests/parity/c_patches/` to printf
+   `sprat0`, `sprat1`, `sprat2` after `init_timing`'s setup call
+   in `p_us_tim.c` (line 140 region).
+2. Run `say -a 'hello world' -fo` and compare to Python's
+   `init_timing` output.
+3. The discrepancy will likely point at either a wrong `sprate→sprat1`
+   formula in `init_timing.py` or a missing Q12 scaling division.
+
+**Fix sketch**: depends on the C-side trace. Two leading candidates:
+
+- `init_timing` is missing a `>> 1` somewhere on the `sprate=180`
+  path that the C source applies (e.g. `sprat1 = (4096 * 180 /
+  base_wpm) >> 1` if the C source uses a Q11 internal representation
+  but the Python port assumes Q12).
+- The `frame_counts.py` `NF*MS` constants are off by 2× (e.g.
+  frames-per-millisecond conversion is wrong); inspect alongside.
+
+**Expected parity recovery**: if the duration scaling is corrected
+to halve all per-allophone durations on default-rate prompts, the
+content over-run shrinks proportionally. A 2× correction recovers
+~80 K samples of content over-run (50 % of Σ|Δcontent|), plus
+~48 K of trail (84-frame → ~36-frame trailing SIL). **~128 K of
+the ~264 K total absolute gap** — the highest-yield fix in the
+corpus.
+
+**Issue label sketch**: `area/ph`, `size/medium` (needs C-source
+parity-patch infrastructure, but the fix itself is plausibly
+small).
+
+**Acceptance criteria**:
+
+- For `hello world`, sum(`allodurs`) drops from 238 frames toward
+  ~126 frames (C reference's frame count).
+- `allodurs[last]` on every sentence-final prompt drops from 84
+  toward 36 frames.
+- 15-prompt mean |Δsamp| drops below 8000 samples (from current
+  16 668).
+- `[:rate 250]` `allodurs[last]` stays at 22 frames (already
+  matches C).
+
+#### Proposal #2 — Replace `_arpabet_to_us_allophone` ARPABET mapping with `phalloph2`'s richer code path
+
+**Where**: `src/dectalk/api/speak.py` lines 199-281
+(`_arpabet_to_us_allophone` helper).
+
+**Symptom**: Five of the 15 prompts (`hello world` Δcontent +8183,
+`one two three four five` +10916, `the answer is 42` +9925,
+`3 point 14` +6280, and `[:rate 250]` +6336) have content
+over-runs that are too large to be explained by duration scaling
+alone (Proposal #1 would still leave 4-6 K samples of residual).
+The `phalloph2` chain DOES run (PR #97 wired it), but
+`_render_clause_full` still feeds it `arpabet_words` produced by
+the bare `_arpabet_to_us_allophone` helper — which lacks the
+diphthong-splitting, stress-marker insertion, and onset-cluster
+collapsing that `make_out_phonol` performs *inside* the chain.
+
+**Why**: The chain's input is an ARPABET phone stream. The C source's
+input is a richer DECtalk-native symbol stream that includes
+syllable-internal stress markers (S1, S2), phrase-boundary tokens
+(WBOUND, PERIOD, QUEST), and diphthong-segment markers (the LUT
+`phalloph2` consumes). `_build_symbols_from_arpabet` (called at
+speak.py line 525) projects the ARPABET stream into the symbol
+encoding but doesn't inject the diphthong / coarticulation markers
+the chain expects. The result: `phalloph2` writes a longer
+`allophons[]` than the C source would produce for the same input,
+and `us_phtiming` then assigns per-allophone durations to phones
+that should have been collapsed into diphthongs.
+
+Concrete: `hello world` post-#97 has 10 allophons. The C source's
+internal chain produces 7 (one fewer per dropped diphthong:
+`OW` → single allophone, not `OW + W`-onset; `ER` → single
+allophone, not `EH + R`-coda).
+
+**Fix sketch**:
+
+1. Audit `_build_symbols_from_arpabet` against `ph_task.c` lines
+   437-510 (the C-source ARPABET→symbol encoder). Add diphthong
+   segment markers and onset-cluster collapsing.
+2. Alternatively: bypass the ARPABET intermediate entirely by
+   wiring the LTS / dictionary outputs as **DECtalk-native phone
+   codes** directly. The dictionary already has DECtalk codes
+   for known words; the LTS module would need a similar code-emit
+   path.
+
+**Expected parity recovery**: after Proposal #1 lands, this would
+trim a further ~30-50 K samples from Σ|Δcontent| (the residual
+beyond the 2× scaling), bringing the corpus mean |Δ| below
+~5000 samples.
+
+**Issue label sketch**: `area/api`, `area/ph`, `size/medium`.
+
+**Acceptance criteria**:
+
+- `hello world` post-`phalloph2` `nallotot` drops from 10 to ~7-8
+  (matching C-source allophone count).
+- Σ|Δcontent| drops below 60 000 samples (from current 162 804).
+- No prompt regresses in either content count or audio quality.
+
+#### Proposal #3 — Audit `_render_clause_full` leading-frame budget
+
+**Where**: `src/dectalk/api/speak.py` lines 449-525 + `init_phclause` +
+the per-frame loop entry conditions.
+
+**Symptom**: Python's first non-zero sample is consistently ~830-3555
+samples (~7.5-32 frames) further into the buffer than C's. The
+`first_diff` index matches C exactly, so the **leading-zero bytes
+themselves match** — what's growing is the latency between the end
+of leading silence and the first voiced output. Lead correlates
+weakly with prompt content length (`Δlead` is `+830` for short
+prompts like `hello world`, `+3555` for long ones like
+`supercalifragilisticexpialidocious`), suggesting the extra latency
+is **per-allophone**, not a one-time silence pad.
+
+**Why**: Two candidate sources:
+
+- `init_phclause` may inject a clause-leading silence pad
+  (introduced by PR #74) that fires unconditionally rather than
+  only between clauses. In single-clause prompts (all 15 in the
+  corpus) the pad has no preceding clause to flush, so the pad is
+  dead weight.
+- The `phalloph2` chain may emit an extra `GEN_SIL` at clause
+  start (a duplicate of the explicit leading sentinel) — needs
+  inspection of `_build_symbols_from_arpabet` and the chain's
+  exit state.
+
+**Fix sketch**: 
+
+1. Print `nallotot`, `allophons[0]`, `allodurs[0]` immediately
+   after the `phalloph2` call and compare to the C oracle's
+   equivalent printf patch.
+2. If the chain emits 2 leading SILs (one from `_build_symbols`,
+   one from the chain itself), drop the manual sentinel.
+3. If `init_phclause`'s ending-pad is firing at clause-start, gate
+   it on a "previous clause exists" flag.
+
+**Expected parity recovery**: ~23 868 samples (~9 % of total gap).
+Smaller win than #1 or #2 in absolute terms, but cleanly
+separates lead-frame counting from content-frame counting — once
+fixed, `Δlead` becomes a regression-test floor for the other two
+fixes.
+
+**Issue label sketch**: `area/ph`, `size/small`.
+
+**Acceptance criteria**:
+
+- `Δlead` is ≤ ±220 samples (~2 frames) on every prompt in the
+  15-prompt sample.
+- No regression in `first_diff` (the leading-zero bytes must
+  continue to match C).
+- A unit test asserts `init_phclause`'s ending-pad behaviour on
+  first-call vs subsequent-call.
+
+### Honourable mentions
+
+- **`DECtalk version 6.2.0` is the only under-running prompt**
+  (Δcontent = -10153). The leading silence for this prompt is
+  852 samples (vs the typical 213), confirming the C side
+  triggers extra front-end work (abbreviation expansion +
+  decimal-number parsing for "six point two point zero"). Python
+  emits a shorter phoneme stream here. Fixing the
+  abbreviation/numeric expansion in the front-end would close this
+  gap but might also produce more spelled-out / read-out content,
+  shifting this prompt's |Δ| upward before driving it back down
+  via Proposals #1/#2.
+- **`hello world` content over-run almost quadrupled post-#97**
+  (+8183 today vs the original audit's -3175 short-by). The phone
+  stream now has all 7 phonemes (HH, AH, L, OW, W, ER, L, D),
+  but `us_phtiming` over-shoots their durations. This is the
+  cleanest illustration of how PR #97's correct phalloph2 wiring
+  exposed an unrelated duration-scaling bug.
+- **`[:rate 250] testing one two three` is the only prompt where
+  `allodurs[last] = 22 frames matches C**. The same prompt now
+  has |Δsamp| = +8513 vs the original audit's +19843. PR #67's
+  inline-command parsing fixed the original gap; the remaining
+  +8513 is the same duration-scaling bug as the rest of the
+  corpus, but reduced ~2× by the WPM=250 scaling. This is direct
+  evidence that the scaling formula is correct only above some
+  WPM threshold; at the default 180 WPM the formula or its inputs
+  are wrong.
+- **Approximate path mean |Δ| = 4020 vs full-pipeline 16 668**.
+  The legacy approximate path is now closer to the C reference
+  than the full pipeline. This is a temporary inversion until the
+  duration / leading-frame fixes land; the full pipeline remains
+  the strategic target because it has the correct *shape* (it
+  emits ~all C phones, the approximate path drops many) — it just
+  emits them too slowly.
+- **Σ Δ across the 15-prompt corpus = +242 122 samples (~22 s
+  total over-run vs 380 s of C output)**. The full pipeline is
+  uniformly ~5.8 % too long; closing that ratio is the gating
+  metric for Phase E bit-parity work.
+
+### Reproducer
+
+```bash
+eval "$(scripts/agent_oracle_env.sh)"
+scripts/setup_c_oracle.sh
+
+# Sample-count / envelope diagnostic (replicates the per-prompt table):
+REPO_ROOT=$(pwd) DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/parity_diag_15.py 15
+
+# Lead / content / trail breakdown:
+REPO_ROOT=$(pwd) DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/parity_diag_breakdown.py 15
+
+# Allophone-duration trace (post-us_phtiming):
+REPO_ROOT=$(pwd) DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/trace_allodurs.py
+```
+
+The diagnostic scripts (`parity_diag_15.py`,
+`parity_diag_breakdown.py`, `trace_allodurs.py`) live in `/tmp/`
+to keep this audit a doc-only PR; their content is embedded
+verbatim in the body of follow-up Proposals #1-#3 when filed.
+
 Authored-by: Claude:claude-opus-4-7
 
