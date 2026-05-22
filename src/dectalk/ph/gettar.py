@@ -16,10 +16,9 @@ and the previous phone. For each candidate it:
 2. On language transition, repoints ``pDph_t->p_diph`` / ``p_tar``
    / ``p_amp`` to the correct per-language ROM tables. The C source
    selects male vs. female tables via ``pDph_t->malfem``.
-3. Calls the per-language ``*_gettar`` helper (currently US English,
-   UK English, French, Castilian Spanish, and Latin American Spanish
-   are translated; the other-language branches raise
-   :class:`NotImplementedError`).
+3. Calls the per-language ``*_gettar`` helper (US English, UK English,
+   German, French, Castilian Spanish, and Latin American Spanish are
+   translated and wired up).
 4. Applies a USP_K coarticulation tweak (+300 Hz on F2, +500 Hz on
    F3 when the candidate phone is /k/).
 5. Returns the candidate value if it's "real" (non-sentinel for
@@ -41,10 +40,17 @@ from dectalk.ph.dph_t import DphT
 from dectalk.ph.fr_gettar import fr_gettar
 from dectalk.ph.fr_target_tables import Cibles_FEMALE, Cibles_MALE, cibles_flat
 from dectalk.ph.get_phone import get_phone
+from dectalk.ph.gr_gettar import gr_gettar
 from dectalk.ph.la_gettar import la_gettar
 from dectalk.ph.numeric_constants import F1, F2, F3, MALE
 from dectalk.ph.parameter_tables import parini
 from dectalk.ph.rom_tables import (
+    gr_femamp,
+    gr_femdip,
+    gr_femtar,
+    gr_malamp,
+    gr_maldip,
+    gr_maltar,
     la_femamp,
     la_femdip,
     la_femtar,
@@ -146,21 +152,36 @@ def _load_la_tables(p_dph_t: DphT) -> None:
         p_dph_t.p_amp = list(la_femamp)
 
 
+def _load_gr_tables(p_dph_t: DphT) -> None:
+    """Repoint ``p_diph`` / ``p_tar`` / ``p_amp`` to the German tables.
+
+    Mirrors the GR branch in ph_setar.c's ``gettar`` switch: male voice
+    gets ``gr_maltar`` / ``gr_malamp`` / ``gr_maldip`` while female gets
+    ``gr_femtar`` / ``gr_femamp`` / ``gr_femdip``.
+    """
+    if p_dph_t.malfem == MALE:
+        p_dph_t.p_diph = list(gr_maldip)
+        p_dph_t.p_tar = list(gr_maltar)
+        p_dph_t.p_amp = list(gr_malamp)
+    else:
+        p_dph_t.p_diph = list(gr_femdip)
+        p_dph_t.p_tar = list(gr_femtar)
+        p_dph_t.p_amp = list(gr_femamp)
+
+
 def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915 -- faithful C translation
     """Look up the per-phone target value, dispatching by language font.
 
     Faithful translation of the C ``int gettar(LPTTS_HANDLE_T, int)``.
     The Python port dispatches to :func:`us_gettar` for US English
     phones, :func:`uk_gettar` for UK English phones,
-    :func:`fr_gettar` for French phones, :func:`sp_gettar` for
-    Castilian Spanish phones, and :func:`la_gettar` for Latin
-    American Spanish phones; the German font (GR) raises
-    :class:`NotImplementedError` since its per-language target helper
-    is not yet ported. The Castilian Spanish ROM tables have not been
-    transcribed yet, so the SP-font branch of the ROM-table loading
-    step is a no-op -- Spanish callers must pre-seed ``p_tar`` /
-    ``p_amp`` / ``p_diph`` before invoking :func:`sp_gettar`
-    (directly or via :func:`gettar`).
+    :func:`gr_gettar` for German phones, :func:`fr_gettar` for
+    French phones, :func:`sp_gettar` for Castilian Spanish phones,
+    and :func:`la_gettar` for Latin American Spanish phones.
+    The Castilian Spanish ROM tables have not been transcribed yet,
+    so the SP-font branch of the ROM-table loading step is a no-op --
+    Spanish callers must pre-seed ``p_tar`` / ``p_amp`` / ``p_diph``
+    before invoking :func:`sp_gettar` (directly or via :func:`gettar`).
 
     Args:
         phTTS: Two-pointer engine handle. ``p_ph_thread_data`` must
@@ -173,9 +194,9 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915
         ``0`` if no candidate position yields a real target.
 
     Raises:
-        NotImplementedError: When a non-US/UK/FR/SP/LA phone font is
-            encountered; the GR ``*_gettar`` helper is still
-            deferred.
+        NotImplementedError: When an unrecognised phone font is
+            encountered. All six known fonts (US/UK/GR/FR/SP/LA)
+            are wired up.
     """
     p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
     p_dphsettar = cast(DphSettarSt, p_dph_t.pSTphsettar)
@@ -214,34 +235,25 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915
                 # sp_femtar / sp_maltar" load.
                 pass
             elif tmp == _FONT_GR:
-                raise NotImplementedError(
-                    f"gettar: per-language tables for font 0x{tmp:04x} "
-                    "(GR) are not yet ported; US/UK English, French, "
-                    "Castilian Spanish, and Latin American Spanish are "
-                    "wired up. See docs/PLAN.md Phase E."
-                )
+                _load_gr_tables(p_dph_t)
             else:
                 # Default fallback in C: call us_gettar with phone & PVALUE.
                 # Reach this branch only when font is unrecognised.
                 tartemp = us_gettar(phTTS, phone & 0xFF)
 
-        # Per-language dispatch (US, UK, FR, SP, and LA wired up).
+        # Per-language dispatch (US, UK, GR, FR, SP, and LA wired up).
         if tmp == _FONT_USA:
             tartemp = us_gettar(phTTS, phone + index[count])
         elif tmp == _FONT_UK:
             tartemp = uk_gettar(phTTS, phone + index[count])
+        elif tmp == _FONT_GR:
+            tartemp = gr_gettar(phTTS, phone + index[count])
         elif tmp == _FONT_FR:
             tartemp = fr_gettar(phTTS, phone + index[count])
         elif tmp == _FONT_SP:
             tartemp = sp_gettar(phTTS, phone + index[count])
         elif tmp == _FONT_LA:
             tartemp = la_gettar(phTTS, phone + index[count])
-        elif tmp == _FONT_GR:
-            raise NotImplementedError(
-                f"gettar: US/UK English, French, Castilian Spanish, "
-                f"and Latin American Spanish are wired up but font "
-                f"0x{tmp:04x} is not. Pending gr_gettar port."
-            )
 
         # USP_K coarticulation: F2 += 300, F3 += 500 when phone is /k/.
         if p_dph_t.allophons[phone + index[count]] == USP_K:
