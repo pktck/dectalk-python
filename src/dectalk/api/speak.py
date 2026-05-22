@@ -51,8 +51,14 @@ _FULL_PIPELINE_ENV: str = "DECTALK_FULL_PIPELINE"
 
 # Nominal speaking rate that maps to ``rate=1.0`` in the public API.
 # DECtalk's TextToSpeechSetRate accepts words-per-minute in [75, 600];
-# 200 wpm is the binary's default.
-_DEFAULT_WPM: int = 200
+# 180 wpm is the binary's default (per
+# ``${DECTALK_SRC}/src/docsosf/html/idh_ref_2_speaking_rate.htm``: "The
+# default speaking rate is 180 words per minute (WPM)"). Empirically
+# verified: ``say -a 'testing one two three'`` and
+# ``say -a '[:rate 180] testing one two three'`` produce identical
+# sample counts (19099) — i.e. 180 WPM is the no-command baseline.
+# Keep in sync with :data:`dectalk.cmd.commands._DEFAULT_WPM`.
+_DEFAULT_WPM: int = 180
 
 # Expected WAV format from _capi: 16-bit signed mono.
 _INT16_SAMPLE_WIDTH: int = 2
@@ -496,10 +502,17 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     nallotot = len(allophons)
 
     # 3. Build engine state.
-    # Map rate (multiplier; 1.0 == 200 wpm nominal) to DECtalk's
-    # words-per-minute sprate field. init_timing inspects this to
-    # derive timeref / sprat0 / sprat1 / sprat2 etc.
-    wpm = max(75, min(600, round(_DEFAULT_WPM * rate)))
+    # Map rate (multiplier; 1.0 == _DEFAULT_WPM nominal, 2.0 == half-
+    # speed, 0.5 == double-speed) to DECtalk's words-per-minute sprate
+    # field. The conversion mirrors the inverse formula in
+    # :func:`_rate_multiplier_to_wpm` so both the C-routed and pure-
+    # Python paths derive the same WPM from the same multiplier — and
+    # so an inline ``[:rate N]`` directive (which
+    # :func:`dectalk.cmd.commands._cmd_rate` encodes as
+    # ``rate = _DEFAULT_WPM / N``) round-trips back to ``wpm = N``
+    # here (issue #70). init_timing inspects sprate to derive
+    # timeref / sprat0 / sprat1 / sprat2 etc.
+    wpm = _rate_multiplier_to_wpm(rate)
 
     from dectalk.vtm.spd_chip import default_us_paul_spd  # noqa: PLC0415
 
@@ -2083,9 +2096,12 @@ def speak(
 
     Args:
         text: Input string. May contain ``[:cmd value]`` directives.
-        rate: Speaking-rate multiplier; 1.0 = ~200 WPM (binary's default),
-            2.0 = slower, 0.5 = faster. Clamped to DECtalk's [75, 600] WPM
-            range when routed through ``_capi``.
+        rate: Speaking-rate multiplier; 1.0 = 180 WPM (binary's default),
+            2.0 = slower (90 WPM), 0.5 = faster (360 WPM). Clamped to
+            DECtalk's [75, 600] WPM range when routed through ``_capi``.
+            Inline ``[:rate N]`` directives in ``text`` are absolute WPM
+            (see :func:`dectalk.cmd.commands._cmd_rate`) and combine
+            multiplicatively with this argument.
         voice: Initial voice preset (short name like ``"paul"`` or a
             :class:`VoicePreset` object).
         lang: Language tag (``"us"`` is bit-parity via the C library;
