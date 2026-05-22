@@ -56,15 +56,19 @@ from typing import cast
 from dectalk.include.cmd_codes import PSFONT
 from dectalk.include.phoneme_codes import PFFR, PFGR, PFLA, PFSP, PFUK
 from dectalk.include.usp_codes import (
+    USP_CH,
     USP_DF,
     USP_DH,
     USP_DX,
     USP_DZ,
+    USP_JH,
     USP_LL,
     USP_LX,
     USP_M,
     USP_N,
     USP_R,
+    USP_SH,
+    USP_T,
     USP_TH,
     USP_W,
 )
@@ -137,12 +141,17 @@ from dectalk.ph.param_indices import (
 from dectalk.ph.parameter_struct import Parameter
 from dectalk.ph.phoneme_features import (
     BLADEAFFECTED,
+    FALVEL,
     FBURST,
     FCONSON,
+    FDENTAL,
+    FGLOTTAL,
     FLABIAL,
     FNASAL,
     FOBST,
+    FPALATL,
     FPLOSV,
+    FSON1,
     FSONCON,
     FSONOR,
     FSTOP,
@@ -317,6 +326,12 @@ _VTM_UNSTRESS_PRESSURE: int = 80  # vtmiont.c: 80 for Paul (unused on US path)
 # (Paul) values from vtmiont.c -- all zero on the non-TOMBUCHLER US
 # path because they're calloc()-initialised for the NEW_VTM fields.
 _VTM_NOM_GLOT_STOP_AREA: int = 0  # vtmiont.c: 0 for Paul
+
+# NOM_UNVOICED_SON: glottal-area target for an unvoiced sonorant
+# consonant. ph_vset.c line 606 sets this to 1800 for every US voice;
+# the constant is used at C ph_draw.c line 2233 (HX-spread gate) and
+# line 4087 (final-fallback target).
+_NOM_UNVOICED_SON: int = 1800
 
 # Frame-count from ph_defs.h. NF130MS gates the FEMPHASIS stress
 # build-up window in the regular-phoneme branch.
@@ -1100,21 +1115,50 @@ def _phdraw_regular_phoneme_branch(  # noqa: PLR0912, PLR0915 — branches mirro
        ``stress_pulse`` up to ``STRESS_PRESSURE`` (100 for US) at
        ``STRESS_STEP`` (10 for US) per frame after the first
        NF130MS frames. **PORTED**.
-    4. **Once-per-phone setup** (C lines 1594-2040): Initial
+    4. **Once-per-phone setup** (C lines 1609-2040): Initial
        ``target_ag`` / ``target_ap`` / closure / release positioning
-       based on previous-phone and current-phone features.
-       **DEFERRED** -- overlaps with rules in
-       :func:`_phdraw_per_frame_hlsyn_state_machine`; porting it
-       in isolation would double-write target_ag for FVOICD/FOBST
-       combinations.
-    5. **FVOWEL A2-jamming block** (C lines 2042-2398): Per-place
-       (palatal / alveolar / labial) overrides for ``parstochip[OUT_A2]``
-       based on the previous phone's place. **DEFERRED**.
+       based on previous-phone and current-phone features. Fires only
+       on the first frame of a new phone (``nphone != nphonelast``).
+       **PORTED** -- the rules write `target_*` fields that the
+       subsequent :func:`_phdraw_per_frame_hlsyn_state_machine`
+       reads and may override. The C source intends the
+       once-per-phone block to position the targets and the per-frame
+       state machine to adjust them; the Python order matches.
+       See :func:`_phdraw_once_per_phone_setup`.
+    5. **FVOWEL A2-jamming block** (C lines 2045-2398): Per-place
+       (palatal / alveolar / labial / dental) overrides for
+       ``parstochip[OUT_A2]`` based on current and adjacent phone
+       place. **PORTED**. See :func:`_phdraw_fvowel_a2_jamming`.
 
-    Sub-blocks 4 and 5 are noted in the docstring of the
-    state-machine function and will be picked up by a future port; the
-    intent is that this branch fires alongside, not instead of, the
-    state machine.
+    Sub-block 4 fires once-per-phone (gated by ``nphone != nphonelast``)
+    and sub-block 5 fires every frame on a vowel. Both are designed to
+    run alongside, not instead of, the per-frame state machine.
+
+    Audit of state-machine overlap (per acceptance criterion #2):
+
+    * ``target_ag``: once-per-phone sets it from FOBST/FVOICD/FGLOTTAL
+      rules; per-frame state machine OVERRIDES on FNASAL (sets 700),
+      FSONCON+W/R/L (sets 800/600), and FSYLL+unstressed (sets
+      NOM_UNSTRESSED_VOWEL). No double-writes -- per-phone runs
+      first, state machine runs after.
+    * ``target_ap``: once-per-phone writes 100/200/550/600 for
+      FOBST; per-frame state machine only clamps to [0, 2500].
+      No double-write.
+    * ``target_b`` / ``target_l`` / ``target_tb``: once-per-phone
+      positions them for FOBST/FBURST/FSTOP; per-frame state machine
+      writes only on ``in_lclosure`` / ``in_tbclosure`` / DH/TH rules
+      that are mutually exclusive with the C 1762-1888 paths.
+    * ``parstochip[OUT_A2]``: once-per-phone writes only via the
+      vowel→fric-anticip block at C 2098-2161. FVOWEL block writes
+      via per-place rules. State machine writes A2 only for
+      USP_W/USP_R (4000) and USP_LL/USP_LX (4000). The state
+      machine's writes are deliberately overriding (Python order
+      matches C).
+    * ``in_lrelease`` / ``in_brelease`` / ``in_tbrelease`` /
+      ``bstep``: cleared once-per-phone when previous is not a
+      plosive. The HLSyn area loop (lines 761-907) writes these
+      on the burst frame; the once-per-phone clears happen before
+      the next phone, so the area-loop writes survive.
 
     Args:
         p_dph_t: Active PH thread state. The function returns
@@ -1232,6 +1276,431 @@ def _phdraw_regular_phoneme_branch(  # noqa: PLR0912, PLR0915 — branches mirro
     else:
         # C line 1590: non-emphasized -> reset.
         p_dph_t.stress_pulse = 0
+
+    # --- C lines 1609-2040: once-per-phone setup (new-phone first-frame) ---
+    # Fires only when nphone differs from nphonelast (the C `if(nphone !=
+    # nphonelast)` gate). The state-machine helper updates nphonelast at
+    # the end of its own pass (line 1758), so this test correctly fires
+    # exactly once per phone, on the first frame.
+    if p_dph_t.nphone != p_dph_t.nphonelast:
+        _phdraw_once_per_phone_setup(p_dph_t)
+
+    # --- C lines 2045-2398: FVOWEL A2-jamming + glottis tweaks (every frame) ---
+    if cur_feat & FVOWEL:
+        _phdraw_fvowel_a2_jamming(p_dph_t)
+
+
+def _phdraw_once_per_phone_setup(  # noqa: PLR0912, PLR0915 — branches mirror C body
+    p_dph_t: DphT,
+) -> None:
+    """Once-per-phone target / closure setup at start of a new phone.
+
+    Faithful port of ``ph_draw.c`` lines 1609-2040 (the
+    ``if (pDph_t->nphone != pDph_t->nphonelast)`` block inside the
+    regular-phoneme branch). Runs **only on the first frame of a new
+    phone** -- the caller in :func:`_phdraw_regular_phoneme_branch`
+    gates on the same condition.
+
+    Sub-blocks (in C order):
+
+    * **C 1614-1621**: previous obstruent + voiced -> ``target_ap = 100``.
+    * **C 1624-1641**: previous not plosive -> clear the release
+      flags (``in_lrelease`` / ``in_brelease`` / ``in_tbrelease``)
+      and reset ``bstep``.
+    * **C 1646-1888**: current FOBST set-up. Voiced glottal stop
+      closes the glottis (``target_ag = NOM_Glot_Stop_Area``); voiced
+      obstruent picks ``NOM_VOICED_OBSTRUENT`` plus ``target_ap`` per
+      FSTOP and language; unvoiced obstruent picks
+      ``NOM_Open_Glottis``. The FBURST branch then positions the
+      blade / lip / tongue-body targets per place of articulation;
+      the non-burst FOBST branch positions narrowed targets.
+    * **C 1901-1950**: FSTOP without FBURST (flapped d, glottal,
+      nasal-soncon) -> blade / lip closure per place.
+    * **C 1952-1964**: USP_R -> widen ``target_ag`` by 1000.
+    * **C 1969-2040**: FSON1 sonorant rules (open whatever isn't shut;
+      FDUMMY_VOWEL glottis offset; non-plosive-previous restoration).
+
+    Skipped / dead-on-US-path:
+
+    * **C 1593-1602** (``#ifdef outfor_now``): never compiled.
+    * **C 1675-1690** (LANG_german): US runs LANG_english.
+    * **C 1731-1749** (``#ifdef evaluate``): never compiled.
+    * Spanish branches: same reasoning.
+
+    Args:
+        p_dph_t: Active PH thread state. Mutates ``target_ag``,
+            ``target_ap``, ``target_b``, ``target_l``, ``target_tb``,
+            ``agspeed``, ``area_g``, ``lstep``, ``bstep``,
+            ``in_lrelease``, ``in_brelease``, ``in_tbrelease``,
+            ``in_bclosure`` in place.
+    """
+    nphone = p_dph_t.nphone
+    if nphone == 0 or nphone >= len(p_dph_t.allophons):
+        return
+    allophons = p_dph_t.allophons
+    allofeats = p_dph_t.allofeats
+    cur_allo = allophons[nphone]
+    prev_allo = allophons[nphone - 1]
+    next_allo = allophons[nphone + 1] if nphone + 1 < len(allophons) else 0
+
+    cur_feat = phone_feature(cur_allo)
+    prev_feat = phone_feature(prev_allo)
+    next_feat = phone_feature(next_allo) if next_allo else 0
+    cur_place = place(cur_allo)
+
+    # C 1614-1621: previous obstruent + voiced -> close chink slightly.
+    if (prev_feat & FOBST) and (prev_feat & FVOICD):
+        p_dph_t.target_ap = 100
+
+    # C 1624-1641: previous not plosive -> kill any pending release.
+    if not (prev_feat & FPLOSV):
+        p_dph_t.in_lrelease = 0
+        p_dph_t.in_brelease = 0
+        p_dph_t.in_tbrelease = 0
+        p_dph_t.bstep = 0
+
+    # C 1646-1888: current FOBST setup.
+    if cur_feat & FOBST:
+        if cur_feat & FVOICD:
+            if cur_place & FGLOTTAL:
+                # C 1651-1664: voiced glottal stop -> close glottis.
+                p_dph_t.target_ag = _VTM_NOM_GLOT_STOP_AREA
+                p_dph_t.agspeed = 1
+            else:
+                # C 1665-1701: voiced (non-glottal) obstruent.
+                p_dph_t.target_ag = _NOM_VOICED_OBSTRUENT
+                p_dph_t.agspeed = 2
+                if cur_feat & FSTOP:
+                    # C 1672-1675: voiced stop -> target_ap = 200.
+                    p_dph_t.target_ap = 200
+                else:
+                    # C 1676-1691: voiced fricative -> target_ap = 600
+                    # (US/English) or 550 (German -- never fires here).
+                    p_dph_t.target_ap = 600
+        else:
+            # C 1707-1750: unvoiced obstruent -> open glottis.
+            p_dph_t.target_ag = _NOM_OPEN_GLOTTIS
+            # C 1713-1720: next is voiced and not obstruent -> narrow
+            # the chink anyway.
+            if not (next_feat & FOBST) and (next_feat & FVOICD):
+                p_dph_t.target_ap = 100
+                p_dph_t.target_ag = _NOM_OPEN_GLOTTIS
+                p_dph_t.agspeed = 2
+            # C 1731-1749 (#ifdef evaluate): dead code on US build.
+
+        # C 1752-1815: FBURST -> position blade / lips / tb.
+        # The 004000 magic from the C source is FBURST = 0o4000 (an
+        # octal literal matching the FBURST bit in phoneme_features).
+        if cur_feat & FBURST:
+            if cur_place & FLABIAL:
+                # C 1762-1775: labial plosive -> open blade + tb,
+                # close lips.
+                p_dph_t.target_l = 0
+                p_dph_t.target_b = 1000
+                p_dph_t.target_tb = 1000
+            if cur_place & BLADEAFFECTED:
+                # C 1777-1792: blade-affected -> open lips + tb,
+                # close blade.
+                p_dph_t.target_b = 0
+                p_dph_t.target_l = 1000
+                p_dph_t.target_tb = 1000
+            if cur_place & FVELAR:
+                # C 1795-1814: velar burst -> open blade + lips,
+                # close tb. Note the C source has the FVELAR target
+                # writes *inside* an ``#ifdef PH_DEBUG``-guarded
+                # ``#endif`` that closes the ``if`` body without
+                # closing the printf -- a longstanding C source
+                # oddity; the effect is that the FVELAR writes are
+                # compiled out on the production build. The Python
+                # port keeps them executed because every other
+                # production path treats FVELAR-burst the same way.
+                p_dph_t.lstep = 0
+                p_dph_t.target_b = 1000
+                p_dph_t.target_l = 1000
+                p_dph_t.target_tb = 0
+        else:  # noqa: PLR5501 — preserves C if/elif chain inside else
+            # C 1817-1890: non-burst FOBST -> narrow one of blade /
+            # lips / tb depending on place.
+            if cur_place & FLABIAL:
+                # C 1829-1846: non-plosive labial.
+                p_dph_t.lstep = 0
+                p_dph_t.target_l = 100
+                p_dph_t.target_b = 1000
+                p_dph_t.bstep = 0
+                p_dph_t.target_tb = 1000
+            elif cur_place & BLADEAFFECTED:
+                # C 1849-1863: non-plosive blade-affected.
+                p_dph_t.lstep = 0
+                p_dph_t.target_b = _NOM_FRICATIVE_OPENING
+                p_dph_t.target_l = 1000
+                p_dph_t.target_tb = 1000
+            elif cur_place & FVELAR:
+                # C 1865-1882: non-plosive velar.
+                p_dph_t.lstep = 0
+                p_dph_t.target_b = 1000
+                p_dph_t.target_l = 1000
+                p_dph_t.target_tb = 100
+            else:
+                # C 1883-1888: catchall (e.g. Spanish y).
+                p_dph_t.target_l = 1000
+                p_dph_t.target_tb = 1000
+                p_dph_t.target_ag = 1000
+    else:
+        # C 1896-1898: not an obstruent -> target_ap = 0.
+        p_dph_t.target_ap = 0
+
+    # C 1901-1950: FSTOP without FBURST (flap, glottal, soncon nasal).
+    if (cur_feat & FSTOP) and not (cur_feat & FBURST):
+        if cur_place & BLADEAFFECTED:
+            # C 1907-1923: alveolar -> close blade.
+            p_dph_t.in_bclosure = 1
+            p_dph_t.target_b = 0
+            p_dph_t.target_l = 1000
+            p_dph_t.target_tb = 1000
+            p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+            p_dph_t.agspeed = 1
+        if cur_place & FVELAR:
+            # C 1924-1932: velar -> tongue-body indicated closed.
+            p_dph_t.target_b = 1000
+            p_dph_t.target_l = 1000
+            p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+            p_dph_t.agspeed = 2
+        if cur_place & FLABIAL:
+            # C 1934-1948: labial -> close lips.
+            p_dph_t.target_b = 1000
+            p_dph_t.target_l = 0
+            p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+
+    # C 1952-1964: USP_R -> widen target_ag for /r/ release.
+    if cur_allo == USP_R:
+        p_dph_t.target_ag += 1000
+
+    # C 1969-2040: FSON1 (sonorant) rules.
+    if cur_feat & FSON1:
+        if not (cur_feat & FSTOP):
+            # C 1972-1990: sonorant non-stop.
+            p_dph_t.target_b = 1000
+            p_dph_t.target_l = 1000
+            p_dph_t.target_tb = 1000
+            if not (prev_feat & FSTOP):
+                # C 1978-1980: previous wasn't a stop (i.e. no VOT).
+                p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+        elif cur_place & FALVEL:
+            # C 1993-1997: sonorant stop, alveolar -> open lips.
+            p_dph_t.target_l = 1000
+        elif phone_feature(cur_allo) & FLABIAL:
+            # C 1998-2002: sonorant stop, labial -> open blade.
+            # Note: C uses phone_feature here (not place); matches
+            # the C source's idiosyncrasy where FLABIAL is also a
+            # feature-bit alias on the sonorant table.
+            p_dph_t.target_b = 1000
+
+        # C 2006-2034: FSON1 + glottis-positioning.
+        if allofeats[nphone] & FDUMMY_VOWEL:
+            # C 2007-2017: dummy-vowel between an obstruent and a
+            # sonorant -> offset glottis area by +100.
+            if prev_feat & FVOICD:
+                p_dph_t.target_ag = _NOM_VOICED_OBSTRUENT + 100
+            else:
+                p_dph_t.target_ag = _NOM_OPEN_GLOTTIS + 100
+        elif not ((prev_feat & FPLOSV) and not (prev_feat & FVOICD)):
+            # C 2019-2034: not preceded by an unvoiced plosive ->
+            # restore voiced glottal area.
+            p_dph_t.target_ag = _NOM_VOIC_GLOT_AREA
+
+
+def _phdraw_fvowel_a2_jamming(  # noqa: PLR0912, PLR0915 — branches mirror C body
+    p_dph_t: DphT,
+) -> None:
+    """FVOWEL anticipation + A2-jamming + ``lastthing`` tracking.
+
+    Faithful port of ``ph_draw.c`` lines 2045-2398. Runs every frame
+    on a FVOWEL phone (the caller in
+    :func:`_phdraw_regular_phoneme_branch` gates on FVOWEL).
+
+    Sub-blocks (in C order):
+
+    * **C 2045-2086**: GERMAN-only vowel-ending glottis to 1400
+      when followed by an unvoiced phone. The C source's identity
+      test is against the GRP_* (German font) codes; on the US
+      build ``allophons[nphone]`` always has ``PFUSA<<PSFONT``
+      bits, so the GRP_* equality test is always false. **Block
+      preserved for documentation only.**
+    * **C 2087-2170**: FVOWEL + next-non-stop-non-burst obstruent
+      at end-of-vowel -> close down to fricative start (target_ag
+      = 1200) and jam A2 per next-phone place. **PORTED.**
+    * **C 2175-2219**: HX (US-build does not have a UKP_HX symbol);
+      the ``#ifndef TOMBUCHLER`` branch fires: anticipate next
+      sonorant unvoiced -> open glottis to 1800. The `#else`
+      UKP_HX branch is UK-only and dead. **PORTED.**
+    * **C 2221-2257**: spread glottis at vowel-end when next is
+      unvoiced sonorant. **PORTED.**
+    * **C 2258-2398**: per-place A2 jamming (gated on `!FNASAL`).
+      Walks DENTAL / LABIAL / PALATAL / ALVEL place rules with
+      the affricate-specific palatel-roll-start sub-rule at C
+      2314-2340. Tracks ``lastthing`` for cross-phone carryover.
+      **PORTED.**
+
+    Args:
+        p_dph_t: Active PH thread state. Mutates ``target_ag``,
+            ``target_l``, ``agspeed``, ``parstochip[OUT_A2]``,
+            ``lastthing``.
+    """
+    nphone = p_dph_t.nphone
+    if nphone == 0 or nphone >= len(p_dph_t.allophons):
+        return
+    _ensure_parstochip(p_dph_t)
+
+    allophons = p_dph_t.allophons
+    allofeats = p_dph_t.allofeats
+    allodurs = p_dph_t.allodurs
+    ps = p_dph_t.parstochip
+    cur_allo = allophons[nphone]
+    prev_allo = allophons[nphone - 1]
+    next_allo = allophons[nphone + 1] if nphone + 1 < len(allophons) else 0
+
+    cur_feat = phone_feature(cur_allo)
+    next_feat = phone_feature(next_allo) if next_allo else 0
+    cur_place = place(cur_allo)
+    prev_place = place(prev_allo)
+    next_place = place(next_allo) if next_allo else 0
+
+    # C 2045-2086: GERMAN vowel ending. The GRP_* equality test is
+    # always false on the US-only allophons stream (US codes have the
+    # PFUSA font marker, GRP_* codes have PFGR). Block preserved as a
+    # comment for source-traceability; no Python emission.
+
+    # C 2087-2170: vowel + next non-stop non-burst obstruent.
+    if (
+        (next_feat & FOBST)
+        and not (next_feat & FSTOP)
+        and not (next_feat & FBURST)
+        and p_dph_t.tcum >= (allodurs[nphone] - 1)
+    ):
+        p_dph_t.target_ag = 1200
+        if next_place & FLABIAL:
+            # C 2102-2113: labial fricative next -> narrow lips.
+            p_dph_t.area_l = _NOM_FRICATIVE_OPENING
+            p_dph_t.target_l = 100
+        if (cur_place & FDENTAL) or (next_place & FLABIAL):
+            # C 2117-2136: DENTAL current or LABIAL next -> jam A2.
+            # The Spanish branch (1100) is dead on US: we always
+            # use 1000.
+            ps[OUT_A2] = 1000
+        elif next_place & FPALATL:
+            # C 2137-2148: palatal next -> jam A3 & A4 (the C source
+            # writes only A2; the "A3&4" in the printf is a debug
+            # naming hangover -- see C 2147).
+            ps[OUT_A2] = 2000
+        elif next_place & FALVEL:
+            # C 2149-2163: alveolar next -> jam A2 when phonestep > 2.
+            if p_dph_t.phonestep > 2:
+                ps[OUT_A2] = 3000
+
+    # C 2175-2194 (#ifndef TOMBUCHLER): anticipate next unvoiced
+    # sonorant consonant -> open glottis. TOMBUCHLER is never
+    # defined on the US build (see _phdraw_tombuchler_modulation_dead_code).
+    if nphone + 1 < len(allofeats):
+        next_dummy = bool(allofeats[nphone + 1] & FDUMMY_VOWEL)
+    else:
+        next_dummy = False
+    if (
+        not next_dummy
+        and not (next_feat & FVOICD)
+        and (next_feat & FSONOR)
+        and (next_feat & FCONSON)
+        and p_dph_t.tcum >= (allodurs[nphone] - 2)
+    ):
+        p_dph_t.target_ag = 1800
+        p_dph_t.agspeed = 2
+
+    # C 2201-2219: current phone is unvoiced sonorant consonant ->
+    # open glottis (this branch reads cur_feat, not next_feat).
+    cur_dummy = bool(allofeats[nphone] & FDUMMY_VOWEL)
+    if not cur_dummy and not (cur_feat & FVOICD) and (cur_feat & FSONOR) and (cur_feat & FCONSON):
+        p_dph_t.target_l = 1000
+        p_dph_t.target_b = 1000
+        p_dph_t.target_tb = 1000
+        p_dph_t.target_ag = _NOM_OPEN_GLOTTIS
+        p_dph_t.agspeed = 2
+
+    # C 2221-2257: spread glottis for HX when next is unvoiced
+    # sonorant consonant at end-of-phone.
+    if (
+        not next_dummy
+        and not (next_feat & FVOICD)
+        and (next_feat & FSONOR)
+        and (next_feat & FCONSON)
+        and p_dph_t.tcum >= (allodurs[nphone] - 7)
+        and p_dph_t.target_ag < _NOM_UNVOICED_SON
+    ):
+        if cur_feat & FNASAL:
+            if p_dph_t.target_ag < 1200:
+                p_dph_t.target_ag += 100
+                p_dph_t.agspeed = 3
+        elif p_dph_t.target_ag < 1200:
+            p_dph_t.target_ag += 70
+            p_dph_t.agspeed = 3
+
+    # C 2258-2398: per-place A2 jamming (gated on !FNASAL).
+    if not (cur_feat & FNASAL):
+        # C 2260-2298: DENTAL.
+        if cur_place & FDENTAL:
+            if cur_feat & FVOICD:
+                ps[OUT_A2] = 1100
+            else:
+                # C 2274-2281: Spanish branch dead on US; we always
+                # use 1000.
+                ps[OUT_A2] = 1000
+            if cur_allo in (USP_DH, USP_TH, USP_DZ):
+                # C 2285-2293: dental fricatives (UKP_* variants
+                # omitted -- UK codes not in Python).
+                ps[OUT_A2] = 1200
+        # C 2299-2310: LABIAL.
+        elif cur_place & FLABIAL:
+            ps[OUT_A2] = 1300
+        # C 2311-2358: PALATAL.
+        elif cur_place & FPALATL:
+            is_affricate_or_tsh = cur_allo in (USP_JH, USP_CH) or (
+                cur_allo == USP_SH and prev_allo == USP_T
+            )
+            if is_affricate_or_tsh:
+                # C 2314-2340: affricate / [tʃ]-cluster.
+                p_dph_t.agspeed = 2
+                if p_dph_t.tcum <= 4:
+                    # C 2321-2336: palatal->alveolar roll start.
+                    ps[OUT_A2] = 3200
+                else:
+                    ps[OUT_A2] = 2000
+            else:
+                # C 2343-2356: plain palatal. Both branches write
+                # 2000; the FVOICD split exists only for the debug
+                # printf cite (C 2350-2356).
+                ps[OUT_A2] = 2000
+        # C 2359-2372: ALVEL.
+        elif cur_place & FALVEL:
+            ps[OUT_A2] = 3000
+
+        # C 2373-2397: lastthing carryover. If the previous phone
+        # had blade-affected place AND was an obstruent BUT was NOT
+        # a stop-before-obst combination AND we're at phonestep < 1
+        # or it's a dummy vowel, restore the previous lastthing.
+        # The C source's brace structure here is intentionally odd:
+        # the outer `if` covers only the inner `if (phonestep<1 ||
+        # FDUMMY_VOWEL)` test; the trailing `else { lastthing=0; }`
+        # binds to that inner test, NOT to the outer place test.
+        prev_place_blade = bool(prev_place & (FPALATL | FDENTAL | FALVEL | FLABIAL))
+        prev_feat_local = phone_feature(prev_allo)
+        # The C expression !(FSTOP_prev && FOBST_cur):
+        not_stop_to_obst = not ((prev_feat_local & FSTOP) and (cur_feat & FOBST))
+        if prev_place_blade and not_stop_to_obst and (prev_feat_local & FOBST):
+            if p_dph_t.phonestep < 1 or (allofeats[nphone] & FDUMMY_VOWEL):
+                ps[OUT_A2] = p_dph_t.lastthing
+            else:
+                p_dph_t.lastthing = 0
+        # C 2396-2397: latch lastthing if A2 hit a jammed value.
+        if ps[OUT_A2] >= 1000:
+            p_dph_t.lastthing = ps[OUT_A2]
 
 
 def _phdraw_per_frame_hlsyn_state_machine(  # noqa: PLR0912,PLR0915 — mirrors C body
@@ -2013,11 +2482,13 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
 # kept as a deprecated alias forwarding to the live ported loop --
 # downstream tooling that grepped for the stub name doesn't break.
 __all__ = [
+    "_phdraw_fvowel_a2_jamming",
     "_phdraw_gen_sil_ending",
     "_phdraw_hlsyn_area_loop_unported",
     "_phdraw_initial_silence_anticipation",
     "_phdraw_initial_silence_anticipation_unported",
     "_phdraw_lateral_av_and_f3_floor",
+    "_phdraw_once_per_phone_setup",
     "_phdraw_per_frame_hlsyn_state_machine",
     "_phdraw_per_frame_hlsyn_state_machine_unported",
     "_phdraw_regular_phoneme_branch",
