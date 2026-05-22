@@ -37,6 +37,8 @@ from dectalk.include.phoneme_codes import PFFR, PFGR, PFLA, PFSP, PFUK, PFUSA
 from dectalk.include.usp_codes import USP_K
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
+from dectalk.ph.fr_gettar import fr_gettar
+from dectalk.ph.fr_target_tables import Cibles_FEMALE, Cibles_MALE, cibles_flat
 from dectalk.ph.get_phone import get_phone
 from dectalk.ph.numeric_constants import F1, F2, F3, MALE
 from dectalk.ph.parameter_tables import parini
@@ -92,13 +94,40 @@ def _load_uk_tables(p_dph_t: DphT) -> None:
         p_dph_t.p_amp = list(uk_femamp)
 
 
+def _load_fr_tables(p_dph_t: DphT) -> None:
+    """Repoint French target/diph/amp tables on a French language switch.
+
+    Mirrors ``p_fr_st1.c`` lines 60-79: the C source picks
+    ``Cibles_MALE``/``Cibles_FEMALE`` according to ``malfem`` while
+    keeping ``p_diph`` / ``p_tar`` pointing at the *US* tables
+    (`us_maldip` / `us_femdip`, `us_maltar` / `us_femtar`). ``p_amp``
+    is not explicitly assigned in the French branch -- it stays
+    whatever the previous language switch left it on.
+    """
+    if p_dph_t.malfem == MALE:
+        p_dph_t.Cibles_Defaut = cibles_flat(Cibles_MALE)
+        p_dph_t.p_diph = list(us_maldip)
+        p_dph_t.p_tar = list(us_maltar)
+        if p_dph_t.p_amp is None:
+            # Default to US-male p_amp; fr_gettar reads it for
+            # PARALLEL_FORM_AMP ``ptram > 0`` rows.
+            p_dph_t.p_amp = list(us_malamp)
+    else:
+        p_dph_t.Cibles_Defaut = cibles_flat(Cibles_FEMALE)
+        p_dph_t.p_diph = list(us_femdip)
+        p_dph_t.p_tar = list(us_femtar)
+        if p_dph_t.p_amp is None:
+            p_dph_t.p_amp = list(us_femamp)
+
+
 def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915 -- faithful C translation
     """Look up the per-phone target value, dispatching by language font.
 
     Faithful translation of the C ``int gettar(LPTTS_HANDLE_T, int)``.
     The Python port dispatches to :func:`us_gettar` for US English
-    phones and :func:`uk_gettar` for UK English phones; other-language
-    fonts (GR/LA/SP/FR) raise :class:`NotImplementedError` since their
+    phones, :func:`uk_gettar` for UK English phones, and
+    :func:`fr_gettar` for French phones; other-language fonts
+    (GR/LA/SP) raise :class:`NotImplementedError` since their
     per-language target helpers are not yet ported.
 
     Args:
@@ -112,8 +141,8 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915
         ``0`` if no candidate position yields a real target.
 
     Raises:
-        NotImplementedError: When a non-US/UK phone font is
-            encountered; GR/LA/SP/FR ``*_gettar`` helpers are still
+        NotImplementedError: When a non-US/UK/FR phone font is
+            encountered; GR/LA/SP ``*_gettar`` helpers are still
             deferred.
     """
     p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
@@ -140,26 +169,30 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915
                 _load_us_tables(p_dph_t)
             elif tmp == _FONT_UK:
                 _load_uk_tables(p_dph_t)
-            elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP, _FONT_FR):
+            elif tmp == _FONT_FR:
+                _load_fr_tables(p_dph_t)
+            elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP):
                 raise NotImplementedError(
                     f"gettar: per-language tables for font 0x{tmp:04x} "
-                    "(GR/LA/SP/FR) are not yet ported; only US/UK English "
-                    "are wired up. See docs/PLAN.md Phase E."
+                    "(GR/LA/SP) are not yet ported; only US/UK English "
+                    "and French are wired up. See docs/PLAN.md Phase E."
                 )
             else:
                 # Default fallback in C: call us_gettar with phone & PVALUE.
                 # Reach this branch only when font is unrecognised.
                 tartemp = us_gettar(phTTS, phone & 0xFF)
 
-        # Per-language dispatch (US and UK wired up).
+        # Per-language dispatch (US, UK, and FR wired up).
         if tmp == _FONT_USA:
             tartemp = us_gettar(phTTS, phone + index[count])
         elif tmp == _FONT_UK:
             tartemp = uk_gettar(phTTS, phone + index[count])
-        elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP, _FONT_FR):
+        elif tmp == _FONT_FR:
+            tartemp = fr_gettar(phTTS, phone + index[count])
+        elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP):
             raise NotImplementedError(
-                f"gettar: US/UK English are wired up but font 0x{tmp:04x} "
-                "is not. Pending gr_/la_/sp_/fr_gettar ports."
+                f"gettar: US/UK English and French are wired up but font "
+                f"0x{tmp:04x} is not. Pending gr_/la_/sp_gettar ports."
             )
 
         # USP_K coarticulation: F2 += 300, F3 += 500 when phone is /k/.
