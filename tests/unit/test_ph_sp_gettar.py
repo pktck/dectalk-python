@@ -394,9 +394,7 @@ def _extract_body() -> str:
 def test_c_signature_matches() -> None:
     """C signature: ``short sp_gettar(LPTTS_HANDLE_T phTTS, int nphone_temp)``."""
     text = _read_c()
-    assert re.search(
-        r"\bshort\s+sp_gettar\s*\(\s*LPTTS_HANDLE_T\s+\w+\s*,\s*int\s+\w+\s*\)", text
-    )
+    assert re.search(r"\bshort\s+sp_gettar\s*\(\s*LPTTS_HANDLE_T\s+\w+\s*,\s*int\s+\w+\s*\)", text)
 
 
 @_c_source_skip
