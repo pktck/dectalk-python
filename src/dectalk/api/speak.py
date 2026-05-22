@@ -595,6 +595,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # continuation rises / baseline reset / dummy schwa). Writes
     # f0tar / f0type / f0length / f0tim on DphT.
     from dectalk.ph.init_clause import init_clause  # noqa: PLC0415
+    from dectalk.ph.param_indices import OUT_DU, OUT_PH, OUT_PH2  # noqa: PLC0415
     from dectalk.ph.parstochip_to_frames import (  # noqa: PLC0415
         parstochip_to_llframe_delayed,
     )
@@ -653,6 +654,20 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             p_dph_t.durfon = (
                 p_dph_t.allodurs[p_dph_t.nphone] if p_dph_t.allodurs[p_dph_t.nphone] > 0 else 40
             )
+            # Phoneme-code / duration metadata writes from ph_claus.c
+            # lines 465-472 (BATS 887, eab 5/3/99 — output from the
+            # correct place so SAPI / debug time-alignment is correct).
+            # These cells are consumed by debug / instrumentation
+            # readers (frame dumps), not by the Klatt synthesiser
+            # itself; LLFrame has no corresponding fields so the
+            # parstochip → LLFrame adapter drops them. Writing them
+            # here keeps frame-dump parity with the C binary.
+            p_dph_t.parstochip[OUT_PH] = p_dph_t.allophons[p_dph_t.nphone]
+            p_dph_t.parstochip[OUT_DU] = p_dph_t.allodurs[p_dph_t.nphone]
+            if p_dph_t.nphone + 1 > p_dph_t.nallotot:
+                p_dph_t.parstochip[OUT_PH2] = 0
+            else:
+                p_dph_t.parstochip[OUT_PH2] = p_dph_t.allophons[p_dph_t.nphone + 1]
             phsettar(handle)
         pht0draw(handle)
         phdraw(handle)
