@@ -57,6 +57,105 @@ def test_speak_rate_scales_duration() -> None:
     assert fast.size < slow.size
 
 
+def test_inline_rate_is_absolute_wpm_on_full_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #70 — ``[:rate N]`` is absolute WPM, not a duration multiplier.
+
+    Before this fix, the full Python pipeline interpreted ``[:rate N]``
+    as a "rate multiplier" (N=100 == nominal, N=200 == twice as slow)
+    and additionally inverted the rate-to-WPM formula compared with
+    the C-routed path. The C binary treats ``[:rate N]`` as absolute
+    words-per-minute (default 180, range [75, 600]).
+
+    After the fix the Python pipeline's sample counts scale relative
+    to N the same way the C oracle's do — bigger N is faster (fewer
+    samples), smaller N is slower (more samples), and ``[:rate 180]``
+    is indistinguishable from no directive at all.
+
+    This test asserts the relative-scaling invariants in the pure-
+    Python full pipeline (gated by ``DECTALK_FULL_PIPELINE=1`` and
+    ``DECTALK_DISABLE_CAPI=1``). Absolute bit-parity with the C oracle
+    is gated separately by the c_oracle marker — the PH-stage timing
+    pipeline has a ~+6% baseline drift documented in
+    ``docs/parity-divergence-audit.md`` that is independent of the
+    rate-semantics issue this test guards.
+    """
+    monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+    monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
+
+    baseline = speak("testing one two three").size
+    rate_180 = speak("[:rate 180] testing one two three").size
+    rate_90 = speak("[:rate 90] testing one two three").size
+    rate_360 = speak("[:rate 360] testing one two three").size
+    rate_250 = speak("[:rate 250] testing one two three").size
+    rate_100 = speak("[:rate 100] testing one two three").size
+
+    # 1. [:rate 180] is the documented default; identical to no directive.
+    assert rate_180 == baseline, (
+        f"[:rate 180] should equal no-rate baseline; got {rate_180} vs {baseline}"
+    )
+
+    # 2. Strict monotonicity: bigger WPM => shorter audio.
+    assert rate_100 > rate_180 > rate_250 > rate_360, (
+        f"Sample counts should be strictly decreasing as WPM grows; got "
+        f"100→{rate_100} 180→{rate_180} 250→{rate_250} 360→{rate_360}"
+    )
+
+    # 3. Half-speed roughly doubles the audio (within ±25% — the
+    # phoneme-duration table interpolation isn't perfectly linear and
+    # picks up the same per-clause silence pad regardless of WPM, but
+    # it's close enough that we can sanity-check direction + magnitude
+    # without depending on exact PH-stage parity).
+    assert 1.5 * baseline < rate_90 < 2.5 * baseline, (
+        f"[:rate 90] should be ~2x baseline; got {rate_90} vs {baseline}"
+    )
+
+    # 4. Double-speed roughly halves it.
+    assert 0.35 * baseline < rate_360 < 0.75 * baseline, (
+        f"[:rate 360] should be ~0.5x baseline; got {rate_360} vs {baseline}"
+    )
+
+    # 5. The headline issue-#70 prompt: [:rate 250] on "testing one
+    # two three". The Python full pipeline still has a substantial
+    # absolute drift vs the C oracle (PH-stage timing + trailing-
+    # silence pad — see docs/parity-divergence-audit.md and the more
+    # recent trailing-silence work), but the *relative* scaling
+    # against baseline should match the C oracle's 14697/19099 ≈
+    # 0.770 ratio to within ±10%. Before issue #70, this ratio was
+    # 5940/19140 ≈ 0.310 — off by a factor of 2.5x. After: pass.
+    c_baseline = 19099
+    c_rate_250 = 14697
+    c_ratio = c_rate_250 / c_baseline  # ≈ 0.770
+    py_ratio = rate_250 / baseline
+    assert abs(py_ratio - c_ratio) < 0.10, (
+        f"[:rate 250]/baseline ratio should match C's "
+        f"{c_rate_250}/{c_baseline}={c_ratio:.3f} to within 10%; "
+        f"got py={rate_250}/{baseline}={py_ratio:.3f} "
+        f"(delta={py_ratio - c_ratio:+.3f})"
+    )
+
+
+def test_inline_rate_clamps_to_legal_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Out-of-range ``[:rate N]`` is clamped to [75, 600], not rejected.
+
+    Matches the C binary (and the documented bounds in
+    :mod:`dectalk.cmd.cmd_states`). After clamping, ``[:rate 10]``
+    should produce the same audio as ``[:rate 75]`` and ``[:rate 1000]``
+    the same as ``[:rate 600]``.
+    """
+    monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+    monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
+
+    very_slow = speak("[:rate 10] hi").size
+    min_rate = speak("[:rate 75] hi").size
+    assert very_slow == min_rate
+
+    very_fast = speak("[:rate 1000] hi").size
+    max_rate = speak("[:rate 600] hi").size
+    assert very_fast == max_rate
+
+
 def test_capitalisation_is_irrelevant() -> None:
     a = text_to_phonemes("Hello World")
     b = text_to_phonemes("hello world")

@@ -699,9 +699,14 @@ does**, **what the Python does**, **deltas ranked by audibility**.
   voice-definition tables in `PH/p_us_vdf*.c` (US_TOT_ALLOPHONES =
   71 per `l_us_ph.h`). Identifies allophonic variants we're missing
   (DX, EL, EN, IX, RX, LX, AR, OR, UR, IR, Q, etc.).
-- `docs/c_audit/kernel.md` — compares `src/dectalk/kernel/text.py`
-  and `kernel/normalize.py` against `KERNEL/usa.c`. Sentence
-  segmentation, abbreviation tables, number-to-words.
+- `docs/c_audit/kernel_textnorm.md` — compares `src/dectalk/kernel/text.py`,
+  `kernel/normalize.py`, and `kernel/numbers.py` against the C
+  rule engine (`cmd/par_rule*.par`, `cmd/par_pars*.c`,
+  `cmd/cm_text.c`) and the LTS dispatch layer (`lts/ls_task.c`,
+  `lts/l_us_pr1.c`). Covers sentence segmentation, the eight
+  domain dictionaries in `par_nws.par`, abbreviation tables
+  (`nabtab[]`), and number-to-words divergence between the
+  ad-hoc kernel helper and the bit-accurate LTS port.
 - `docs/c_audit/lts.md` — compares `src/dectalk/lts/rules_us.py`
   against the C `LTS/` rule tables.
 - `docs/c_audit/dic.md` — confirms lexicon parity (stress-digit

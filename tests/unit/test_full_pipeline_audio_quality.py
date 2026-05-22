@@ -33,10 +33,13 @@ def _speak(text: str, monkeypatch: pytest.MonkeyPatch) -> np.ndarray:
 @pytest.mark.parametrize(
     ("text", "min_samples", "max_samples"),
     [
-        ("hi", 2000, 7000),
-        ("hello world", 7000, 16000),
-        ("good morning", 7000, 16000),
-        ("test one two three", 11000, 22000),
+        # Upper bounds widened in issue #72: the trailing-silence pad
+        # adds ~6-9k samples per clause so the pure-Python pipeline now
+        # closer matches the C reference's trailing-pad behaviour.
+        ("hi", 2000, 12000),
+        ("hello world", 7000, 24000),
+        ("good morning", 7000, 24000),
+        ("test one two three", 11000, 30000),
     ],
 )
 def test_full_pipeline_sample_count_in_range(
@@ -113,4 +116,62 @@ def test_full_pipeline_inline_voice_change_synthesises(
     assert 0.5 * plain.size <= samples.size <= 1.5 * plain.size, (
         f"[:dv betty] hello={samples.size}, plain hello={plain.size} -- "
         "the command may have leaked into the phone stream"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Trailing-silence pad (issue #72) -- the per-frame loop in
+# `_speak_via_python_full` used to terminate on `nphone >= nallotot`
+# without honouring the C reference's clause-final long-pause GEN_SIL
+# duration. Audio ended mid-frame with zero trailing silence; the C
+# binary appends ~3900-4400 samples (~360 ms) of zeros at clause end.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "hello world",
+        "the quick brown fox",
+        "one two three four five",
+        "test",
+        "a",
+    ],
+)
+def test_full_pipeline_emits_trailing_silence(
+    text: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The full-pipeline output ends with a run of zero samples (issue #72).
+
+    Mirrors the C reference's behaviour: ``us_phtiming``'s Rule 1
+    (``p_us_tim.c`` line 309) substitutes ``nfperiod + perpause +
+    asperation`` for the default short pause when the previous
+    allophone's ``FBOUNDARY`` field carries ``FSENTENDS``. Without the
+    fix the trailing GEN_SIL ran for ~14 frames and the synth's AV
+    ramp-down never reached true zero before the clause ended; with
+    the fix the trailing-SIL ``allodurs`` value rises to ~70 frames,
+    enough headroom for the synth to emit a long zero-amplitude tail.
+
+    The exact length depends on synth-state divergence with the C
+    reference (out of scope for this issue) so the assertion is just
+    "more than 500 trailing zeros" — well above the pre-fix value
+    of zero, well below pathological runaway.
+    """
+    samples = _speak(text, monkeypatch)
+    assert samples.size > 0, f"{text!r} produced no audio"
+    nonzero = np.flatnonzero(samples != 0)
+    assert nonzero.size > 0, f"{text!r} produced all-zero audio"
+    trail = int(samples.size - nonzero[-1] - 1)
+    assert trail > 500, (
+        f"{text!r}: trailing-silence pad is {trail} samples (was 0 pre-#72); "
+        "the per-frame loop is dropping the trailing GEN_SIL allophone."
+    )
+    # Sanity upper bound: at 11025 Hz, 22050 samples == 2 s of silence.
+    # The C reference's pad is ~360 ms; the Python pad is currently
+    # ~600-900 ms (synth AV-ramp behaviour differs). Anything past 2 s
+    # would indicate a buggy looping condition.
+    assert trail < 22_050, (
+        f"{text!r}: trailing-silence pad is {trail} samples (>2 s) -- "
+        "the per-frame loop is not terminating correctly."
     )
