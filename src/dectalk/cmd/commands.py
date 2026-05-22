@@ -11,9 +11,11 @@ Supported commands (subset of the full DECtalk command vocabulary):
   short names (``paul``, ``betty``, ``harry``, ``frank``, ``dennis``,
   ``kit``, ``ursula``, ``rita``, ``willy``).
 - ``[:name NAME]`` — alias for ``[:dv]`` accepted by older DECtalk versions.
-- ``[:rate N]`` — speaking rate as a percentage of nominal (100 = normal,
-  200 = half speed, 50 = double speed). DECtalk historically used
-  words-per-minute; we normalise to a multiplier here.
+- ``[:rate N]`` — speaking rate in absolute words-per-minute, matching
+  the DECtalk binary's semantics (default 180 WPM; legal range
+  [75, 600], clamped). Translated into the equivalent multiplicative
+  ``rate`` on :class:`SpeechState` so downstream renderers can combine
+  it with any public-API ``rate=`` multiplier.
 - ``[:phoneme on]`` / ``[:phoneme off]`` — switch between text and direct
   ARPABET phoneme input.
 - ``[:say TYPE]`` — segmentation hint (currently parsed and ignored).
@@ -30,6 +32,20 @@ from dataclasses import dataclass, field, replace
 from typing import Final
 
 _Handler = Callable[["SpeechState", list[str]], "SpeechState"]
+
+# Default words-per-minute used as the reference point for
+# ``[:rate N]``. Matches DECtalk's documented default
+# (``idh_ref_2_speaking_rate.htm``: "The default speaking rate is 180
+# words per minute"). Keep in sync with
+# :data:`dectalk.api.speak._DEFAULT_WPM`.
+_DEFAULT_WPM: Final[int] = 180
+
+# Inclusive WPM clamps applied to ``[:rate N]`` before converting to a
+# multiplier. The C binary clamps to the same [75, 600] range
+# (verified empirically; matches ``MIN_SPEAKING_RATE`` /
+# ``MAX_SPEAKING_RATE`` in :mod:`dectalk.cmd.cmd_states`).
+_MIN_WPM: Final[int] = 75
+_MAX_WPM: Final[int] = 600
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,22 +131,47 @@ def _cmd_dv(state: SpeechState, args: list[str]) -> SpeechState:
 def _cmd_rate(state: SpeechState, args: list[str]) -> SpeechState:
     """Handle ``[:rate N]``.
 
-    DECtalk's ``rate`` is words-per-minute (default ~180). We accept a
-    percentage where 100 = nominal speed; smaller is faster. Numeric
-    parse failures leave the state unchanged.
+    DECtalk's ``[:rate N]`` directive sets the speaking rate to ``N``
+    words per minute (absolute, not a percentage). The default is
+    180 WPM; legal range is [75, 600] and out-of-range values are
+    clamped to the nearest endpoint (matching the C binary's behaviour
+    documented in ``idh_ref_2_speaking_rate.htm``).
+
+    We translate the absolute WPM into the equivalent
+    :attr:`SpeechState.rate` multiplier so the rest of the pipeline
+    keeps its single-knob interface:
+
+    ``rate_multiplier = DEFAULT_WPM / N``
+
+    With ``DEFAULT_WPM = 180`` this gives ``[:rate 180] -> 1.0``
+    (nominal, identical to no directive), ``[:rate 90] -> 2.0``
+    (half-speed), and ``[:rate 360] -> 0.5`` (double-speed). The
+    formula is the exact inverse of
+    :func:`dectalk.api.speak._rate_multiplier_to_wpm`, so a
+    ``[:rate N]`` directive round-trips back to WPM=N when the
+    downstream renderer recovers it.
+
+    The multiplier is composed with any pre-existing
+    :attr:`SpeechState.rate` on the state so a caller-supplied
+    ``rate=`` and an inline ``[:rate N]`` combine multiplicatively
+    (matching the legacy approximate path's behaviour).
+
+    Numeric parse failures and non-positive values leave the state
+    unchanged.
     """
     if not args:
         return state
     try:
-        pct = float(args[0])
+        wpm = float(args[0])
     except ValueError:
         return state
-    if pct <= 0:
+    if wpm <= 0:
         return state
-    # Convert wpm-style percentage into a "rate multiplier" where bigger
-    # values stretch each phoneme. 100 -> 1.0; 200 -> 2.0 (slower);
-    # 50 -> 0.5 (faster).
-    return replace(state, rate=pct / 100.0)
+    # Clamp to DECtalk's legal WPM range before computing the
+    # multiplier so the resulting rate maps deterministically back to
+    # a clamped WPM downstream (avoids float drift in the round-trip).
+    wpm = max(_MIN_WPM, min(_MAX_WPM, wpm))
+    return replace(state, rate=state.rate * (_DEFAULT_WPM / wpm))
 
 
 def _cmd_phoneme(state: SpeechState, args: list[str]) -> SpeechState:

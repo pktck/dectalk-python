@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+import math
+
 from dectalk.cmd import SpeechState, parse
+
+# Generous epsilon for the float multiplier comparisons -- the values
+# being compared are exact ratios of small ints so 1e-9 is plenty
+# without inviting subnormal flakiness. Manual epsilon (avoiding
+# pytest.approx for pyright strict mode, matching the project
+# convention used in test_hlsyn_*_parity.py etc.).
+_RATE_EPS = 1e-9
 
 
 def test_no_commands_returns_single_segment() -> None:
@@ -23,11 +32,68 @@ def test_name_alias_for_dv() -> None:
     assert segs[0].state.voice == "betty"
 
 
-def test_rate_percentage_to_multiplier() -> None:
-    segs = parse("[:rate 200] hello")
-    assert segs[0].state.rate == 2.0
-    segs = parse("[:rate 50] hello")
-    assert segs[0].state.rate == 0.5
+def test_rate_is_absolute_wpm() -> None:
+    """``[:rate N]`` is absolute WPM (matching the C binary), not a percentage.
+
+    Before issue #70, the parser treated N as a percentage of nominal
+    (100 = nominal, 200 = half speed). The C binary instead treats N
+    as absolute words-per-minute (default 180 WPM, range [75, 600]).
+
+    The parser now translates the absolute WPM into the equivalent
+    ``rate`` multiplier on :class:`SpeechState` using
+    ``rate = DEFAULT_WPM / N``. With the documented DECtalk default
+    of 180 WPM this gives:
+
+    - ``[:rate 180] -> 1.0`` (nominal, identical to no directive)
+    - ``[:rate 90]  -> 2.0`` (half-speed)
+    - ``[:rate 360] -> 0.5`` (double-speed)
+    """
+    # Nominal: 180 WPM == default == multiplier 1.0
+    segs = parse("[:rate 180] hello")
+    assert math.isclose(segs[0].state.rate, 1.0, abs_tol=_RATE_EPS)
+
+    # Half-speed: 90 WPM → multiplier 2.0 (each phoneme stretched 2x).
+    segs = parse("[:rate 90] hello")
+    assert math.isclose(segs[0].state.rate, 2.0, abs_tol=_RATE_EPS)
+
+    # Double-speed: 360 WPM → multiplier 0.5 (each phoneme halved).
+    segs = parse("[:rate 360] hello")
+    assert math.isclose(segs[0].state.rate, 0.5, abs_tol=_RATE_EPS)
+
+    # The headline case from issue #70: 250 WPM is ~28% faster than
+    # default. ``rate = 180/250 = 0.72``.
+    segs = parse("[:rate 250] testing one two three")
+    assert math.isclose(segs[0].state.rate, 180.0 / 250.0, abs_tol=_RATE_EPS)
+
+
+def test_rate_clamps_out_of_range_to_legal_wpm() -> None:
+    """Out-of-range WPM is clamped to [75, 600] before conversion.
+
+    Matches the C binary's MIN_SPEAKING_RATE / MAX_SPEAKING_RATE
+    behaviour (see :mod:`dectalk.cmd.cmd_states`).
+    """
+    # Below 75 WPM → clamped to 75 → multiplier 180/75 = 2.4
+    segs = parse("[:rate 10] hello")
+    assert math.isclose(segs[0].state.rate, 180.0 / 75.0, abs_tol=_RATE_EPS)
+
+    # Above 600 WPM → clamped to 600 → multiplier 180/600 = 0.3
+    segs = parse("[:rate 1000] hello")
+    assert math.isclose(segs[0].state.rate, 180.0 / 600.0, abs_tol=_RATE_EPS)
+
+
+def test_rate_composes_multiplicatively_with_initial_state() -> None:
+    """An inline ``[:rate N]`` multiplies any caller-supplied rate.
+
+    The caller may pass ``initial_state`` with a non-1.0 rate (e.g.
+    the public API's ``speak(rate=...)`` arg threads through this).
+    The inline directive should compose multiplicatively rather than
+    overwrite, so a ``rate=0.5`` caller passing
+    ``[:rate 360] hello`` ends up with multiplier 0.25 (4x speed).
+    """
+    initial = SpeechState(rate=0.5)
+    segs = parse("[:rate 360] hello", initial_state=initial)
+    # 360 WPM → 180/360 = 0.5, composed with the 0.5 initial = 0.25.
+    assert math.isclose(segs[0].state.rate, 0.25, abs_tol=_RATE_EPS)
 
 
 def test_invalid_rate_value_is_ignored() -> None:
@@ -48,10 +114,11 @@ def test_phoneme_mode_toggle() -> None:
 
 def test_back_to_back_commands_collapse() -> None:
     """Consecutive [:cmd] directives shouldn't generate empty segments."""
-    segs = parse("[:dv harry][:rate 200] hello")
+    # 90 WPM is half the default 180 → multiplier 2.0 (twice as slow).
+    segs = parse("[:dv harry][:rate 90] hello")
     assert len(segs) == 1
     assert segs[0].state.voice == "harry"
-    assert segs[0].state.rate == 2.0
+    assert math.isclose(segs[0].state.rate, 2.0, abs_tol=_RATE_EPS)
 
 
 def test_initial_state_seeds_first_segment() -> None:
