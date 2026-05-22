@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import numpy as np
@@ -9,6 +10,8 @@ import pytest
 
 from dectalk.api import UnknownWordError, speak, text_to_phonemes, to_wav
 from dectalk.api.speak import _pump_frames_to_samples, _speak_via_python
+from dectalk.ph.dph_settar_st import DphSettarSt
+from dectalk.ph.dph_t import DphT
 
 
 def test_text_to_phonemes_hello_world() -> None:
@@ -227,3 +230,72 @@ def test_pump_frames_to_samples_empty_returns_zero() -> None:
     """``_pump_frames_to_samples([], None)`` short-circuits to zero samples."""
     out = _pump_frames_to_samples([], None)
     assert len(out) == 0
+
+
+def test_assertiveness_loaded_for_us_paul(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Issue #122 — ``pDph_t.assertiveness`` is non-zero after the
+    Python full-pipeline per-clause init for US-Paul.
+
+    The C bridge (``phram.c``) loads
+    ``pDph_t->assertiveness = pDph_t->curspdef[SPD_AS] * 41``; with
+    Paul's AS = 100 the result is 4100 (just above Q12 unity = 4096
+    = full final F0 fall). Three ``frac4mul(..., assertiveness)``
+    calls in ``phinton`` Rules 3/4/6 zero out the final-fall
+    magnitude when this field is 0, masking every Rule 6 final-fall
+    event in traces (``tar=0``).
+
+    This test captures the post-load ``DphT`` by monkey-patching
+    ``init_timing`` (the call that immediately follows the SPDEF
+    loads in ``_render_clause_full``) and asserts the field is
+    non-zero — and specifically 4100 for the default US-Paul row
+    of ``p_us_vdf_dectalk43.c``.
+    """
+    monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+    monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
+
+    # Resolve the *current* init_timing module from sys.modules. Other tests
+    # in the suite (e.g. test_ph_setallofeats_parity.py) intentionally purge
+    # dectalk modules from sys.modules and re-import them, which leaves a
+    # top-level ``from dectalk.ph import init_timing`` binding pointing at a
+    # stale module object whose attributes won't be picked up by the
+    # post-purge lazy ``from dectalk.ph.init_timing import init_timing``
+    # inside ``_render_clause_full``. Importing fresh here keeps the spy
+    # effective regardless of test ordering.
+    fresh_init_timing = importlib.import_module("dectalk.ph.init_timing")
+
+    captured: list[int] = []
+    real_init_timing = fresh_init_timing.init_timing
+
+    def _spy_init_timing(
+        p_dph_t: DphT,
+        pst_phsettar: DphSettarSt,
+        *,
+        sprate_ref: list[int],
+        lang_curr: int,
+    ) -> None:
+        captured.append(p_dph_t.assertiveness)
+        real_init_timing(
+            p_dph_t,
+            pst_phsettar,
+            sprate_ref=sprate_ref,
+            lang_curr=lang_curr,
+        )
+
+    # _render_clause_full imports init_timing lazily inside the function,
+    # so patch the source module (which the lazy import binds to).
+    monkeypatch.setattr(fresh_init_timing, "init_timing", _spy_init_timing, raising=True)
+
+    # Re-import speak the same way so the call below dispatches into the
+    # post-purge module that ``fresh_init_timing`` was patched on.
+    fresh_speak = importlib.import_module("dectalk.api.speak")
+    _ = fresh_speak.speak("hello world")
+
+    assert captured, "init_timing was not invoked by the full pipeline"
+    assert all(v > 0 for v in captured), (
+        f"pDph_t.assertiveness must be non-zero at init_timing time for "
+        f"US-Paul (issue #122); captured: {captured}"
+    )
+    # AS = 100 (Paul) * 41 = 4100 (Q12-scale: just above 4096 = unity).
+    assert captured[0] == 4100, (
+        f"pDph_t.assertiveness should equal 100 * 41 = 4100 for US-Paul; got {captured[0]}"
+    )
