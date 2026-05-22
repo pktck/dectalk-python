@@ -1,0 +1,11 @@
+{
+  "test_speak_pangram_perf": {
+    "median_seconds": 0.212,
+    "mean_seconds": 0.215,
+    "min_seconds": 0.176,
+    "stddev_seconds": 0.060,
+    "rounds": 5,
+    "machine_info": "dev-sandbox-x86_64",
+    "commit_info": "initial-baseline"
+  }
+}
