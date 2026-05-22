@@ -82,3 +82,49 @@ def test_first_vowel_gets_primary_stress() -> None:
 def test_x_expands_to_k_s() -> None:
     out = lts("box")
     assert "K" in out and "S" in out
+
+
+@pytest.mark.parametrize(
+    ("word", "first_phone"),
+    [
+        # Initial-cluster silent-letter rules. The C oracle silences
+        # the leading consonant of these Greek/Latin clusters at word
+        # start; the Python LTS must do the same so the first emitted
+        # phoneme matches the C oracle.
+        # gn- -> the G is silent, leaving N.
+        ("gnaw", "N"),
+        ("gnat", "N"),
+        ("gnome", "N"),
+        ("gnu", "N"),
+        # pn- -> the P is silent, leaving N.
+        ("pneumonia", "N"),
+        ("pneumatic", "N"),
+        # ps- -> the P is silent, leaving S.
+        ("psychic", "S"),
+        ("psalm", "S"),
+        ("pseudo", "S"),
+        # mn- -> the M is silent, leaving N.
+        ("mnemonic", "N"),
+    ],
+)
+def test_initial_cluster_silent_letter(word: str, first_phone: str) -> None:
+    """``gn-/pn-/ps-/mn-`` word-initial clusters silence the leading letter."""
+    out = lts(word)
+    assert out, f"{word!r} produced no phonemes"
+    # Strip any stress digit from the first phone for comparison.
+    leading = out[0].rstrip("012")
+    assert leading == first_phone, f"{word!r} -> {out!r}; expected first phone {first_phone}"
+
+
+def test_initial_cluster_does_not_over_silence() -> None:
+    """Silent-letter rules anchor at the word start only.
+
+    Mid-word ``gn`` / ``pn`` / ``ps`` / ``mn`` clusters keep both letters
+    (e.g. ``signal``'s G is emitted via the default G rule, not silenced
+    by the gn- silent-letter rule).
+    """
+    # "signal" -> S IH G N AH L (the default G rule fires; gn- silent
+    # rule is anchored at word start and so does not match the medial
+    # GN cluster here).
+    out = lts("signal")
+    assert "G" in out, f"signal -> {out!r}; expected default G to be emitted"
