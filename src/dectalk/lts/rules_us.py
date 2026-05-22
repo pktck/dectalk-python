@@ -104,6 +104,23 @@ _VOWEL_RULES: Final[tuple[_Rule, ...]] = (
 
 # ------------------------------------------------------------ consonants
 _CONSONANT_RULES: Final[tuple[_Rule, ...]] = (
+    # Initial-cluster silent-letter rules. English borrows Greek/Latin
+    # clusters whose first consonant is silent at word start:
+    #
+    #   gn-  ->  "n"   (gnaw, gnat, gnome, gnu, gnash, gnostic)
+    #   pn-  ->  "n"   (pneumonia, pneumatic)
+    #   ps-  ->  "s"   (psychic, psalm, pseudo, psyche)
+    #   mn-  ->  "n"   (mnemonic)
+    #
+    # Each rule consumes a single letter and emits nothing; the following
+    # letter is then matched by its normal rule. The empty ``left``
+    # pattern anchored at the word start (``^`` becomes ``^$`` after the
+    # context matcher's trailing-``$`` append, which matches only when
+    # nothing precedes the current position).
+    _Rule("G", "^", "N", ()),
+    _Rule("P", "^", "N", ()),
+    _Rule("P", "^", "S", ()),
+    _Rule("M", "^", "N", ()),
     # Multi-letter clusters first.
     _Rule("CH", "", "", ("CH",)),
     _Rule("CK", "", "", ("K",)),
