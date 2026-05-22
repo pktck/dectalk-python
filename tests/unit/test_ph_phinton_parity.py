@@ -32,7 +32,7 @@ from dectalk.ph.feature_bits import (
     FPERNEXT,
     FSTRESS_1,
 )
-from dectalk.ph.inton_constants import NORMAL
+from dectalk.ph.inton_constants import NORMAL, PHONE_TARGETS_SPECIFIED, SINGING
 from dectalk.ph.numeric_constants import MALE, NPHON_MAX
 from dectalk.ph.phinton import (
     _US_F0_MPHRASE_POSITION,
@@ -456,3 +456,103 @@ def test_rule4_commaclause_clausetype_triggers_comma_fall() -> None:
         f"expected GLIDE target -F0_COMMA_FALL ({-_F0_COMMA_FALL}), "
         f"got {glide_targets[0]} (COMMACLAUSE path not taken?)"
     )
+
+
+# -- Rule 0 ``goto skiprules`` semantics (issue #73) -----------------------
+#
+# ph_inton2.c line 895 executes ``goto skiprules`` inside the
+# ``if (f0mode == PHONE_TARGETS_SPECIFIED || SINGING)`` branch. The label
+# at line 1944 sits BEFORE Rule 9's dummy-schwa insertion (line 1971),
+# so Rule 9 still runs in those F0 modes. A prior revision of the port
+# (PR #56 / issue #50) used ``continue`` here, which silently dropped
+# Rule 9 for user-specified F0 and singing clauses. The tests below
+# pin the corrected goto-fallthrough behaviour.
+
+
+@_c_skip
+def test_rule0_goto_target_lives_before_rule9() -> None:
+    """The ``skiprules:`` label sits above Rule 9's dummy-schwa block.
+
+    Brace-tracking proves: the label is at function scope and Rule 9
+    fires for all f0modes, not just NORMAL / HAT_F0_SIZES_SPECIFIED.
+    """
+    text = _read_inton2_c()
+    # The label literal.
+    label_match = re.search(r"^\s*skiprules\s*:", text, flags=re.MULTILINE)
+    assert label_match is not None, "skiprules: label not found in ph_inton2.c"
+    label_line = text[: label_match.start()].count("\n")
+
+    # Rule 9 marker: ``Rule 9: Add short schwa vowel`` comment.
+    rule9_match = re.search(r"Rule 9: Add short schwa", text)
+    assert rule9_match is not None, "Rule 9 comment marker not found"
+    rule9_line = text[: rule9_match.start()].count("\n")
+
+    # ``goto skiprules`` inside Rule 0's block (the first occurrence).
+    goto_match = re.search(r"goto\s+skiprules\s*;", text)
+    assert goto_match is not None, "no ``goto skiprules`` found in source"
+    goto_line = text[: goto_match.start()].count("\n")
+
+    assert goto_line < label_line < rule9_line, (
+        f"expected goto({goto_line}) < skiprules:({label_line}) < Rule 9({rule9_line}); "
+        f"label should be reached from the goto AND fall through to Rule 9."
+    )
+
+
+def test_phinton_inserts_schwa_in_phone_targets_mode() -> None:
+    """Rule 0 ``goto skiprules`` mirror still runs Rule 9 (issue #73).
+
+    With ``f0mode = PHONE_TARGETS_SPECIFIED`` the C source skips
+    Rules 1-7 but executes the trailing cumdur update and Rule 9's
+    dummy-schwa insertion. A prior ``continue``-based shortcut in
+    the Python port dropped Rule 9 here.
+    """
+    # USP_P is +FPLOSV +FBURST -- triggers Rule 9.
+    allophons = [GEN_SIL, USP_P, GEN_SIL]
+    allodurs = [5, 8, 5]
+    handle = _make_handle(allophons=allophons, allodurs=allodurs)
+    dph = cast(DphT, handle.p_ph_thread_data)
+    dph.f0mode = PHONE_TARGETS_SPECIFIED
+    phinton(handle)
+    # nallotot should have grown by 1 (schwa appended at position 2).
+    assert dph.nallotot == 4, (
+        f"PHONE_TARGETS_SPECIFIED dropped Rule 9: nallotot={dph.nallotot}, expected 4"
+    )
+
+
+def test_phinton_inserts_schwa_in_singing_mode() -> None:
+    """Same regression as ``test_phinton_inserts_schwa_in_phone_targets_mode``
+    but exercising the SINGING branch of Rule 0's ``goto skiprules``.
+    """
+    allophons = [GEN_SIL, USP_P, GEN_SIL]
+    allodurs = [5, 8, 5]
+    handle = _make_handle(allophons=allophons, allodurs=allodurs)
+    dph = cast(DphT, handle.p_ph_thread_data)
+    dph.f0mode = SINGING
+    phinton(handle)
+    assert dph.nallotot == 4, (
+        f"SINGING dropped Rule 9: nallotot={dph.nallotot}, expected 4"
+    )
+
+
+def test_phinton_cumdur_advances_in_phone_targets_mode() -> None:
+    """Rule 0 ``goto skiprules`` still bumps cumdur / tcumdur.
+
+    The skiprules tail (ph_inton2.c lines 1946-1958) updates ``cumdur``
+    and ``tcumdur`` regardless of f0mode. Verify the Python mirror
+    preserves the tcumdur accumulator advance.
+    """
+    allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
+    allodurs = [10, 8, 20, 10]
+    handle = _make_handle(allophons=allophons, allodurs=allodurs)
+    dph = cast(DphT, handle.p_ph_thread_data)
+    dph.f0mode = PHONE_TARGETS_SPECIFIED
+    # Pre-populate user_f0 so Rule 0 emits at least one USER command.
+    assert dph.user_f0 is not None
+    dph.user_f0[2] = 50
+    phinton(handle)
+    # tcumdur covers the audible (non-final-silence) phones.
+    assert dph.tcumdur >= 10 + 8 + 20, (
+        f"PHONE_TARGETS_SPECIFIED tcumdur={dph.tcumdur}, expected >= 38"
+    )
+    # The Rule 0 USER command landed in the f0 event queue.
+    assert dph.nf0tot >= 1
