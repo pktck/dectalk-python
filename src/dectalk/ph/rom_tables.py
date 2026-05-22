@@ -709,7 +709,27 @@ us_f0_stress_level: Final[tuple[int, ...]] = (
     1, 71, 31, 281, 0, 0, 0, 0,
 )  # fmt: skip
 
+
+# -- Castilian Spanish PH ROM (p_sp_rom.c) ----------------------------------
+
+sp_place: Final[tuple[int, ...]] = (
+    0, 0, 0, 192, 0, 0, 4, 196, 8, 0,
+    0, 1, 8, 8, 1, 8, 16, 2, 1, 2,
+    16, 4, 1, 1, 2, 2, 16, 16, 4, 192,
+    16, 32, 8, 1, 16, 1, 192, 1, 1,
+)  # fmt: skip
+"""Place-of-articulation bit-table for Castilian Spanish allophones.
+
+Translated from ``src/dapi/src/ph/p_sp_rom.c`` (``sp_place[]``).
+Indexed by the low 8 bits of an SPP_* code (0..38). Bit values
+mirror the ``F*`` flags in :mod:`dectalk.ph.phoneme_features`
+(``FLABIAL = 1``, ``FDENTAL = 2``, ``FPALATL = 4``, ``FALVEL = 8``,
+``FVELAR = 16``, ``FGLOTAL = 32``, ``F2BACKI = 64``, ``F2BACKF = 128``).
+"""
+
+
 __all__ = [
+    "sp_place",
     "us_begtyp",
     "us_burdr",
     "us_endtyp",

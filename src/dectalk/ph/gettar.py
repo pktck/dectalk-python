@@ -16,9 +16,9 @@ and the previous phone. For each candidate it:
 2. On language transition, repoints ``pDph_t->p_diph`` / ``p_tar``
    / ``p_amp`` to the correct per-language ROM tables. The C source
    selects male vs. female tables via ``pDph_t->malfem``.
-3. Calls the per-language ``*_gettar`` helper (currently only
-   :func:`us_gettar` is translated; the other-language branches
-   raise :class:`NotImplementedError`).
+3. Calls the per-language ``*_gettar`` helper (currently US English,
+   UK English, and Castilian Spanish are translated; the other-
+   language branches raise :class:`NotImplementedError`).
 4. Applies a USP_K coarticulation tweak (+300 Hz on F2, +500 Hz on
    F3 when the candidate phone is /k/).
 5. Returns the candidate value if it's "real" (non-sentinel for
@@ -50,6 +50,7 @@ from dectalk.ph.rom_tables import (
     us_maldip,
     us_maltar,
 )
+from dectalk.ph.sp_gettar import sp_gettar
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.uk_gettar import uk_gettar
 from dectalk.ph.uk_rom_tables import (
@@ -125,10 +126,15 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915
 
     Faithful translation of the C ``int gettar(LPTTS_HANDLE_T, int)``.
     The Python port dispatches to :func:`us_gettar` for US English
-    phones, :func:`uk_gettar` for UK English phones, and
-    :func:`fr_gettar` for French phones; other-language fonts
-    (GR/LA/SP) raise :class:`NotImplementedError` since their
-    per-language target helpers are not yet ported.
+    phones, :func:`uk_gettar` for UK English phones,
+    :func:`fr_gettar` for French phones, and :func:`sp_gettar` for
+    Castilian Spanish phones; other-language fonts (GR/LA) raise
+    :class:`NotImplementedError` since their per-language target
+    helpers are not yet ported. The Spanish ROM tables have not been
+    transcribed yet, so the SP-font branch of the ROM-table loading
+    step is a no-op -- Spanish callers must pre-seed ``p_tar`` /
+    ``p_amp`` / ``p_diph`` before invoking :func:`sp_gettar`
+    (directly or via :func:`gettar`).
 
     Args:
         phTTS: Two-pointer engine handle. ``p_ph_thread_data`` must
@@ -141,8 +147,8 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915
         ``0`` if no candidate position yields a real target.
 
     Raises:
-        NotImplementedError: When a non-US/UK/FR phone font is
-            encountered; GR/LA/SP ``*_gettar`` helpers are still
+        NotImplementedError: When a non-US/UK/FR/SP phone font is
+            encountered; GR/LA ``*_gettar`` helpers are still
             deferred.
     """
     p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
@@ -171,28 +177,40 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915
                 _load_uk_tables(p_dph_t)
             elif tmp == _FONT_FR:
                 _load_fr_tables(p_dph_t)
-            elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP):
+            elif tmp == _FONT_SP:
+                # Spanish ROM tables aren't transcribed yet; callers
+                # must pre-seed p_tar / p_amp / p_diph before invoking
+                # gettar() with a Spanish-font phone. This branch is
+                # therefore a no-op (trust whatever the caller wired
+                # up) rather than the C-faithful "swap to sp_femtar /
+                # sp_maltar" load.
+                pass
+            elif tmp in (_FONT_GR, _FONT_LA):
                 raise NotImplementedError(
                     f"gettar: per-language tables for font 0x{tmp:04x} "
-                    "(GR/LA/SP) are not yet ported; only US/UK English "
-                    "and French are wired up. See docs/PLAN.md Phase E."
+                    "(GR/LA) are not yet ported; only US/UK English, "
+                    "French, and Castilian Spanish are wired up. "
+                    "See docs/PLAN.md Phase E."
                 )
             else:
                 # Default fallback in C: call us_gettar with phone & PVALUE.
                 # Reach this branch only when font is unrecognised.
                 tartemp = us_gettar(phTTS, phone & 0xFF)
 
-        # Per-language dispatch (US, UK, and FR wired up).
+        # Per-language dispatch (US, UK, FR, and SP wired up).
         if tmp == _FONT_USA:
             tartemp = us_gettar(phTTS, phone + index[count])
         elif tmp == _FONT_UK:
             tartemp = uk_gettar(phTTS, phone + index[count])
         elif tmp == _FONT_FR:
             tartemp = fr_gettar(phTTS, phone + index[count])
-        elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP):
+        elif tmp == _FONT_SP:
+            tartemp = sp_gettar(phTTS, phone + index[count])
+        elif tmp in (_FONT_GR, _FONT_LA):
             raise NotImplementedError(
-                f"gettar: US/UK English and French are wired up but font "
-                f"0x{tmp:04x} is not. Pending gr_/la_/sp_gettar ports."
+                f"gettar: US/UK English, French, and Castilian Spanish "
+                f"are wired up but font 0x{tmp:04x} is not. "
+                "Pending gr_/la_gettar ports."
             )
 
         # USP_K coarticulation: F2 += 300, F3 += 500 when phone is /k/.
