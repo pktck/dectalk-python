@@ -27,6 +27,23 @@ Currently modelled (with the helper that consumes each):
 - ``spc_pkt_save`` (the SPC index-chain helpers
   ``save_index`` / ``check_index`` / ``adjust_index`` /
   ``adjust_allo`` / ``set_index_allo`` / ``free_index``)
+- ``sprate`` / ``halting`` / ``modeflag`` (synthesis pipeline)
+- ``pitch_delta`` (``cmd_init`` engine-wide pitch offset)
+
+Field defaults mirror C zero-initialisation of the malloc'd
+``share_data`` struct, with two intentional exceptions:
+
+1. ``lang_curr`` defaults to :data:`LANG_none` (``0xFFFF``) — the
+   "no language selected yet" sentinel that
+   :func:`dectalk.kernel.default_lang.default_lang` checks for.
+   In C this is set explicitly during kernel start-up before any
+   subsystem reports in.
+2. ``spc_sync`` uses :class:`DtSemaphore`, which initialises the
+   counter to 0 internally (matching the C ``DT_SEMAPHORE``
+   zero-init).
+
+See :func:`test_kernel_ksd_t_defaults` for the invariant tests
+that lock these defaults in.
 
 The pipe-handle fields use ``object | None`` because pipe internals
 aren't part of the bit-parity oracle — what matters is that the
@@ -105,6 +122,12 @@ class KsdT:
     # Mode flag (MODE_CITATION / MODE_LATIN / ... bits from esc.h).
     # Read by phalloph and others to decide rule-firing.
     modeflag: int = 0
+    # Pitch delta in semitone units (volatile int in C). Set to 35 by
+    # ``cmd_init`` on every full reset and adjusted by ``[:dv]`` /
+    # ``[:tonecharact]`` commands.  Cited from
+    # ``src/dapi/src/cmd/cmd_init.c`` line 92:
+    # ``pKsd_t->pitch_delta = 35;``
+    pitch_delta: int = 0
 
 
 __all__ = ["KsdT"]
