@@ -47,7 +47,7 @@ from typing import Final
 
 # fmt: off
 # Row labels reflect the C comments; index 0 is silence/initial.
-Cibles_MALE: Final[tuple[tuple[int, ...], ...]] = (  # noqa: N816 -- name mirrors C
+Cibles_MALE: Final[tuple[tuple[int, ...], ...]] = (
     # F_SI (0): silence/initial
     (  0, 0, 0, 0, 0, 0, 0, 0, 0,  -1,  -1,  -1, 290, -1, -1, -1, 0),
     # F_A (1)
@@ -136,7 +136,7 @@ Cibles_MALE: Final[tuple[tuple[int, ...], ...]] = (  # noqa: N816 -- name mirror
 """French male voice per-phoneme target table (``[42][17]``)."""
 
 
-Cibles_FEMALE: Final[tuple[tuple[int, ...], ...]] = (  # noqa: N816 -- name mirrors C
+Cibles_FEMALE: Final[tuple[tuple[int, ...], ...]] = (
     # row 0 -- empty silence stub (C source leaves comment blank).
     (  0, 0, 0, 0, 0, 0, 0, 0, 0,   0,   0,   0,   0,  0,  0,  0, 0),
     # F_A (1) -- "fA"
@@ -244,4 +244,4 @@ def cibles_flat(cibles: tuple[tuple[int, ...], ...]) -> list[int]:
     return flat
 
 
-__all__ = ["Cibles_FEMALE", "Cibles_MALE", "N_PARAM_FR", "cibles_flat"]
+__all__ = ["N_PARAM_FR", "Cibles_FEMALE", "Cibles_MALE", "cibles_flat"]
