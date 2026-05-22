@@ -6,25 +6,33 @@ file tracks actual progress on `dev`.
 
 ## Session handoff — read first
 
-**Current `dev` HEAD**: `fbd679d` — *ph: audit init_phclause defaults
-vs C oracle (issue #74)*.
+**Current `dev` HEAD**: `da81603` — *docs: F0 contour re-audit on
+dev head c829010 (issue #75)*.
 
-PR #2 (workflow overhaul) merged on 2026-05-16. 45+ subsequent PRs
-landed against `dev`, mostly Phase E PH/HLSyn ports and the
-audit-driven follow-up fixes from PR #60. The repository now
-operates under the issue-driven agent-dispatch protocol documented
-in `CLAUDE.md`; every new port has a corresponding GitHub issue.
+The workflow overhaul (merged 2026-05-16) is well in the rear-view
+mirror; ~30 additional PRs landed in the 2026-05-21/22 burst,
+including the per-language `gettar` dispatch heads (UK/FR/GR/LA/SP),
+the `phdraw` once-per-phone setup, the inline-command routing fix,
+the `[:rate N]` WPM semantics correction, and a wave of diagnostic
+audit docs that catalogue every remaining gap to bit-parity. The
+repository operates under the issue-driven agent-dispatch protocol
+documented in `CLAUDE.md`; every new port has a corresponding GitHub
+issue.
 
 ### Phase E (PH/VTM) — active work
 
-The pure-Python `_speak_via_python_full` path now runs end-to-end:
+The pure-Python `_speak_via_python_full` path runs end-to-end:
 `parse()` → `phinton` (intonation) → `us_phtiming` (allophone
 durations) → `phsettar` (target areas) → `phdraw` (per-frame Klatt
-parameter emission, partial) → `parstochip` → `LLFrame` → `hlsyn`.
-The pipeline produces non-flat audio with F0 events, but
-bit-parity vs `libtts_us.so` is **not yet reached** — see the
-divergence audit at `docs/parity-divergence-audit.md` (from PR #60)
-and follow-up issues #68, #69, #70, #71, #72, #75.
+parameter emission) → `parstochip` → `LLFrame` → `hlsyn`. Trailing
+silence is now padded by `api/speak.py`. The pipeline produces
+non-flat audio with F0 events, but bit-parity vs `libtts_us.so` is
+**not yet reached** — the F0 contour re-audit at the bottom of
+`docs/parity-divergence-audit.md` (#75, 2026-05-22) measures
+`OUT_T0` std at 5-6 Hz vs C oracle 60-83 Hz and traces the gap to
+`us_phalloph` not being wired into the full pipeline (Issue G /
+#121) and `pDph_t.assertiveness` defaulting to zero (Issue H /
+#122).
 
 Major Phase E ports landed (in rough order):
 
@@ -32,94 +40,130 @@ Major Phase E ports landed (in rough order):
   `getbegtar` / `getendtar` / `make_dip` / `setloc` / `phsettar`,
   plus the `us_forw_smooth_rules` / `us_back_smooth_rules` /
   `us_special_rules` / `us_special_coartic` smoothing layer and
-  the `tarnex` coarticulation block. Non-US locus tables
-  (UK/GR/LA/SP/FR) ported; per-language `gettar` dispatch heads
-  open as issues #78-#82.
-- **`ph_sort.c`**: `all_phsort` + `fr_phsort` (allophone sort).
+  the `tarnex` coarticulation block. Non-US locus tables ported.
+  Per-language `gettar` dispatch heads **all landed**: `uk_gettar`
+  (#106, issue #78), `fr_gettar` (#104, #82), `gr_gettar` (#111,
+  #79), `la_gettar` (#112, #80), `sp_gettar` (#110, #81).
+- **`ph_sort.c`**: `all_phsort` + `fr_phsort` (commit `7cda308`)
+  and wiring into `_speak_via_python_full` + HR/SR scalar load
+  (#105 / `909c5ff`).
 - **`ph_inton.c`**: full `phinton` US English path (~2080-line C
   function); the `goto skiprules` Rule-9 semantics were corrected
-  in PR #76. Rule 4 nesting bug fixed in PR #56.
-- **`ph_setallofeats`** stop-gap: `allofeats[]` is now derived from
-  the ARPABET front-end so `phinton` emits F0 events. Full chain
-  port tracked as issue #69.
+  in #76, Rule 4 nesting bug fixed in #56.
+- **`ph_setallofeats`** stop-gap: `allofeats[]` is derived from
+  the ARPABET front-end (#66) so `phinton` emits Rule 2 stress
+  impulses and Rule 6 final-fall gestures. Rules 1 / 3 / 4 (the
+  hat-rise/fall STEP/GLIDE plateau) still don't fire because
+  `us_phalloph` isn't wired — see Issue #121.
 - **`ph_timng.c`**: `us_phtiming` (per-allophone duration rules)
   and `init_timing` wiring.
 - **`ph_draw.c`**: skeleton, HLSyn area loop, initial-silence
-  anticipation (lines 929-1244), GEN_SIL ending silence,
-  regular-phoneme `dcstep` tracker, per-frame HLSyn state machine
-  (lines 2350-4300), lateral AV reduction + F3/F2 floor. The
-  remaining regular-phoneme block (C 1594-2398) is tracked as
-  issue #71.
+  anticipation (lines 929-1244, `1713f9e`), GEN_SIL ending
+  silence + regular-phoneme `dcstep` tracker (#61, `1e93aca`),
+  per-frame HLSyn state machine (lines 2350-4300), lateral AV
+  reduction + F3/F2 floor, once-per-phone setup + FVOWEL
+  A2-jamming (#92, issue #71).
 - **`ph_drwt02.c`**: `pht0draw` MALE F0 contour generator and
   FEMALE branch (lines 1508-2167).
 - **`ph_alloph.c`**: `us_phalloph` (ENGLISH_US allophonic
-  substitution pass).
+  substitution pass) **ported but not yet called** from
+  `_speak_via_python_full`; wiring tracked as issue #121.
 - **HLSyn front-end**: `circuit.c` (`SpeechCircuit` aerodynamic
   solver), `hlframe.c` (HL → LL mapper + `InitializeHLSynthesizer`),
   `nasalf1x.c` (`SetNasals_f1x` nasal pole-zero solver).
 - **VTM**: US-Paul `SPD_CHIP` defaults and `VtmT NOM_*` fields.
-- **CMD**: `par_match_rule` + `par_process_input` (closes #38).
+- **CMD**: `par_match_rule` + `par_process_input` (closes #38);
+  `[:rate N]` semantics corrected to absolute WPM rather than
+  percentage (#109, `f9d05f4`).
 
 Wiring + adapters:
 
 - `api/speak.py` routes `_speak_via_python_full` through `parse()`
   so inline `[:rate N]` / `[:nb]` directives mutate per-segment
-  state instead of being spelled out as words (PR #67, issue #64).
+  state instead of being spelled out as words (#67, issue #64);
+  emits a trailing-silence pad on the full-pipeline path (#102,
+  issue #72).
 - `parstochip` → `LLFrame` adapter + per-frame driver loop landed
-  (PR #25); seeds `DphT.fnscale` to 4096 (Q12 unity) so formant
-  trajectories survive scaling.
+  (#25); seeds `DphT.fnscale` to 4096 (Q12 unity).
 - `lineartilt` LUT + `send_pars` one-frame delay buffer ported.
-- `ARPABET → USPhoneme` alias gap fixed (PR #65); the FONIX enum
-  names `HX`/`LL`/`NX` now map to `HH`/`L`/`NG`, recovering the
+- `ARPABET → USPhoneme` alias gap fixed (#65); the FONIX enum
+  names `HX`/`LL`/`NX` map to `HH`/`L`/`NG`, recovering the
   ~38% of phones previously dropped on common inputs.
 
-### Outstanding `NotImplementedError` shims (11 modules)
+### Outstanding `NotImplementedError` shims (7 modules)
 
-From `grep -rl NotImplementedError src/dectalk/`:
+`grep -rln "raise NotImplementedError" src/dectalk/` lists only
+seven real shims; the earlier list also included files whose only
+remaining `NotImplementedError` mention sits in a docstring rather
+than a `raise` (now cleared from `ph/all_phsort.py`,
+`ph/fr_phsort.py`, `ph/phdraw.py`, and `hlsyn/hlframe.py`):
 
 - `src/dectalk/api/speak.py` (architectural; full Python path
-  exists but the shim guards a code path not yet active by default)
+  exists but the shim guards a code path not yet active by
+  default).
 - `src/dectalk/cmd/par_match_rule.py`,
   `src/dectalk/cmd/par_process_input.py` (residual shims after
-  PR #47 — verify whether the C-faithful path is reachable)
-- `src/dectalk/ph/all_phsort.py`, `fr_phsort.py`,
-  `make_dip.py`, `phdraw.py`, `getbegtar.py`, `getendtar.py`,
-  `gettar.py`
-- `src/dectalk/hlsyn/hlframe.py` (residual shim after PR #46)
+  #47 — verify whether the C-faithful path is reachable).
+- `src/dectalk/ph/gettar.py`, `getbegtar.py`, `getendtar.py`,
+  `make_dip.py` (legacy dispatch heads superseded by the
+  `us_gettar` chain but kept as parity test anchors).
 
-`docs/TASKS.md` still lists these. Run
-`uv run python scripts/refresh_tasks.py` to re-sync after the
-next batch of ports lands; entries for modules whose
-`NotImplementedError` is dead code (gated branches the test
-suite never reaches) can also be retired.
+`docs/TASKS.md` is regenerated from this set by
+`scripts/refresh_tasks.py` and currently matches.
 
 ### Audit issues filed against current `dev`
 
-Diagnostic audits queued for follow-up:
+Doc-only diagnostic audits landed in this burst (each is a
+fix-target source for subsequent ports):
 
-- #83 — VTM-stage divergence vs C oracle.
-- #84 — `KsdT` defaults vs C oracle.
-- #85 — `SpdChip` US-Paul voice defaults vs C.
-- #86 — Frame-level Klatt parameter parity audit
-  (5-prompt micro-corpus).
-- #87 — `parstochip` HL → Klatt frame translator.
-- #89 — LTS divergences vs C oracle.
-- #90 — kernel text-normalization vs C oracle.
-- #91 — verify `hlsyn` frame parity hasn't regressed since
-  Phase 1.
+- **#74 — `init_phclause` defaults vs C oracle** (#77, audit
+  embedded in commit `fbd679d`).
+- **#75 — F0 contour follow-up + 2026-05-22 re-audit** (#93
+  `6a88f29`; #120 `da81603`). Identifies #121 + #122 as the
+  next two PH-stage fixes needed to close the F0 dynamic-range
+  gap.
+- **#83 — VTM-stage divergence vs C oracle** (#103, audit doc
+  `docs/vtm-divergence-audit.md`).
+- **#84 — `KsdT` defaults vs C oracle** (#100).
+- **#85 — `SpdChip` US-Paul voice defaults vs C** (#107
+  `1442919`).
+- **#86 — Frame-level Klatt parameter parity audit** (#108,
+  `docs/frame-parity-audit-issue86.md`).
+- **#87 — `parstochip` HL → Klatt frame translator** (#98,
+  `docs/c_audit/parstochip.md`).
+- **#89 — LTS divergences vs C oracle** (#99,
+  `docs/c_audit/lts.md`).
+- **#90 — kernel text-normalization vs C oracle** (#101,
+  `docs/c_audit/kernel_textnorm.md`).
+- **#91 — verify `hlsyn` frame parity hasn't regressed** (#95,
+  `docs/hlsyn-parity-verification-issue91.md`).
+
+Open follow-up port issues filed from the F0 re-audit:
+
+- **#121** — Wire `us_phalloph` into `_speak_via_python_full` so
+  FHAT_BEGINS / FHAT_ENDS are emitted from stress patterns.
+- **#122** — Load `pDph_t.assertiveness` from the SPD chip so
+  Rule 6 final-fall gestures carry non-zero magnitude.
 
 ### Suggested next steps for a fresh session
 
-1. Pick an audit issue (#83-#91) — these are short, scoped, and
-   produce concrete fix-targets for subsequent port issues.
-2. Or pick a port issue from the "Outstanding `NotImplementedError`
-   shims" list above; the `ph/` shims are leaf-ish and can land
-   without blocking the others.
-3. Follow the issue-driven dispatch protocol in `CLAUDE.md`:
+1. Land **#121** (wire `us_phalloph`) — it's the single highest-
+   leverage Phase E gap. The Python port already exists; the
+   patch is a few lines in `api/speak.py:_render_clause_full`
+   between `all_phsort` and `ph_setallofeats`.
+2. Then **#122** (assertiveness load) — small, but Issue G's
+   FHAT bits unmask the zero-magnitude bug in Rule 6.
+3. Pick an open audit issue's fix-target (e.g. the `KsdT` /
+   `SpdChip` mismatches identified in #84 / #85) — these are
+   short, scoped, and each closes a measurable parity gap.
+4. Or pick a residual `NotImplementedError` shim from the list
+   above; the `cmd/` shims are the most ambiguous (verify
+   reachability before porting).
+5. Follow the issue-driven dispatch protocol in `CLAUDE.md`:
    create a GitHub issue (or reuse an existing one), branch
-   `claude/<slug>-issue-<N>`, agent prompt cites the issue number,
-   PR body has `Closes #N`.
-4. After every push: subscribe to the PR via
+   `claude/<slug>-issue-<N>`, agent prompt cites the issue
+   number, PR body has `Closes #N`.
+6. After every push: subscribe to the PR via
    `mcp__github__subscribe_pr_activity` and kick off a
    background poll for green CI. See `CLAUDE.md` §"CI watch".
 
@@ -134,13 +178,17 @@ Python pipeline (`kernel` → `cmd` → `lts` → `ph` → `vtm` → `hlsyn`)
 instead of `dectalk._capi`'s ctypes wrapper around `libtts_us.so`.
 
 Under `DECTALK_DISABLE_CAPI=1` + `DECTALK_FULL_PIPELINE=1` the
-pipeline now runs end-to-end and produces audio (no
+pipeline runs end-to-end and produces audio (no
 `NotImplementedError` on the hot path), but bit-parity is **not yet
-reached**. The PR #60 audit found 0/15 of the corpus prompts at
+reached**. The PR #60 baseline measured 0/15 corpus prompts at
 bit-parity, with mean |Δsamples| ≈ 5856 (~531 ms) and worst-case
-~1.8 s. After PR #65 (alias gap), PR #66 (`allofeats[]`), and PR
-#67 (inline-command routing) the audit numbers will have shifted;
-issue #68 tracks the re-audit.
+~1.8 s. The 2026-05-22 F0 contour re-audit (#75, end of
+`docs/parity-divergence-audit.md`) re-measured against dev head
+`c829010` on a 3-prompt micro-corpus: `OUT_T0` std is 5-6 Hz vs C
+oracle 60-83 Hz, sample counts diverge by ~10 K-13 K (Py ~70-80 %
+longer than C). The two next fixes are #121 (wire `us_phalloph` so
+the hat-rise/fall plateau fires) and #122 (load `assertiveness`
+from the SPD chip so Rule 6 final-falls carry magnitude).
 
 The `_capi` path remains the **hybrid** state: `dectalk.speak()`
 and `dectalk.to_wav()` go through the C library for bit-identical
@@ -309,10 +357,12 @@ approximate pipeline uses the English-tuned Klatt frame table for
 synthesis. Native-quality non-English speech needs language-specific
 phoneme→formant tables (nasal vowel formants for French,
 front-rounded vowel formants for German, etc.). The per-language
-locus tables (`gr_locus_tables`, `fr_locus_tables`, …) are already
-ported as part of the Phase E `ph_setar` chain; the
-language-specific `*_gettar` dispatch heads are tracked as issues
-#78-#82.
+locus tables (`gr_locus_tables`, `fr_locus_tables`, …) and the
+matching `*_gettar` dispatch heads (`uk_gettar` / `fr_gettar` /
+`gr_gettar` / `la_gettar` / `sp_gettar`, issues #78-#82) are all
+ported as part of the Phase E `ph_setar` chain. What's still
+needed is the language-specific phoneme → Klatt frame table on
+top of those locus tables.
 
 ## How to run
 
