@@ -1,14 +1,15 @@
 """Behavioral unit tests for the ``par_process_input`` implementation.
 
 These tests exercise the actual driver-loop logic using minimal synthetic
-rule tables where needed. The function raises NotImplementedError when
-tables are absent; the tests in this module verify both the guard paths
-and the table-driven paths with trivially crafted rule data.
+rule tables where needed. After the par_pars1.c port the function
+defaults to the embedded ``par_rule2.h`` tables instead of raising
+NotImplementedError; the tests verify both the guard paths and the
+table-driven paths with trivially crafted rule data.
 
 The tests cover:
 - Invalid rule section guard (rule > num_rule_sections)
 - None input_array / new_input / output_array returns FAIL
-- NotImplementedError without tables (tables_available=False)
+- Embedded-tables fallback (no kwargs needed for the rule walk)
 - BIN_STOP terminates the inner loop
 - Output NUL-terminator is written on empty input
 - Language flag skip (rule filtered by in_lang_flag)
@@ -19,8 +20,6 @@ The tests cover:
 from __future__ import annotations
 
 import struct
-
-import pytest
 
 from dectalk.cmd.par_bin_codes import BIN_DICT_MISS, BIN_STOP
 from dectalk.cmd.par_match_rule import ActionFunc
@@ -143,26 +142,31 @@ def test_none_input_returns_fail() -> None:
     assert ret.value == FAIL
 
 
-def test_notimplemented_without_tables() -> None:
-    """Without tables, the deferred rule-driver loop raises NotImplementedError."""
+def test_runs_with_embedded_tables_when_none_passed() -> None:
+    """Without tables, the rule-driver loop falls back to embedded data.
+
+    par_rule_data exposes ``RULE_DATA_TABLE`` / ``RULE_INDEX_TABLE`` /
+    ``RULE_SECTIONS`` extracted from ``par_rule2.h`` so callers no
+    longer need to pass them. The function should return without
+    raising NotImplementedError now that the par_pars1.c port is in.
+    """
     ret = ReturnValue()
-    with pytest.raises(NotImplementedError, match="par_process_input rule-driver"):
-        par_process_input(
-            input_array=bytearray(b"hi\x00"),
-            new_input=bytearray(64),
-            output_array=bytearray(64),
-            dict_hit_array=bytearray(64),
-            input_indexes=_make_indexes(),
-            new_input_indexes=_make_indexes(),
-            output_indexes=_make_indexes(),
-            in_lang_flag=0,
-            in_mode_flag=0,
-            rule=0,
-            go_until=0,
-            match_array=MatchArrays(),
-            ret_value=ret,
-            num_rule_sections=10,
-        )
+    result = par_process_input(
+        input_array=bytearray(b"hi\x00"),
+        new_input=bytearray(64),
+        output_array=bytearray(64),
+        dict_hit_array=bytearray(64),
+        input_indexes=_make_indexes(),
+        new_input_indexes=_make_indexes(),
+        output_indexes=_make_indexes(),
+        in_lang_flag=0xFFFF_FFFF,
+        in_mode_flag=0xFFFF_FFFF,
+        rule=0,
+        go_until=0,
+        match_array=MatchArrays(),
+        ret_value=ret,
+    )
+    assert result is ret
 
 
 def test_bin_stop_terminates_inner_loop() -> None:

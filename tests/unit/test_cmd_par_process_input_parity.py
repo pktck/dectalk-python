@@ -271,57 +271,48 @@ def test_invalid_message_matches_c_source() -> None:
 
 
 def test_valid_rule_index_proceeds_past_guard() -> None:
-    """A valid rule index proceeds past the guard into the deferred loop.
+    """A valid rule index runs the embedded-table rule walk.
 
-    Without tables the function raises NotImplementedError after
-    completing the deterministic preamble (copy_index_list, _init_state).
+    After the par_pars1.c port, the deterministic preamble passes
+    through into the full rule-driver loop using the compiled tables
+    embedded in :mod:`dectalk.cmd.par_rule_data` (extracted from
+    ``par_rule2.h``). No NotImplementedError.
     """
     ret = ReturnValue()
-    with pytest.raises(NotImplementedError, match="par_process_input rule-driver"):
-        par_process_input(
-            input_array=bytearray(b"hello\x00"),
-            new_input=bytearray(64),
-            output_array=bytearray(64),
-            dict_hit_array=bytearray(64),
-            input_indexes=[IndexData()] * 8,
-            new_input_indexes=[IndexData()] * 8,
-            output_indexes=[IndexData()] * 8,
-            in_lang_flag=0,
-            in_mode_flag=0,
-            rule=0,
-            go_until=0,
-            match_array=MatchArrays(),
-            ret_value=ret,
-            num_rule_sections=10,
-        )
+    result = par_process_input(
+        input_array=bytearray(b"hello\x00"),
+        new_input=bytearray(64),
+        output_array=bytearray(64),
+        dict_hit_array=bytearray(64),
+        input_indexes=[IndexData()] * 8,
+        new_input_indexes=[IndexData()] * 8,
+        output_indexes=[IndexData()] * 8,
+        in_lang_flag=0xFFFF_FFFF,
+        in_mode_flag=0xFFFF_FFFF,
+        rule=0,
+        go_until=0,
+        match_array=MatchArrays(),
+        ret_value=ret,
+    )
+    assert result is ret
 
 
-def test_notimplemented_cites_c_source_lines() -> None:
-    """The NotImplementedError message names par_pars1.c when tables absent."""
-    ret = ReturnValue()
-    try:
-        par_process_input(
-            input_array=bytearray(b"x\x00"),
-            new_input=bytearray(16),
-            output_array=bytearray(16),
-            dict_hit_array=bytearray(16),
-            input_indexes=[IndexData()] * 4,
-            new_input_indexes=[IndexData()] * 4,
-            output_indexes=[IndexData()] * 4,
-            in_lang_flag=0,
-            in_mode_flag=0,
-            rule=0,
-            go_until=0,
-            match_array=MatchArrays(),
-            ret_value=ret,
-            num_rule_sections=5,
-        )
-    except NotImplementedError as exc:
-        msg = str(exc)
-        assert "par_pars1.c" in msg
-        assert "deferred" in msg
-    else:
-        pytest.fail("expected NotImplementedError")
+def test_embedded_rule_tables_cite_par_rule2() -> None:
+    """par_rule_data module exposes the par_rule2.h tables."""
+    from dectalk.cmd.par_rule_data import (  # noqa: PLC0415
+        NUM_RULE_SECTIONS,
+        NUM_RULES,
+        RULE_DATA_TABLE,
+        RULE_INDEX_TABLE,
+        RULE_SECTIONS,
+    )
+
+    # par_rule2.h header constants.
+    assert NUM_RULE_SECTIONS == 3
+    assert NUM_RULES == 217
+    assert RULE_SECTIONS == (0, 11, 78)
+    assert len(RULE_INDEX_TABLE) == NUM_RULES
+    assert len(RULE_DATA_TABLE) == 10492
 
 
 def test_process_input_state_input_length_is_two_thirds() -> None:

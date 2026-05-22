@@ -287,48 +287,47 @@ def test_par_match_rule_marks_fatal_fail_for_null_pointer() -> None:
     assert ret.value == FATAL_FAIL
 
 
-def test_par_match_rule_raises_not_implemented_for_deferred_walk() -> None:
-    """Without tables, a sub-state opcode (> BIN_SETS) raises NotImplementedError."""
+def test_par_match_rule_uses_embedded_tables_when_none_passed() -> None:
+    """Without explicit tables, sub-state opcodes still dispatch.
+
+    After the par_pars1.c port, ``par_rule_data`` and
+    ``par_perform_action_funcs`` provide module-level defaults so the
+    full rule-walk no longer raises NotImplementedError. A 0x14
+    (BIN_COPY) byte routes through the embedded ERROR_func2 slot.
+    """
     ret = ReturnValue()
-    # bytes([0x14, 0x00]): 0x14 is BIN_COPY which is > BIN_SETS (0x13) and requires
-    # perform_action_funcs to dispatch to. Without tables it must raise NotImplementedError.
-    with pytest.raises(NotImplementedError, match="deferred"):
-        par_match_rule(
-            current_rule=bytes([0x14, 0x00]),
-            state=BIN_END_OF_RULE,
-            input_array=bytearray(b"hi\x00"),
-            output_array=bytearray(256),
-            input_indexes=[IndexData()] * 8,
-            output_indexes=[IndexData()] * 8,
-            match_array=MatchArrays(),
-            ret_value=ret,
-            dict_state_flag=0,
-        )
+    par_match_rule(
+        current_rule=bytes([0x14, 0x00]),
+        state=BIN_END_OF_RULE,
+        input_array=bytearray(b"hi\x00"),
+        output_array=bytearray(256),
+        input_indexes=[IndexData()] * 8,
+        output_indexes=[IndexData()] * 8,
+        match_array=MatchArrays(),
+        ret_value=ret,
+        dict_state_flag=0,
+    )
 
 
-def test_par_match_rule_notimplemented_cites_c_source() -> None:
-    """NotImplementedError for sub-state dispatch mentions par_pars1.c."""
-    ret = ReturnValue()
-    # 0x14 (BIN_COPY) > BIN_SETS requires perform_action_funcs;
-    # without it raises NotImplementedError.
-    try:
-        par_match_rule(
-            current_rule=bytes([0x14, 0x00]),
-            state=BIN_END_OF_RULE,
-            input_array=bytearray(b"hi\x00"),
-            output_array=bytearray(256),
-            input_indexes=[IndexData()] * 8,
-            output_indexes=[IndexData()] * 8,
-            match_array=MatchArrays(),
-            ret_value=ret,
-            dict_state_flag=0,
-        )
-    except NotImplementedError as exc:
-        msg = str(exc)
-        assert "par_pars1.c" in msg
-        assert "deferred" in msg
-    else:
-        pytest.fail("expected NotImplementedError")
+def test_par_match_rule_embedded_tables_are_available() -> None:
+    """The module-level fallback tables are importable from par_rule_data."""
+    from dectalk.cmd.par_perform_action_funcs import PERFORM_ACTION_FUNCS  # noqa: PLC0415
+    from dectalk.cmd.par_rule_data import (  # noqa: PLC0415
+        NUM_RULE_SECTIONS,
+        NUM_RULES,
+        RULE_DATA_TABLE,
+        RULE_INDEX_TABLE,
+        RULE_SECTIONS,
+    )
+
+    # par_rule2.h: num_rule_sections=3, num_rules=217, len(rule_data_table)=10492.
+    assert NUM_RULE_SECTIONS == 3
+    assert NUM_RULES == 217
+    assert len(RULE_SECTIONS) == NUM_RULE_SECTIONS
+    assert len(RULE_INDEX_TABLE) == NUM_RULES
+    assert len(RULE_DATA_TABLE) == 10492
+    # Dispatch table is sized to 0x20 entries (5-bit opcode space).
+    assert len(PERFORM_ACTION_FUNCS) == 0x20
 
 
 def test_match_rule_inputs_dataclass_carries_signature() -> None:

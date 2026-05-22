@@ -17,8 +17,11 @@ The C source references two file-scope globals for the macro path:
 * ``perform_action_funcs`` -- function dispatch table indexed by state.
 
 The Linux ``_capi`` path provides the bit-identical output today.
-When the tables are not provided, the function raises
-:class:`NotImplementedError` for sub-states that require them.
+When the data tables are not passed, the compiled rule bytecode
+embedded in :mod:`dectalk.cmd.par_rule_data` and the dispatch
+table in :mod:`dectalk.cmd.par_perform_action_funcs` are used as
+defaults — extracted from ``par_rule2.h`` and the ``perform_action_funcs``
+file-static, respectively.
 """
 
 from __future__ import annotations
@@ -48,6 +51,12 @@ from dectalk.cmd.par_bin_codes import (
 )
 from dectalk.cmd.par_copy_string_data import par_copy_string_data
 from dectalk.cmd.par_match_string import par_match_string
+from dectalk.cmd.par_rule_data import (
+    RULE_DATA_TABLE as _DEFAULT_RULE_DATA_TABLE,
+)
+from dectalk.cmd.par_rule_data import (
+    RULE_INDEX_TABLE as _DEFAULT_RULE_INDEX_TABLE,
+)
 from dectalk.cmd.par_structs import IndexData, MatchArrays, RangeValue, ReturnValue
 from dectalk.cmd.rule_states import END_OF_STRING, FAIL, FATAL_FAIL, OPT_FAIL, SUCCESS
 
@@ -172,15 +181,16 @@ def par_match_rule(  # noqa: PLR0911, PLR0912, PLR0915
     dict_state_flag: int,
     *,
     rule_data_table: bytes | None = None,
-    rule_index_table: list[int] | None = None,
-    perform_action_funcs: list[ActionFunc] | None = None,
+    rule_index_table: list[int] | tuple[int, ...] | None = None,
+    perform_action_funcs: list[ActionFunc] | tuple[ActionFunc, ...] | None = None,
 ) -> int:
     r"""Match one compiled rule against the current input window.
 
     Faithful translation of the C function at par_pars1.c lines 2016-2430.
-    When all tables are provided, executes the full rule-walking loop.
-    When tables are None, raises NotImplementedError for sub-states
-    that require the BIN_MACRO or action-dispatch path.
+    Executes the full rule-walking loop. When ``rule_data_table`` /
+    ``rule_index_table`` / ``perform_action_funcs`` are not passed, the
+    embedded defaults from :mod:`dectalk.cmd.par_rule_data` and
+    :mod:`dectalk.cmd.par_perform_action_funcs` are used.
 
     Args:
         current_rule: Compiled rule bytes. ``None`` short-circuits
@@ -197,19 +207,15 @@ def par_match_rule(  # noqa: PLR0911, PLR0912, PLR0915
             (no-op), matching the ``SANITY_CHECKING`` guard.
         dict_state_flag: ``1`` when called from the dictionary path.
         rule_data_table: Raw compiled-rule bytes (file-scope global in C).
+            Defaults to :data:`par_rule_data.RULE_DATA_TABLE`.
         rule_index_table: Per-rule byte offsets (file-scope global in C).
+            Defaults to :data:`par_rule_data.RULE_INDEX_TABLE`.
         perform_action_funcs: Action-function dispatch table (file-scope
-            in C). Required for states other than ``BIN_END_OF_RULE`` and
-            ``BIN_MACRO``.
+            in C). Defaults to :data:`par_perform_action_funcs.PERFORM_ACTION_FUNCS`.
 
     Returns:
         The resulting ``value`` field of ``ret_value`` (or ``SUCCESS``
         when ``ret_value`` is ``None``).
-
-    Raises:
-        NotImplementedError: When the BIN_MACRO path or action-dispatch
-            path is reached but ``rule_data_table``/``rule_index_table``/
-            ``perform_action_funcs`` were not provided.
     """
     # SANITY_CHECKING block: par_pars1.c lines 2048-2066.
     if ret_value is None:
@@ -218,6 +224,23 @@ def par_match_rule(  # noqa: PLR0911, PLR0912, PLR0915
     if current_rule is None or input_array is None or output_array is None or match_array is None:
         ret_value.value = FATAL_FAIL
         return FATAL_FAIL
+
+    # Fall back to the embedded compiled tables (par_rule2.h) and the
+    # dispatch table (par_perform_action_funcs) when the caller did
+    # not pass explicit overrides. Mirrors the C globals at par_pars1.c
+    # file scope. ``par_perform_action_funcs`` is imported lazily to
+    # avoid an import cycle (it depends on ``ActionFunc`` from this
+    # module).
+    if rule_data_table is None:
+        rule_data_table = _DEFAULT_RULE_DATA_TABLE
+    if rule_index_table is None:
+        rule_index_table = _DEFAULT_RULE_INDEX_TABLE
+    if perform_action_funcs is None:
+        from dectalk.cmd.par_perform_action_funcs import (  # noqa: PLC0415
+            PERFORM_ACTION_FUNCS,
+        )
+
+        perform_action_funcs = PERFORM_ACTION_FUNCS
 
     # Local variables (par_pars1.c lines 2024-2041).
     new_operation: int = BIN_END_OF_RULE
@@ -260,11 +283,9 @@ def par_match_rule(  # noqa: PLR0911, PLR0912, PLR0915
     # BIN_MACRO branch (par_pars1.c lines 2112-2171)
     # -----------------------------------------------------------------------
     if state == BIN_MACRO:
-        if rule_data_table is None or rule_index_table is None:
-            raise NotImplementedError(
-                "par_match_rule BIN_MACRO path (par_pars1.c lines 2112-2171) is "
-                "deferred -- rule_data_table and rule_index_table are required."
-            )
+        # rule_data_table / rule_index_table are guaranteed non-None
+        # here: the preamble falls back to the embedded compiled tables
+        # from ``par_rule_data`` when the caller does not supply them.
         rule_p = new_ret.rule
         rule_p += 1  # skip state identifier
         next_rule_number = _get_short(current_rule, rule_p)
@@ -387,11 +408,8 @@ def par_match_rule(  # noqa: PLR0911, PLR0912, PLR0915
                 new_ret.input_offset += num_chars_matched
             else:
                 # Recursively call par_match_rule with the new action state.
-                if perform_action_funcs is None:
-                    raise NotImplementedError(
-                        "par_match_rule sub-state dispatch (par_pars1.c lines 2260-2270) is "
-                        "deferred -- perform_action_funcs table is required."
-                    )
+                # perform_action_funcs is guaranteed non-None here (falls
+                # back to the module default in the preamble above).
                 par_match_rule(
                     current_rule,
                     new_operation,
@@ -450,12 +468,9 @@ def par_match_rule(  # noqa: PLR0911, PLR0912, PLR0915
             return FATAL_FAIL
 
         # Perform the action for this state (par_pars1.c lines 2331-2341).
+        # perform_action_funcs is guaranteed non-None here (falls back
+        # to the module default in the preamble above).
         if state != BIN_END_OF_RULE:
-            if perform_action_funcs is None:
-                raise NotImplementedError(
-                    "par_match_rule action dispatch (par_pars1.c lines 2331-2341) is "
-                    "deferred -- perform_action_funcs table is required."
-                )
             perform_action_funcs[state](
                 current_rule,
                 bytes(input_array),
@@ -517,8 +532,7 @@ def par_match_rule_validate(
 
     Faithful translation of par_pars1.c lines 2049-2066. Useful for
     tests that want to exercise the deterministic validation logic
-    without triggering :class:`NotImplementedError` in
-    :func:`par_match_rule`.
+    without driving the full rule-walk in :func:`par_match_rule`.
 
     Args:
         current_rule: Compiled rule bytes (``None`` triggers FATAL).

@@ -7,16 +7,14 @@ The tests cover:
 - BIN_END_OF_RULE empty rule (NUL-only body = SUCCESS)
 - BIN_END_OF_RULE with a char-match byte that matches / doesn't match
 - BIN_OPTIONAL sub-state that matches and that fails (OPT_FAIL -> SUCCESS)
-- BIN_MACRO path raising NotImplementedError without tables
-- Sub-state > BIN_SETS raising NotImplementedError without tables
+- BIN_MACRO path uses embedded rule tables when none are passed
+- Sub-state > BIN_SETS dispatches via embedded perform_action_funcs
 - perform_action_funcs dispatch at post-loop (side-effect test)
 """
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
-
-import pytest
 
 from dectalk.cmd.par_bin_codes import BIN_END_OF_RULE, BIN_OPTIONAL
 from dectalk.cmd.par_match_rule import ActionFunc, par_match_rule
@@ -131,25 +129,28 @@ def test_char_type_zero_byte_in_rule_terminates_loop() -> None:
     assert result == SUCCESS
 
 
-def test_sub_state_above_bin_sets_without_tables_raises() -> None:
-    """A rule byte > BIN_SETS requires perform_action_funcs/tables.
+def test_sub_state_above_bin_sets_uses_embedded_tables() -> None:
+    """A rule byte > BIN_SETS dispatches via the embedded action table.
 
     BIN_SETS = 0x13; a byte of 0x14 (BIN_COPY) in the rule body enters
-    the else branch and raises NotImplementedError without the tables.
+    the else branch and recurses with the embedded perform_action_funcs
+    (no NotImplementedError after the par_pars1.c port).
     """
     ret = _make_ret()
-    with pytest.raises(NotImplementedError, match="deferred"):
-        par_match_rule(
-            current_rule=bytes([0x14, 0x00]),
-            state=BIN_END_OF_RULE,
-            input_array=bytearray(b"hi\x00"),
-            output_array=bytearray(256),
-            input_indexes=_empty_indexes(),
-            output_indexes=_empty_indexes(),
-            match_array=MatchArrays(),
-            ret_value=ret,
-            dict_state_flag=0,
-        )
+    # No tables passed -> should fall back to embedded defaults and
+    # not raise. The 0x14 byte routes through the recursive sub-state
+    # dispatch; the embedded ERROR_func2 slot makes it a no-op.
+    par_match_rule(
+        current_rule=bytes([0x14, 0x00]),
+        state=BIN_END_OF_RULE,
+        input_array=bytearray(b"hi\x00"),
+        output_array=bytearray(256),
+        input_indexes=_empty_indexes(),
+        output_indexes=_empty_indexes(),
+        match_array=MatchArrays(),
+        ret_value=ret,
+        dict_state_flag=0,
+    )
 
 
 def test_bin_optional_empty_rule_succeeds_and_updates_ret() -> None:
