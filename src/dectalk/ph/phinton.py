@@ -342,32 +342,34 @@ def phinton(phTTS: TtsHandle) -> None:
             _make_f0_command(pDph_t, type_, rule, tar, delay, length_arg, cumdur, n)
 
         # ---- Rule 0: user-specified F0 targets / singing ----
+        # The C source does ``goto skiprules`` here (ph_inton2.c line
+        # 895), which jumps PAST Rules 1-7 but still executes the
+        # cumdur / tcumdur update and Rule 9's dummy-schwa insertion
+        # (which live AFTER the ``skiprules:`` label at line 1944). A
+        # prior revision of this port used ``continue`` here, which
+        # also skipped Rule 9. We now mirror the goto via a flag:
+        # skip the rules block but fall through to the tail.
+        skiprules = False
         if pDph_t.f0mode == PHONE_TARGETS_SPECIFIED or pDph_t.f0mode == SINGING:
             assert pDph_t.user_f0 is not None
             if pDph_t.user_f0[nphon] != 0:
                 _f0(USER, 0, 1000 + pDph_t.user_f0[nphon], 0, 0)
-            cumdur[0] += pDph_t.allodurs[nphon]
-            if (
-                nphon <= (pDph_t.nallotot - 1)
-                and nphon > 0
-                and (pDph_t.allophons[nphon] & 0xFF) != 0
-            ) or nphon == 0:
-                pDph_t.tcumdur += pDph_t.allodurs[nphon]
-            nphon += 1
-            continue
+            skiprules = True
 
         # ---- Hat-rise / hat-end accumulator updates (lines 911-932) ----
-        if pDph_t.number_words > 2:
+        if not skiprules and pDph_t.number_words > 2:
             if struccur & FHAT_BEGINS:
                 pDph_t.had_hatbegin = 1
             if struccur & FHAT_ENDS:
                 pDph_t.had_hatend = 1
 
-        if (struccur & F_IRESET) and pDph_t.hatstate == ON_TOP_OF_HAT:
+        if not skiprules and (struccur & F_IRESET) and pDph_t.hatstate == ON_TOP_OF_HAT:
             if pDph_t.nallotot > (nphon + 10):
                 pDph_t.had_hatend = 1
 
-        if pDph_t.f0mode == NORMAL or pDph_t.f0mode == HAT_F0_SIZES_SPECIFIED:
+        if not skiprules and (
+            pDph_t.f0mode == NORMAL or pDph_t.f0mode == HAT_F0_SIZES_SPECIFIED
+        ):
             if feacur & FSYLL:
                 # ---- Rule 1: hat rise on first stressed syll ----
                 if pDph_t.had_hatbegin:
@@ -631,19 +633,21 @@ def phinton(phTTS: TtsHandle) -> None:
         # US English skips Rule 5 entirely.
 
         # ---- Rule 6: continuation rise on unstressed clause-final syll ----
+        # Skipped when ``goto skiprules`` was taken at Rule 0 above
+        # (PHONE_TARGETS_SPECIFIED / SINGING modes); Rule 9 still runs.
         delayf0 = -5
-        if (struccur & FBOUNDARY) == FQUENEXT:
+        if not skiprules and (struccur & FBOUNDARY) == FQUENEXT:
             # US English (non-GERMAN).
             _f0(IMPULSE, 6, F0_QGesture1, delayf0, 24)
             _f0(IMPULSE, 6, F0_QGesture2, pDph_t.allodurs[nphon], 20)
-        if (struccur & FBOUNDARY) == FCBNEXT:
+        if not skiprules and (struccur & FBOUNDARY) == FCBNEXT:
             delayf0 += NF20MS
             _f0(IMPULSE, 6, F0_CGesture1, 0, 24)
             _f0(IMPULSE, 6, F0_CGesture2, delayf0, 20)
             pDph_t.commacnt += 1
 
         # Dangling ``else if`` -- C source attaches it to FCBNEXT block.
-        elif (struccur & FBOUNDARY) == FPERNEXT:
+        elif not skiprules and (struccur & FBOUNDARY) == FPERNEXT:
             targf0 = F0_GLOTTALIZE
             targf0 = frac4mul(targf0, pDph_t.assertiveness)
             pDph_t.test_targf0 = targf0
@@ -681,7 +685,7 @@ def phinton(phTTS: TtsHandle) -> None:
                 )
 
         # ---- Rule 7: reset baseline at end of sentence ----
-        if phocur == GEN_SIL:
+        if not skiprules and phocur == GEN_SIL:
             if pDphsettar.hat_loc_re_baseline != 0 and pDph_t.nf0tot > 0:
                 # US English (non-British): no STEP emit.
                 pDphsettar.hat_loc_re_baseline = 0
