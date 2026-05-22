@@ -123,8 +123,7 @@ def _extract_paul_8_spdef_values() -> dict[str, int]:
     raw_values: list[int] = [int(m.group(0)) for m in re.finditer(r"-?\d+", body)]
 
     assert len(raw_values) == len(_SPDEF_SLOT_NAMES), (
-        f"paul_8 had {len(raw_values)} integer literals, expected "
-        f"{len(_SPDEF_SLOT_NAMES)}"
+        f"paul_8 had {len(raw_values)} integer literals, expected {len(_SPDEF_SLOT_NAMES)}"
     )
     return dict(zip(_SPDEF_SLOT_NAMES, raw_values, strict=True))
 
