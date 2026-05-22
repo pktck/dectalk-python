@@ -198,13 +198,14 @@ def _us_f3_target(phone: int) -> int:
     return us_femtar[(phone & 0xFF) + 2 * 71]
 
 
-def test_non_us_font_raises_not_implemented() -> None:
-    """UK font (0x1D) raises pending uk_gettar port."""
+def test_non_us_uk_font_raises_not_implemented() -> None:
+    """GR/LA/SP/FR fonts still raise pending their *_gettar port."""
+    # GR font is 0x1C, so build a phone code with that high byte.
     handle = _make_handle(
-        phones=[GEN_SIL, 0x1D00 | 6, GEN_SIL, GEN_SIL],  # UK-font AA
+        phones=[GEN_SIL, 0x1C00 | 6, GEN_SIL, GEN_SIL],  # GR-font AA
         np_idx=FZ,
     )
-    with pytest.raises(NotImplementedError, match=r"UK/GR/LA/SP/FR|uk_/gr_"):
+    with pytest.raises(NotImplementedError, match=r"GR/LA/SP/FR|gr_/la_"):
         gettar(handle, 1)
 
 
