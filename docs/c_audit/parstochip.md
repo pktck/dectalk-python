@@ -16,7 +16,10 @@ Reference C tree: `${DECTALK_SRC}/src/dapi/src/`. Most-cited files:
 
 Reference Python:
 `src/dectalk/ph/parstochip_to_frames.py` and the per-frame
-driver loop in `src/dectalk/api/speak.py` (lines 575–609).
+driver loop in `src/dectalk/api/speak.py` (the
+`parstochip_to_llframe_delayed` call inside
+`_synthesize_speech_arpabet`, currently around line 741 —
+line numbers drift, locate by the function name).
 
 Scope: this is **doc-only research** — no Python code or tests are
 modified. The audit identifies parity divergences in the
@@ -83,7 +86,9 @@ Python correctly does NOT replicate this dead path.
 ## 3. Python current — delayed path (`parstochip_to_llframe_delayed`)
 
 `parstochip_to_frames.py:167`. **This is the path wired into the
-pure-Python pipeline** (`speak.py:608`).
+pure-Python pipeline** (sole live caller is the
+`frames.append(parstochip_to_llframe_delayed(...))` site inside
+`_synthesize_speech_arpabet` in `src/dectalk/api/speak.py`).
 
 Real-time slots from current parstochip: `F0` (`OUT_T0`), `AV`
 (`OUT_AV`), `TL` (`lineartilt[OUT_TLT]`).
@@ -297,8 +302,11 @@ If the orchestrator wants to file follow-ups, suggested split:
 - C: `${DECTALK_SRC}/src/dapi/src/ph/ph_romi.c:96–105` —
   `lineartilt[32]` table.
 - Python: `src/dectalk/ph/parstochip_to_frames.py` (entire file).
-- Python: `src/dectalk/api/speak.py:540–613` — per-frame driver
-  loop, sole live caller of `parstochip_to_llframe_delayed`.
+- Python: `src/dectalk/api/speak.py` — per-frame driver loop
+  inside `_synthesize_speech_arpabet`, sole live caller of
+  `parstochip_to_llframe_delayed` (line numbers drift; locate
+  by the `parstochip_to_llframe_delayed(p_dph_t.parstochip, …)`
+  call).
 - Python: `src/dectalk/hlsyn/hlframe.py:557–643` —
   `hl_synthesize_ll_frame` consumes the `HLFrame` constructed by
   the via_hl path.
