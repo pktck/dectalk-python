@@ -5,19 +5,31 @@ from __future__ import annotations
 from dectalk.hlsyn.llsyn import LLFrame
 from dectalk.ph.param_indices import (
     OUT_A2,
+    OUT_ABLADE,
+    OUT_AG,
+    OUT_AL,
+    OUT_AN,
     OUT_AP,
+    OUT_ATB,
     OUT_AV,
     OUT_B1,
+    OUT_CNK,
+    OUT_DC,
     OUT_F1,
     OUT_F2,
     OUT_F3,
     OUT_FZ,
+    OUT_PLACE,
+    OUT_PS,
     OUT_T0,
     OUT_TLT,
+    OUT_UE,
 )
 from dectalk.ph.parstochip_to_frames import (
+    _build_hl_frame_from_parstochip,
     parstochip_to_llframe,
     parstochip_to_llframe_delayed,
+    parstochip_to_llframe_via_hl,
 )
 
 
@@ -141,3 +153,180 @@ def test_delayed_applies_lineartilt_to_current_tlt() -> None:
     frame = parstochip_to_llframe_delayed(cur, _empty_parstochip())
     # lineartilt[5] == 17 (ph_romi.c lines 96-103).
     assert frame.TL == 17
+
+
+# -- _build_hl_frame_from_parstochip unit conversions ----------------------
+#
+# Mirror the SPC-frame → HLFrame reader at vtm/vtmiont.c:720-750 (HLSYN build).
+# phdraw writes the NEW_VTM area cells as raw "x100" / "x10" scaled integers
+# (ph_draw.c:4159, 4280, 4282); the reader recovers the float-mm² / cmH2O
+# values via the per-cell scale factors below.
+
+
+def test_hl_frame_ag_scale_factor_100x() -> None:
+    """``OUT_AG`` (mm²*100) maps to ``HLFrame.ag`` via ``*0.01``."""
+    p = _empty_parstochip()
+    p[OUT_AG] = 350  # 3.50 mm² (a typical modal-voicing glottal area)
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.ag == 3.5
+
+
+def test_hl_frame_al_scale_factor_10x() -> None:
+    """``OUT_AL`` (mm²*10) maps to ``HLFrame.al`` via ``*0.1``."""
+    p = _empty_parstochip()
+    p[OUT_AL] = 80  # 8.0 mm²
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.al == 8.0
+
+
+def test_hl_frame_ab_sourced_from_ablade_with_10x_scale() -> None:
+    """``HLFrame.ab`` is read from ``OUT_ABLADE`` (mm²*10) via ``*0.1``."""
+    p = _empty_parstochip()
+    p[OUT_ABLADE] = 45  # 4.5 mm²
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.ab == 4.5
+
+
+def test_hl_frame_ap_sourced_from_cnk_with_100x_scale() -> None:
+    """``HLFrame.ap`` is read from ``OUT_CNK`` (mm²*100) via ``*0.01``.
+
+    Critical fix: ``OUT_AP`` carries aspiration *amplitude in dB*, not area.
+    vtmiont.c:728 reads ``frame.ap`` from ``OUT_CNK`` (chink area).
+    """
+    p = _empty_parstochip()
+    p[OUT_AP] = 60  # dB — must NOT appear as ap area.
+    p[OUT_CNK] = 25  # 0.25 mm² — the correct ap source.
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.ap == 0.25
+    assert hl.ap != 60.0
+
+
+def test_hl_frame_an_scale_factor_10x() -> None:
+    """``OUT_AN`` (mm²*10) maps to ``HLFrame.an`` via ``*0.1``."""
+    p = _empty_parstochip()
+    p[OUT_AN] = 30  # 3.0 mm²
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.an == 3.0
+
+
+def test_hl_frame_ps_scale_factor_100x() -> None:
+    """``OUT_PS`` (cmH2O*100) maps to ``HLFrame.ps`` via ``*0.01``."""
+    p = _empty_parstochip()
+    p[OUT_PS] = 800  # 8.0 cmH2O — typical subglottal pressure for modal voice.
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.ps == 8.0
+
+
+def test_hl_frame_atb_signed_with_10x_scale() -> None:
+    """``OUT_ATB`` reads via ``(short)`` cast then ``*0.1`` (vtmiont.c:738)."""
+    p = _empty_parstochip()
+    p[OUT_ATB] = 200  # 20.0 mm²
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.atb == 20.0
+    # Negative input: simulate raw signed-int16 wrap.
+    p[OUT_ATB] = 0xFFEC  # -20 as int16 → -2.0 after *0.1
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.atb == -2.0
+
+
+def test_hl_frame_ue_signed_no_scale() -> None:
+    """``OUT_UE`` reads via ``(short)`` cast with no scaling (vtmiont.c:730)."""
+    p = _empty_parstochip()
+    p[OUT_UE] = 0xFFFF  # -1 as int16
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.ue == -1.0
+
+
+def test_hl_frame_dc_signed_no_scale() -> None:
+    """``OUT_DC`` reads via ``(short)`` cast with no scaling (vtmiont.c:737)."""
+    p = _empty_parstochip()
+    p[OUT_DC] = 0xFFF0  # -16 as int16
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.dc == -16.0
+
+
+def test_hl_frame_place_signed_no_scale() -> None:
+    """``OUT_PLACE`` reads via ``(short)`` cast with no scaling (vtmiont.c:744)."""
+    p = _empty_parstochip()
+    p[OUT_PLACE] = 0xFFFE  # -2 as int16
+    hl = _build_hl_frame_from_parstochip(p)
+    assert hl.place == -2
+
+
+# -- parstochip_to_llframe_via_hl integration --------------------------------
+
+
+def _voiced_parstochip() -> list[int]:
+    """A parstochip seeded with HLSyn cells representative of voiced vowel.
+
+    Values are chosen so the HL→LL gating pipeline (``hlframe.py``) admits
+    voicing (AV > 0). In particular:
+
+    - ``OUT_AG = 200`` (mm²*100 → 2.0 mm²): glottal area sits between
+      ``speaker.agMin`` and ``speaker.agm + speaker.agAVModalOffsetMax``
+      so :func:`_source_amplitudes` produces non-zero NAV.
+    - ``OUT_PS = 800`` (cmH2O*100 → 8.0 cmH2O): standard modal-voice
+      subglottal pressure, well above ``speaker.AVPressureThreshold``.
+    - ``OUT_T0 = 1220``: 122 Hz, adult-male F0.
+    """
+    p = [0] * 64
+    p[OUT_T0] = 1220
+    p[OUT_AG] = 200  # 2.0 mm²
+    p[OUT_PS] = 800  # 8.0 cmH2O
+    p[OUT_F1] = 500
+    p[OUT_F2] = 1500
+    p[OUT_F3] = 2500
+    return p
+
+
+def test_via_hl_produces_non_zero_av() -> None:
+    """Voiced parstochip drives ``parstochip_to_llframe_via_hl`` to AV > 0.
+
+    Regression guard for the §5a unit-conversion bug (issue #124): when
+    ``HLFrame.ag`` was 100x too large, ``state.agx`` exceeded
+    ``speaker.agAVModalOffsetMax + speaker.agm`` and
+    :func:`_source_amplitudes` zero-clamped NAV, silencing voiced output.
+    With the ``*0.01`` scale applied, the gating branch produces a
+    positive NAV that propagates to ``LLFrame.AV``.
+    """
+    p = _voiced_parstochip()
+    frame = parstochip_to_llframe_via_hl(p, previous_parstochip=None)
+    assert isinstance(frame, LLFrame)
+    assert frame.AV > 0, (
+        f"voiced parstochip should produce non-zero AV; got {frame.AV}. "
+        "This is the §5a regression guard (HLFrame area unit conversions)."
+    )
+
+
+def test_via_hl_silent_when_ag_above_modal_range() -> None:
+    """Glottal area above the modal-offset cap zeros AV (gating works).
+
+    Sanity-check the gating still fires when ``HLFrame.ag`` legitimately
+    exceeds ``speaker.agAVModalOffsetMax + speaker.agm``. Without the
+    unit-conversion fix every voiced frame fell into this branch.
+    """
+    p = _voiced_parstochip()
+    # 200 mm² is unambiguously above any speaker.agAVModalOffsetMax cap.
+    p[OUT_AG] = 20000  # → 200.0 mm² after *0.01
+    frame = parstochip_to_llframe_via_hl(p, previous_parstochip=None)
+    assert frame.AV == 0
+
+
+def test_via_hl_ap_independent_of_out_ap_aspiration_db() -> None:
+    """High ``OUT_AP`` (dB) must not bleed into ``HLFrame.ap`` (mm²).
+
+    Before the fix, ``frame.ap`` was sourced from ``OUT_AP`` (dB) without
+    scaling, so an aspiration-dB of 50 was interpreted as 50 mm² of
+    posterior glottal area, materially distorting the TL correction.
+    With the fix, ``frame.ap`` is sourced from ``OUT_CNK`` and unaffected
+    by ``OUT_AP``.
+    """
+    p_no_aspiration = _voiced_parstochip()
+    p_no_aspiration[OUT_AP] = 0
+    p_aspiration = _voiced_parstochip()
+    p_aspiration[OUT_AP] = 50  # heavy aspiration in dB
+    f_quiet = parstochip_to_llframe_via_hl(p_no_aspiration, previous_parstochip=None)
+    f_loud = parstochip_to_llframe_via_hl(p_aspiration, previous_parstochip=None)
+    # Both frames should produce identical AV; OUT_AP must not be wired
+    # into ``HLFrame.ap`` any more.
+    assert f_quiet.AV == f_loud.AV

@@ -43,6 +43,7 @@ from dectalk.ph.param_indices import (
     OUT_A5,
     OUT_A6,
     OUT_AB,
+    OUT_ABLADE,
     OUT_AG,
     OUT_AL,
     OUT_AN,
@@ -52,6 +53,7 @@ from dectalk.ph.param_indices import (
     OUT_B1,
     OUT_B2,
     OUT_B3,
+    OUT_CNK,
     OUT_DC,
     OUT_F1,
     OUT_F2,
@@ -69,6 +71,12 @@ from dectalk.ph.parameter_tables import lineartilt
 # Pre-pht0draw fallback: a 122 Hz adult-male F0 so voicing is audible
 # while the PH module's F0 contour engine isn't running per-frame.
 _DEFAULT_F0_DECIHZ: Final[int] = 1220
+
+# 16-bit signed wrap constants for the vtmiont.c ``(short)`` reinterpret
+# casts on OUT_UE / OUT_DC / OUT_ATB / OUT_PLACE.
+_INT16_MASK: Final[int] = 0xFFFF
+_INT16_SIGN_BIT: Final[int] = 0x8000
+_INT16_WRAP: Final[int] = 0x10000
 
 # Resting positions for fields parstochip doesn't carry. These match
 # the LLFrame defaults so a freshly-constructed adapter output frame
@@ -234,23 +242,56 @@ def parstochip_to_llframe_delayed(
     )
 
 
+def _to_int16(value: int) -> int:
+    """Reinterpret the low 16 bits of ``value`` as a signed int16.
+
+    The C reader at ``vtmiont.c:725-746`` casts several parstochip cells
+    via ``(short)`` before scaling — ``OUT_UE``, ``OUT_DC``, ``OUT_ATB``,
+    ``OUT_PLACE``. The Python parstochip carries arbitrary-precision int
+    values, so a sign-aware reinterpret-cast is needed to mirror the C
+    behaviour for cells whose raw integer can be negative.
+    """
+    masked = value & _INT16_MASK
+    return masked - _INT16_WRAP if masked >= _INT16_SIGN_BIT else masked
+
+
 def _build_hl_frame_from_parstochip(parstochip: list[int]) -> HLFrame:
     """Build an :class:`~dectalk.ph.hlsyn_structs.HLFrame` from parstochip.
 
-    Extracts the NEW_VTM HLSyn slots (OUT_AG, OUT_AL, OUT_AN, OUT_ATB,
-    OUT_PS, OUT_DC, OUT_UE, OUT_PLACE) and the classic formant/F0 slots,
-    converting integer parstochip values to the float fields HLFrame uses.
+    Extracts the NEW_VTM HLSyn slots (``OUT_AG``, ``OUT_AL``, ``OUT_ABLADE``,
+    ``OUT_AN``, ``OUT_ATB``, ``OUT_PS``, ``OUT_CNK``, ``OUT_DC``, ``OUT_UE``,
+    ``OUT_PLACE``) and the classic formant / F0 slots, converting integer
+    parstochip values to the float fields HLFrame uses.
 
-    Areas (AG, AL, AN, ATB, AP) are in mm^2 on the parstochip; HLFrame uses
-    mm^2 as well.  PS (subglottal pressure) is in 10x cmH2O on the
-    parstochip (phdraw stores it scaled by 10); HLFrame.ps is in cmH2O, so
-    we divide by 10.
+    Unit conversions mirror the canonical SPC-frame → HLFrame reader in
+    ``vtm/vtmiont.c:720-750`` (HLSYN build) — phdraw writes areas as raw
+    "x100" / "x10" scaled integers (`ph_draw.c:4159, 4280, 4282`) and the
+    reader recovers the float-mm² (or cmH2O) values via these factors:
 
-    T0 (fundamental period) on the parstochip is stored in deciHz (10xHz);
-    HLFrame.f0 uses the same deciHz units.
+    +----------------+------------------+----------------+
+    | HLFrame field  | C reader scale   | Source cell    |
+    +================+==================+================+
+    | ``ag``         | ``* 0.01f``      | ``OUT_AG``     |
+    | ``al``         | ``* 0.1f``       | ``OUT_AL``     |
+    | ``ab``         | ``* 0.1f``       | ``OUT_ABLADE`` |
+    | ``ap``         | ``* 0.01f``      | ``OUT_CNK``    |
+    | ``an``         | ``* 0.1f``       | ``OUT_AN``     |
+    | ``ue``         | ``(short)…``     | ``OUT_UE``     |
+    | ``ps``         | ``* 0.01f``      | ``OUT_PS``     |
+    | ``dc``         | ``(short)…``     | ``OUT_DC``     |
+    | ``atb``        | ``(short)…*0.1f``| ``OUT_ATB``    |
+    | ``place``      | ``(short)…``     | ``OUT_PLACE``  |
+    | ``f0``         | direct           | ``OUT_T0``     |
+    | ``f1/f2/f3``   | direct           | ``OUT_F1..F3`` |
+    | ``f4``         | direct           | ``OUT_F4``     |
+    +----------------+------------------+----------------+
+
+    ``T0`` (fundamental period) is stored in deciHz (10x Hz) by phdraw in
+    the HLSYN build (``ph_drwt02.c:1406-1410``); ``HLFrame.f0`` uses the
+    same deciHz units, so the mapping is a direct copy.
 
     Args:
-        parstochip: Integer array indexed by ``OUT_*`` constants.  Must be
+        parstochip: Integer array indexed by ``OUT_*`` constants. Must be
             at least ``OUT_PLACE + 1 = 38`` entries for NEW_VTM slots;
             shorter arrays fall back to 0.0 for out-of-range indices.
 
@@ -259,24 +300,29 @@ def _build_hl_frame_from_parstochip(parstochip: list[int]) -> HLFrame:
     """
     n = len(parstochip)
 
-    def _safe(idx: int, default: float = 0.0) -> float:
-        return float(parstochip[idx]) if idx < n else default
+    def _safe(idx: int, default: int = 0) -> int:
+        return parstochip[idx] if idx < n else default
 
     return HLFrame(
-        ag=_safe(OUT_AG),
-        al=_safe(OUT_AL),
-        an=_safe(OUT_AN),
-        atb=_safe(OUT_ATB),
-        # parstochip stores AP as aspiration amplitude (dB), not area (mm^2).
-        # HLFrame.ap is aspiration area; we pass through as-is here — the
-        # ShimmedSpeechCircuit path uses it only for posterior-glottal TL
-        # corrections where the order-of-magnitude matters more than exact
-        # units.
-        ap=_safe(OUT_AP),
-        ps=_safe(OUT_PS) / 10.0,  # deciHz->cmH2O (phdraw stores x10)
-        dc=_safe(OUT_DC),
-        ue=_safe(OUT_UE),
-        place=int(_safe(OUT_PLACE)),
+        ag=_safe(OUT_AG) * 0.01,
+        al=_safe(OUT_AL) * 0.1,
+        ab=_safe(OUT_ABLADE) * 0.1,
+        an=_safe(OUT_AN) * 0.1,
+        # vtmiont.c line 728: frame.ap is read from OUT_CNK (chink area,
+        # mm²*100), NOT OUT_AP. The OUT_AP cell carries aspiration
+        # amplitude in dB and is consumed by the Ah path in the delayed
+        # adapter; mixing them here would silence the HL→LL voicing gate.
+        ap=_safe(OUT_CNK) * 0.01,
+        # OUT_ATB is a signed quantity (post-CNK adjustments can drive
+        # it negative); mirror the ``(short)`` cast in vtmiont.c:738.
+        atb=_to_int16(_safe(OUT_ATB)) * 0.1,
+        ps=_safe(OUT_PS) * 0.01,
+        # OUT_DC / OUT_UE flow through (short) casts in vtmiont.c:730/737
+        # without further scaling; preserve the sign behaviour.
+        dc=float(_to_int16(_safe(OUT_DC))),
+        ue=float(_to_int16(_safe(OUT_UE))),
+        # OUT_PLACE is a signed cast with no scale (vtmiont.c:744).
+        place=_to_int16(_safe(OUT_PLACE)),
         f0=float(parstochip[OUT_T0] if parstochip[OUT_T0] > 0 else _DEFAULT_F0_DECIHZ),
         f1=float(_clamp(parstochip[OUT_F1], 100, 1300)),
         f2=float(_clamp(parstochip[OUT_F2], 500, 3000)),
@@ -311,7 +357,10 @@ def _build_hl_state_from_parstochip(
     Returns:
         Freshly constructed :class:`~dectalk.ph.hlsyn_structs.HLState`.
     """
-    ag = float(parstochip[OUT_AG]) if len(parstochip) > OUT_AG else 0.0
+    # OUT_AG is stored as mm²*100 by phdraw; scale to mm² to match the
+    # vtmiont.c reader so state.agx / state.agf comparisons against
+    # speaker.agm (mm²) sit in the right magnitude band.
+    ag = parstochip[OUT_AG] * 0.01 if len(parstochip) > OUT_AG else 0.0
     state = HLState()
     state.agx = ag
     state.agf = ag
@@ -361,12 +410,14 @@ def parstochip_to_llframe_via_hl(
     frame.f1 = float(_clamp(feed[OUT_F1], 100, 1300))
     frame.f2 = float(_clamp(feed[OUT_F2], 500, 3000))
     frame.f3 = float(_clamp(feed[OUT_F3], 1300, 4500))
+    # Areas from the delayed feed need the same unit conversions as the
+    # current-frame path in _build_hl_frame_from_parstochip (vtmiont.c:725-730).
     if len(feed) > OUT_AG:
-        frame.ag = float(feed[OUT_AG])
+        frame.ag = feed[OUT_AG] * 0.01
     if len(feed) > OUT_AN:
-        frame.an = float(feed[OUT_AN])
-    if len(feed) > OUT_AP:
-        frame.ap = float(feed[OUT_AP])
+        frame.an = feed[OUT_AN] * 0.1
+    if len(feed) > OUT_CNK:
+        frame.ap = feed[OUT_CNK] * 0.01
 
     # Use current parstochip for oldframe as well (best approximation without
     # a full running state history; see SpeechCircuit shim in hlframe.py).
