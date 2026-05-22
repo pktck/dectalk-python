@@ -147,13 +147,23 @@ def phone_feature(phone: int) -> int:
         The feature flags from ``us_featb[code]`` for US-font phones,
         or for any other font (which the C source would crash on).
     """
-    font = phone >> PSFONT
+    # font byte (``phone >> PSFONT``) is unused: only the US font is
+    # wired up, and the C source's other-font branches are unreachable
+    # from our parity target.
     code = phone & PVALUE
     # all_featb[0x1E] = us_featb; other indices are NULL in C (would
     # crash). For US-bit-parity we route everything to us_featb.
-    if font in (PFUSA, 0):  # 0x1E (US) or 0x00 (slot 0 also points at us_featb)
+    #
+    # The Python ``us_featb`` LUT has 101 entries (rom_tables.py) whereas
+    # the C ``us_featb[PHO_SYM_TOT]`` has 106 -- the trailing 22 slots
+    # (S1/S2/HAT_*/WBOUND/PERIOD/...) are all zero in the C source's
+    # table, so any out-of-range code reads as 0. Callers like
+    # ``init_med_final`` and ``find_syll_to_stress`` walk the raw
+    # ``symbols[]`` stream (which contains 100-118 marker codes) and
+    # rely on this safe zero-fallback (issue #94 wiring of all_phsort).
+    if 0 <= code < len(us_featb):
         return us_featb[code]
-    return us_featb[code]
+    return 0
 
 
 def begtyp(phone: int) -> int:
