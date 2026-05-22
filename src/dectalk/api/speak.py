@@ -477,6 +477,16 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # (issue #94 / audit "F0 contour follow-up").
     p_dph_t.size_hat_rise = 18  # HR for Paul (p_us_vdf_dectalk43.c line 36)
     p_dph_t.scale_str_rise = 32  # SR for Paul (p_us_vdf_dectalk43.c line 37)
+    # Assertiveness: SPD AS (final F0-fall, % of full fall) scaled to the
+    # Q12-style multiplier ``phinton`` Rules 3/4/6 pass to ``frac4mul`` on
+    # the rule's f0fall / targf0 magnitude. The C bridge in ``phram.c``
+    # derives it as ``pDph_t->assertiveness = pDph_t->curspdef[SPD_AS] * 41``
+    # — so AS = 100 (Paul's default) becomes 4100, just above Q12 unity
+    # (4096) for a full final fall. Without this seed the field stays 0
+    # and the ``frac4mul(*, 0)`` calls in ``phinton.py`` lines 514/611/650
+    # zero out every Rule 3/4/6 final-fall target — visible in traces as
+    # ``tar=0`` for every Rule 6 event (issue #122 / F0 contour follow-up).
+    p_dph_t.assertiveness = 100 * 41  # AS=100 for Paul (Q12-style multiplier)
     settar = DphSettarSt()
     settar.initsw = 1  # Skip the very-first-call getbegtar seeding loop.
     p_dph_t.pSTphsettar = settar
