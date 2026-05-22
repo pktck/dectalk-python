@@ -42,9 +42,14 @@ def init_pars(p_dph_t: DphT) -> None:
     p_dph_t.tcum = -1
     p_dph_t.nphone = -1
     p_dph_t.durfon = 0
-    # ``alloopenq`` may be empty if init_phclause hasn't been called
-    # yet; treat as 0 in that case (matches uninitialised C behaviour
-    # — the array is zero-filled by init_phclause on first call).
+    # ``alloopenq`` is NOT zeroed by init_phclause (verified against
+    # ph_claus.c lines 575-612 — only allophons/allofeats/allodurs/
+    # f0tar/f0tim are zeroed there). The C startup path calloc's the
+    # whole DPH_T struct, so on the very first call alloopenq[0] is 0;
+    # later clauses inherit whatever the previous clause's phoneme
+    # processing wrote. The Python DphT default-factory is an empty
+    # list, so we fall back to 0 when the array hasn't been populated
+    # yet (matches the C calloc'd-zero initial value).
     if p_dph_t.alloopenq:
         p_dph_t.openquo = p_dph_t.alloopenq[0]
     else:
