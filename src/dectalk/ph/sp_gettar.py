@@ -1,4 +1,4 @@
-# ruff: noqa: PLR2004, SIM102, SIM108, SIM114, PLR5501, PLR1730 -- faithful translation of branchy C source
+# ruff: noqa: PLR2004, SIM102, SIM108, PLR1730 -- faithful translation of branchy C source
 """``sp_gettar`` -- Castilian Spanish per-parameter target lookup from p_sp_st1.c.
 
 Translated from ``src/dapi/src/ph/p_sp_st1.c`` line 76 (~250 lines).
@@ -41,6 +41,7 @@ from typing import cast
 
 from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.spp_codes import (
+    SP_TOT_ALLOPHONES,
     SPP_DH,
     SPP_F,
     SPP_GH,
@@ -54,7 +55,6 @@ from dectalk.include.spp_codes import (
     SPP_RR,
     SPP_U,
     SPP_YH,
-    SP_TOT_ALLOPHONES,
 )
 from dectalk.include.usp_codes import USP_Q
 from dectalk.kernel.ksd_t import KsdT
