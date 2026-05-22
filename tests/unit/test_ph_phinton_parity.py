@@ -529,9 +529,7 @@ def test_phinton_inserts_schwa_in_singing_mode() -> None:
     dph = cast(DphT, handle.p_ph_thread_data)
     dph.f0mode = SINGING
     phinton(handle)
-    assert dph.nallotot == 4, (
-        f"SINGING dropped Rule 9: nallotot={dph.nallotot}, expected 4"
-    )
+    assert dph.nallotot == 4, f"SINGING dropped Rule 9: nallotot={dph.nallotot}, expected 4"
 
 
 def test_phinton_cumdur_advances_in_phone_targets_mode() -> None:

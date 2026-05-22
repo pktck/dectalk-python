@@ -367,9 +367,7 @@ def phinton(phTTS: TtsHandle) -> None:
             if pDph_t.nallotot > (nphon + 10):
                 pDph_t.had_hatend = 1
 
-        if not skiprules and (
-            pDph_t.f0mode == NORMAL or pDph_t.f0mode == HAT_F0_SIZES_SPECIFIED
-        ):
+        if not skiprules and (pDph_t.f0mode == NORMAL or pDph_t.f0mode == HAT_F0_SIZES_SPECIFIED):
             if feacur & FSYLL:
                 # ---- Rule 1: hat rise on first stressed syll ----
                 if pDph_t.had_hatbegin:
