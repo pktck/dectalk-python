@@ -41,9 +41,11 @@ def _speak(text: str, monkeypatch: pytest.MonkeyPatch) -> np.ndarray:
         #     durations sum higher than the previous stop-gap path),
         #   - PRs #102 (trailing-silence pad) and #107 (SpdChip
         #     defaults) which expanded sample counts another ~10-15%.
-        # Bounds carry ~30% headroom over current measured values.
-        # C reference targets (for context): "hello world" → 13845,
-        # "test one two three" → ~14697.
+        # The effects compose: the pad adds extra frames on top of the
+        # longer allophone stream, so bounds are wider than either
+        # alone. Bounds carry ~30% headroom over current measured
+        # values. C reference targets (for context):
+        # "hello world" → 13845, "test one two three" → ~14697.
         ("hi", 2000, 18000),
         ("hello world", 7000, 33000),
         ("good morning", 7000, 32000),
@@ -99,12 +101,13 @@ def test_full_pipeline_inline_command_is_stripped(monkeypatch: pytest.MonkeyPatc
     duration in the full pipeline's current wiring).
     """
     samples = _speak("[:rate 250] testing one two three", monkeypatch)
-    # Bare "testing one two three" at rate=1.0 produces ~11-28k samples
-    # (see parametrize bounds above for similar prompts). With the
-    # spelled-out "rate two hundred and fifty" stripped out, the rendered
-    # audio is strictly under that — and far less than the pre-fix 34540.
-    # Upper bound widened after PRs #102/#107 expanded per-clause padding.
-    assert samples.size < 26_000, (
+    # Bare "testing one two three" at rate=1.0 produces ~11-38k samples
+    # after issues #69 (phalloph2 chain), #72 (trailing-silence pad),
+    # and PRs #102/#107 (further per-clause padding) — see parametrize
+    # bounds above for similar prompts. With the spelled-out "rate two
+    # hundred and fifty" stripped out, the rendered audio is strictly
+    # under that — and far less than the pre-fix 34540.
+    assert samples.size < 30_000, (
         f"inline [:rate 250] not stripped — got {samples.size} samples "
         "(suggests command words leaked into LTS as in issue #64)"
     )
