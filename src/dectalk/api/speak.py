@@ -475,9 +475,53 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # init_phclause (which zeroes allofeats) and the allophons copy
     # above, but before us_phtiming (which reads FSTRESS for
     # stressed-vowel duration bumps).
+    from dectalk.ph.feature_bits import (  # noqa: PLC0415
+        FBOUNDARY,
+        FPERNEXT,
+        FSENTENDS,
+    )
     from dectalk.ph.ph_setallofeats import ph_setallofeats  # noqa: PLC0415
 
     ph_setallofeats(p_dph_t, arpabet_words, is_sentence_final=True)
+
+    # 4a-bis. End-of-clause sentence-boundary marker on the allophone
+    # immediately before the trailing GEN_SIL sentinel (issue #72).
+    #
+    # ``ph_setallofeats`` attaches ``FPERNEXT | FSENTENDS`` to the last
+    # *syllabic* of the final word — what ``phinton`` needs to fire its
+    # Rule 4 (final fall) on the right vowel. But ``us_phtiming``'s
+    # Rule 1 (clause-final long pause, ``p_us_tim.c`` lines 309-322)
+    # reads ``struclas = allofeats[nphon-1]`` and tests ``(struclas &
+    # FBOUNDARY) & FSENTENDS`` to decide whether to substitute the long
+    # ``nfperiod + perpause`` pause for the default 15-frame minimum.
+    # That predicate requires the marker to be on the allophone IMMEDIATELY
+    # before the trailing SIL — typically a word-final consonant, not the
+    # last syllabic.
+    #
+    # In the C source, ``ph_aloph2.c::make_out_phonol`` (line 1869)
+    # copies ``curr_outstruc`` — derived from ``sentstruc[]`` which
+    # propagates the parser's ``add_feature(FSENTENDS, NEXTPHONE)``
+    # marker through each word-final phone — into ``allofeats[]``. The
+    # net effect is that *every* allophone in the sentence-final word
+    # carries the sentence-end marker, so the trailing SIL's preceding
+    # allophone always has FSENTENDS regardless of whether it's a vowel
+    # or a consonant. We approximate that by ORing the marker onto the
+    # allophone at ``nallotot-2`` (the last entry before the trailing
+    # SIL sentinel at ``nallotot-1``).
+    if nallotot >= 2:  # noqa: PLR2004 — leading + trailing SIL sentinels
+        p_dph_t.allofeats[nallotot - 2] &= ~FBOUNDARY
+        p_dph_t.allofeats[nallotot - 2] |= FPERNEXT | FSENTENDS
+
+    # 4a-ter. Per-clause pause-length defaults from ``phclause()``
+    # lines 247-255 of ``ph_claus.c`` (English / HLSYN branch). These
+    # are consulted by ``us_phtiming``'s Rule 1 when computing the
+    # GEN_SIL ``dpause`` value (``nfperiod + perpause + asperation``
+    # for sentence-end, ``nfcomma + compause + asperation`` for
+    # comma-end). Without them the trailing SIL gets the default
+    # 15-frame minimum and the Python output is ~360 ms shorter than
+    # the C reference (issue #72 trailing-silence pad gap).
+    p_dph_t.nfperiod = 94
+    p_dph_t.nfcomma = 16
 
     init_timing(
         p_dph_t,
@@ -542,11 +586,17 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # LLFrame come from one frame ago, while AV / TL / T0 come from
     # the current frame.
     previous_parstochip: list[int] | None = None
+    # ``phinton`` may insert a dummy schwa (ph_inton2.c lines 1685-1725)
+    # which increments ``p_dph_t.nallotot``. Read it from state inside
+    # the loop so the per-frame driver walks the FINAL allophone array
+    # length, not the pre-phinton snapshot captured above. Without this
+    # the trailing GEN_SIL is silently skipped and the clause ends one
+    # allophone short, dropping the long-pause trailing silence (#72).
     for _ in range(max_frames):
         p_dph_t.tcum += 1
         if p_dph_t.tcum >= p_dph_t.durfon:
             p_dph_t.nphone += 1
-            if p_dph_t.nphone >= nallotot:
+            if p_dph_t.nphone >= p_dph_t.nallotot:
                 break
             p_dph_t.tcum -= p_dph_t.durfon
             p_dph_t.durfon = (
