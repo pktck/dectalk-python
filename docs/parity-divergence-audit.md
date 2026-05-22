@@ -592,3 +592,332 @@ The diagnostic scripts (`/tmp/f0_audit.py`, `/tmp/f0_debug.py`,
 `/tmp/f0_contour_compare.py`) live in `/tmp/` to keep this audit
 a doc-only PR; their content is embedded verbatim in the
 follow-up Issue D body.
+
+## F0 contour follow-up — re-audit after #66 / #94 / #97 (issue #75, 2026-05-22)
+
+Re-measurement on `dev` head `c829010` (after Issues D + E landed —
+`all_phsort` wired into `_speak_via_python_full` in commit `909c5ff`,
+HR/SR scalars loaded, `ph_setallofeats` populating FSTRESS / FWBNEXT /
+FPERNEXT, plus the phinton `goto skiprules` fix in #73, and the
+allofeats derivation from ARPABET in #94). The headline finding from
+the 2026-05 audit — "synthesised pitch is a flat monotone" — is
+**still not closed**. `phinton` now fires actual stress impulses
+(Rule 2) and clause-end gestures (Rule 6) instead of just the two
+`F0_RESET` events the previous audit captured, but **Rule 1 (hat-rise
+STEP) and Rule 3/4 (hat-fall GLIDE/STEP) never fire**, so the
+per-frame `OUT_T0` register still clamps at `f0minimum + ±5 Hz of
+flutter`.
+
+### Method
+
+Same as the original follow-up audit. Re-measured at dev head
+`c829010` with `DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1` and
+the Paul voice. Monkey-patches captured (a) the full `make_f0_command`
+call sequence with rulenumber, (b) post-`phinton` `f0type` /
+`f0tar` / `f0tim` / `f0length` arrays, (c) per-frame
+`parstochip[OUT_T0]`, and (d) `allofeats[]` snapshots immediately
+after `all_phsort` and again after `ph_setallofeats`.
+
+C-oracle F0 estimated via 110-sample-frame autocorrelation in the
+60-350 Hz band. The autocorrelation overestimates absolute mean F0
+for a low male voice when the second harmonic dominates the
+fundamental, so the comparison below focuses on **dynamic range
+(std)** and shape, not absolute mean.
+
+### Per-prompt summary (2026-05-22)
+
+| Prompt | C samp | Py samp | Py `nf0tot` | C F0 std (Hz) | Py OUT_T0 std (Hz) | Py OUT_T0 mean |
+|---|---:|---:|---:|---:|---:|---:|
+| `hello world`            | 13845 | 24640 | 4 | 83 | **5** | 88 |
+| `testing one two three`  | 19099 | 29040 | 3 | 60 | **6** | 90 |
+| `the quick brown fox`    | 19809 | 32670 | 5 | 73 | **5** | 89 |
+
+For all three prompts:
+
+- **C oracle**: OUT_T0 std is 60-83 Hz — a real intonation contour
+  spanning ~120-356 Hz.
+- **Python**: OUT_T0 std is 5-6 Hz — i.e. flat ±0.5 Hz around the
+  88 Hz f0minimum baseline, modulated only by the 2-pole filter
+  ringing and the ±10 Hz flutter from `getcosine_tab`.
+
+### Which phinton rules fire (per-prompt)
+
+`hello world`:
+
+```
+[ 0] type=IMPULSE  rule= 2  tar= 80  delay= 15  length= 25  nphon=2  (stress pulse on "HEL")
+[ 1] type=IMPULSE  rule= 2  tar= 50  delay= -3  length= 36  nphon=4  (stress pulse on "WOR")
+[ 2] type=IMPULSE  rule= 6  tar=  0  delay= 43  length= 20  nphon=4  (FPERNEXT final-fall, voiced-next path)
+[ 3] type=IMPULSE  rule= 6  tar=  0  delay=  7  length= 20  nphon=8  (FPERNEXT final-fall, second voiced-next)
+```
+
+`testing one two three`:
+
+```
+[ 0] type=IMPULSE  rule= 2  tar= 80  delay= 14  length= 24  nphon=2
+[ 1] type=IMPULSE  rule= 6  tar=  0  delay= 13  length= 20  nphon=11
+[ 2] type=IMPULSE  rule= 6  tar=  0  delay= 22  length= 20  nphon=14
+```
+
+`the quick brown fox`:
+
+```
+[ 0] type=IMPULSE  rule= 2  tar= 80  delay= 68  length= 24  nphon=...
+[ 1] type=IMPULSE  rule= 2  tar= 53  delay= 54  length= 32  nphon=...
+[ 2] type=IMPULSE  rule= 2  tar= 43  delay= 23  length= 31  nphon=...
+[ 3] type=IMPULSE  rule= 6  tar=  0  delay= 22  length= 20  nphon=...
+[ 4] type=IMPULSE  rule= 6  tar=  0  delay= 46  length= 20  nphon=...
+```
+
+Rules **never** fired in any prompt:
+
+| Rule | Type    | Trigger                                                        | Why it doesn't fire                                                            |
+|------|---------|----------------------------------------------------------------|--------------------------------------------------------------------------------|
+| 1    | STEP    | First stressed syllable when `had_hatbegin == 1`               | `had_hatbegin` is only set by `struccur & FHAT_BEGINS`; FHAT_BEGINS never set  |
+| 3    | GLIDE   | End-of-hat when `had_hatend == 1`                              | `had_hatend` is only set by `struccur & FHAT_ENDS`; FHAT_ENDS never set        |
+| 4    | STEP    | Same `had_hatend` block, nested in Rule 3                      | Same as Rule 3                                                                 |
+| 7    | F0_RESET| End-of-clause `phocur == GEN_SIL` with `hat_loc_re_baseline`   | `hat_loc_re_baseline` never non-zero because Rule 1's `+= hatsize` never runs  |
+| GLOTTAL | -    | Glottalize gesture for FGLOTTAL phones                         | (not investigated here — secondary)                                            |
+
+Rules **2** (stress impulse) and **6** (final/comma fall) DO fire,
+which is the post-#66/#94 improvement. But these are short transient
+impulses that decay back to f0minimum within ~25 frames — they don't
+sustain the +18 Hz hat-rise plateau that Rule 1 (STEP) is supposed to
+hold across the whole `pDphsettar.hat_loc_re_baseline` plateau.
+
+### Root cause: `us_phalloph` is not wired into the full pipeline
+
+The C-side hat-pattern engine lives in **`ph_aloph1.c`** (translated
+into Python as `src/dectalk/ph/us_phalloph.py`, 516 lines, fully
+ported with FHAT_BEGINS / FHAT_ENDS writes at lines 441 and 453).
+For plain-text input (no explicit `[/...]` markup), `ph_sort.c`'s
+HAT_RISE / HAT_FALL token-handling case **does not fire** — it only
+catches user-typed phonetic markup. The implicit, stress-pattern-
+driven FHAT_BEGINS / FHAT_ENDS writes live entirely inside
+`ph_aloph1.c` lines 1338-1448:
+
+```c
+// ph_aloph1.c line 1338 — "Rise occurs on first stress of any type in phrase"
+if ((hatposition != AT_TOP_OF_HAT)
+    && (((curr_instruc & FSTRESS_1) IS_PLUS)
+        || (remaining_stresses_til (pDph_t, n, FCBNEXT) > 0)))
+{
+    curr_outstruc |= FHAT_BEGINS;
+    hatposition = AT_TOP_OF_HAT;
+}
+
+// ph_aloph1.c lines 1370-1448 — "Fall occurs on emphasized syll / last
+// stress of clause / last stress of phrase containing 2+ stresses"
+if ((hatposition == AT_TOP_OF_HAT) && ((curr_instruc & FSTRESS_1) IS_PLUS))
+{ ... curr_outstruc |= FHAT_ENDS; ... }
+```
+
+The Python port `us_phalloph` faithfully mirrors these writes
+(`src/dectalk/ph/us_phalloph.py:441,453`). It is **never called** from
+`_speak_via_python_full`:
+
+```
+$ grep -n 'us_phalloph\|phalloph' src/dectalk/api/speak.py
+602:    # In the C reference, phalloph2/make_out_phonol writes the
+604:    # allophone. The Python pipeline skips phalloph for now, so we
+```
+
+The comment at line 604 says it explicitly: "The Python pipeline
+skips phalloph for now, so we derive the minimum feature set phinton
+needs (FSTRESS from the ARPABET stress digit, FWBNEXT / FPERNEXT
+from word/sentence boundaries) directly from the front-end data".
+That minimum feature set is exactly the set that lets Rules 2 and 6
+fire — but it does NOT cover FHAT_BEGINS / FHAT_ENDS, which are
+stress-pattern-derived, not symbol-derived.
+
+The current orchestration also actively **erases** any FHAT bits
+`all_phsort` might have written:
+
+```python
+# src/dectalk/api/speak.py:594-599
+# Re-zero allofeats since all_phsort's output pass may have written
+# FSTRESS_1/FWBNEXT/FHAT_BEGINS bits into sentstruc[] (which aliases
+# allofeats[]). ph_setallofeats below re-derives the bits we actually
+# use from the ARPABET stream + word grouping.
+for i in range(len(p_dph_t.allofeats)):
+    p_dph_t.allofeats[i] = 0
+```
+
+Even if `all_phsort` did set hat bits (it doesn't on plain text), the
+re-zero pass would wipe them — so the orchestration would also need
+to be revised to either (a) preserve the hat bits while still
+re-deriving the stress/boundary bits, or (b) source all the bits
+from `us_phalloph` instead of from `ph_setallofeats`.
+
+### Verification: allofeats at each stage
+
+Captured for `hello world` with monkey-patches at `all_phsort` and
+`ph_setallofeats` exit points:
+
+```
+after all_phsort: nallotot=0, nphonetot=9, number_words=3, clausetype=0
+  allophons (hex):  ['0x1c', '0x9', '0x1b', '0xb', '0x18', '0x14', '0x1b', '0x30', '0x1e00']
+  allofeats (hex):  ['0x4', '0x8', '0x0', '0x78', '0x5', '0x101', '0x100', '0x100', '0x100']
+  allofeats (decoded): ['-', '-', '-', 'WBN', 'S1', 'S1+PERN', 'PERN', 'PERN', 'PERN']
+                       (no HB / HE bits anywhere — confirms ph_sort.c writes nothing without HAT_RISE markup)
+
+after ph_setallofeats: nallotot=10
+  allofeats (decoded): ['-', '-', 'S1+WBN', '-', 'S1+PERN', '-', '-', '-', '-', '-']
+                       (allofeats zeroed; ph_setallofeats re-derived stress + boundary bits;
+                        FHAT_BEGINS / FHAT_ENDS still absent because ph_setallofeats does not
+                        synthesise them)
+```
+
+Both stages produce zero FHAT bits — the gap is exactly the
+`us_phalloph` (ph_aloph1.c) substitution+hat-pattern pass.
+
+### Secondary issue: `assertiveness` parameter never loaded
+
+`pDph_t.assertiveness` defaults to `0` (see `src/dectalk/ph/dph_t.py:192`).
+The Paul SPD chip carries AS=100 (full assertiveness). Three places in
+`phinton` apply `frac4mul(f0fall, pDph_t.assertiveness)`:
+
+- line 514 (Rule 3 GLIDE down magnitude)
+- line 611 (Rule 4 STEP down magnitude)
+- line 650 (Rule 6 final-fall IMPULSE magnitude — currently zeroes out
+  `tar` in all three measured prompts; see `tar=0` in events [2,3]
+  for `hello world`, [1,2] for `testing one two three`, [3,4] for
+  `the quick brown fox`)
+
+With `assertiveness == 0`, `frac4mul` returns 0 regardless of the
+input `f0fall`. So once Rule 1's hat-rise plateau IS restored, Rule 6
+will still emit zero-magnitude final-fall impulses unless
+`assertiveness` is also loaded from the SPD chip. Same speaker-def
+fix shape as the HR/SR loaders at `src/dectalk/api/speak.py:553-554`
+that #94 added.
+
+### Tertiary observation: sample count is now consistently over-long
+
+| Prompt | original Δsamp (#58) | post-#66 Δsamp | post-#74 Δsamp | post-#94 Δsamp (current) |
+|---|---:|---:|---:|---:|
+| `hello world`            | -3175 |  +675 |  +675 | +10795 |
+| `the quick brown fox`    | -1549 | +2411 | +9231 | +12861 |
+| `testing one two three`  | n/a   |   +41 | +6751 |  +9941 |
+
+The sample-count gap has **widened** post-#94 — Python is now ~600-1200 ms
+over-long on each of the three reference prompts. This appears to be a
+side effect of the trailing-silence pad (#72/#74) compounding with the
+`us_phtiming` durations on the now-richer allophone stream. The audit
+notes this for completeness but it is **not** an F0 blocker — issue
+#72 / #74 own the trailing-silence regression. Worth correlating with
+the per-frame OUT_T0 trace because the trailing silence inflates the
+"frames" denominator in OUT_T0 std measurement, biasing the std
+downward (a longer silence segment with no F0 events drags the std
+toward 0).
+
+### Concrete follow-up issues to file
+
+Each issue is self-contained and can be dispatched in parallel.
+Re-numbered as G/H/I to avoid colliding with the earlier
+D/E/F (which are now closed by #94 and the in-flight per-frame
+fixture).
+
+#### Issue G — Wire `us_phalloph` into `_speak_via_python_full`
+
+> **Title**: `us_phalloph` (ph_aloph1.c) is ported but not called;
+> `phinton` never sees `FHAT_BEGINS` / `FHAT_ENDS` → flat-monotone F0
+>
+> Scope: `_speak_via_python_full` (`src/dectalk/api/speak.py:586-619`)
+> currently runs `all_phsort` for its bookkeeping side-effects
+> (`number_words`, `clausetype`) and then **bypasses** `us_phalloph`
+> entirely — building `allophons[]` from `_arpabet_to_us_allophone`
+> and `allofeats[]` from `ph_setallofeats` instead. The fix is to
+> drive the ph stage through `us_phalloph`:
+>
+> 1. Confirm `all_phsort` populates `phonemes[]` / `sentstruc[]` /
+>    `nphonetot` for a plain-text input (it currently does — see
+>    captured trace at the top of this section).
+> 2. Call `us_phalloph(handle)` immediately after `all_phsort`. This
+>    will populate `allophons[]` / `allofeats[]` / `nallotot` with
+>    the substitution-applied stream **including** FHAT_BEGINS /
+>    FHAT_ENDS bits.
+> 3. Retire the manual `_arpabet_to_us_allophone` allophons-fill loop
+>    (lines 591-593) and the `allofeats` re-zero + `ph_setallofeats`
+>    block (lines 594-619), or keep them behind a fallback flag for
+>    inputs `us_phalloph` chokes on (TBD whether any exist).
+> 4. The end-of-clause `FPERNEXT | FSENTENDS` marker injection at
+>    lines 644-646 may become redundant once `us_phalloph` writes
+>    sentence-end markers itself — re-measure and remove if so.
+>
+> Acceptance criteria:
+> - On `hello world`, `testing one two three`, and `the quick brown
+>   fox`, at least one allofeats entry has `FHAT_BEGINS` (`0o1000`)
+>   set after the ph stage, and at least one has `FHAT_ENDS`
+>   (`0o2000`) set.
+> - `phinton` emits at least one `STEP` event (`f0type == 2`) per
+>   prompt — Rule 1 fires.
+> - Per-frame `OUT_T0` std on `hello world` grows from the current
+>   ~5 Hz to > 30 Hz (target ~80 Hz to match C, but >30 Hz is the
+>   regression-test floor that distinguishes "flat" from "contoured").
+>
+> Labels: `area/ph`, `area/api`, `size/medium`.
+> Depends on: nothing (all dependencies — `all_phsort`, `us_phalloph`,
+> `phinton`, `pht0draw` — are landed).
+
+#### Issue H — Load `assertiveness` from the SPD chip
+
+> **Title**: `pDph_t.assertiveness` defaults to 0; phinton Rules
+> 3/4/6 emit zero-magnitude F0 falls
+>
+> Scope: `src/dectalk/api/speak.py:553-554` seeds `size_hat_rise` and
+> `scale_str_rise` from the Paul SPD constants. Extend the block to
+> also write:
+>
+> ```python
+> p_dph_t.assertiveness = 100  # AS for Paul (p_us_vdf_dectalk43.c line 27)
+> ```
+>
+> Confirm the actual AS value against `p_us_vdf_dectalk43.c` —
+> `voice_definitions.py:9` documents AS as "assertiveness (final F0
+> fall, %)" with a `Limit(0, 200)` range (`voice_limits.py:29`).
+>
+> Acceptance criteria:
+> - `pDph_t.assertiveness == 100` (or whatever the actual SPD value
+>   is) after the speaker-def load.
+> - On `hello world` post-Issue-G, the Rule 6 final-fall events
+>   carry a non-zero `f0tar` (e.g. matching the C oracle's terminal
+>   F0 fall magnitude).
+>
+> Labels: `area/ph`, `area/api`, `size/small`.
+> Depends on: Issue G landing first (otherwise the zero-AS bug is
+> masked by the flat-baseline from missing FHAT bits).
+
+#### Issue I — (deferred — per-frame OUT_T0 parity fixture)
+
+The original "Issue F" (per-frame `parstochip[OUT_T0]` capture from
+the C oracle, stored as `.npz` under `tests/parity/data/`) remains
+valuable as a regression gate for Issues G and H. The audit
+recommends filing it as a separate task; the implementation sketch
+is in the earlier follow-up section (lines 564-579 above) and
+unchanged by the new findings.
+
+### Reproducer (2026-05-22 audit)
+
+```bash
+eval "$(scripts/agent_oracle_env.sh)"
+scripts/setup_c_oracle.sh
+
+# Per-prompt F0 events + per-frame OUT_T0 + allofeats snapshot:
+DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    DECTALK_BIN=$DECTALK_BIN uv run python /tmp/f0_audit_re.py
+
+# Rule-firing trace (which phinton rules fire on each prompt):
+DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/f0_rule_trace.py
+
+# Stage-by-stage allofeats capture (after all_phsort vs after ph_setallofeats):
+DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/f0_stage_trace.py
+```
+
+The three diagnostic scripts live in `/tmp/` to keep this audit a
+doc-only PR; their content is embedded verbatim in the body of
+follow-up Issues G and H when filed.
+
+Authored-by: Claude:claude-opus-4-7
+
