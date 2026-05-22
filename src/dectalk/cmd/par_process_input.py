@@ -25,9 +25,10 @@ by the caller when the full rule-walking loop should execute:
 * ``rule_data_table`` -- raw bytes of compiled rules.
 
 The Linux ``_capi`` path provides the bit-identical output today.
-When the tables are not provided, the function raises
-:class:`NotImplementedError` after completing the deterministic
-preamble (the rule-section guard and ``new_input`` initialisation).
+When the tables are not provided, the compiled rule bytecode
+embedded in :mod:`dectalk.cmd.par_rule_data` (extracted from
+``par_rule2.h``) and the dispatch table in
+:mod:`dectalk.cmd.par_perform_action_funcs` are used as defaults.
 """
 
 from __future__ import annotations
@@ -56,7 +57,15 @@ from dectalk.cmd.par_copy_word_to_output import par_copy_word_to_output
 from dectalk.cmd.par_index import par_copy_index, par_copy_index_list
 from dectalk.cmd.par_limits import PAR_MAX_RETURN_LEVEL
 from dectalk.cmd.par_match_rule import ActionFunc, par_match_rule
+from dectalk.cmd.par_perform_action_funcs import PERFORM_ACTION_FUNCS
 from dectalk.cmd.par_return_stack import par_get_return_level, par_set_return_level
+from dectalk.cmd.par_rule_data import (
+    NUM_RULE_SECTIONS,
+    NUM_RULES,
+    RULE_DATA_TABLE,
+    RULE_INDEX_TABLE,
+    RULE_SECTIONS,
+)
 from dectalk.cmd.par_skip_white_space import par_skip_white_space
 from dectalk.cmd.par_structs import IndexData, MatchArrays, ReturnValue
 from dectalk.cmd.parser_tables import TYPE_clause, TYPE_white, parser_char_types
@@ -153,18 +162,19 @@ def par_process_input(  # noqa: PLR0912, PLR0915
     match_array: MatchArrays | None,
     ret_value: ReturnValue,
     *,
-    num_rule_sections: int = 0,
-    rule_sections: list[int] | None = None,
-    num_rules: int = 0,
-    rule_index_table: list[int] | None = None,
+    num_rule_sections: int | None = None,
+    rule_sections: list[int] | tuple[int, ...] | None = None,
+    num_rules: int | None = None,
+    rule_index_table: list[int] | tuple[int, ...] | None = None,
     rule_data_table: bytes | None = None,
-    perform_action_funcs: list[ActionFunc] | None = None,
+    perform_action_funcs: list[ActionFunc] | tuple[ActionFunc, ...] | None = None,
 ) -> ReturnValue:
     r"""Drive the rule-table parser over ``input_array``.
 
     Faithful translation of the C function at par_pars1.c lines 1007-1730.
-    When all tables are provided, executes the full rule-tabling loop.
-    When tables are None, raises NotImplementedError after the preamble.
+    Executes the full rule-tabling loop. When the data tables are not
+    passed, the embedded defaults from :mod:`dectalk.cmd.par_rule_data`
+    and :mod:`dectalk.cmd.par_perform_action_funcs` are used.
 
     Args:
         input_array: Original input bytes.
@@ -180,20 +190,39 @@ def par_process_input(  # noqa: PLR0912, PLR0915
         go_until: 0 -> drive until NUL; 1 -> drive until input_length.
         match_array: Saved-string buffers.
         ret_value: Caller ReturnValue; updated on exit.
-        num_rule_sections: Number of rule sections available.
-        rule_sections: Array mapping rule-section index to first rule number.
-        num_rules: Total number of rules.
+        num_rule_sections: Number of rule sections available. Defaults
+            to :data:`par_rule_data.NUM_RULE_SECTIONS`.
+        rule_sections: Array mapping rule-section index to first rule
+            number. Defaults to :data:`par_rule_data.RULE_SECTIONS`.
+        num_rules: Total number of rules. Defaults to
+            :data:`par_rule_data.NUM_RULES`.
         rule_index_table: Per-rule byte offsets into rule_data_table.
-        rule_data_table: Raw compiled-rule bytes.
+            Defaults to :data:`par_rule_data.RULE_INDEX_TABLE`.
+        rule_data_table: Raw compiled-rule bytes. Defaults to
+            :data:`par_rule_data.RULE_DATA_TABLE`.
         perform_action_funcs: Action-function dispatch table.
+            Defaults to :data:`par_perform_action_funcs.PERFORM_ACTION_FUNCS`.
 
     Returns:
         ret_value. When rule index is out of range, writes
         "Invalid rule section. " into output_array and returns.
-
-    Raises:
-        NotImplementedError: When tables are None but the rule walk would fire.
     """
+    # Fall back to embedded compiled rule tables (par_rule2.h) when the
+    # caller did not pass overrides. Mirrors the C build's use of the
+    # module-static globals at file scope.
+    if rule_sections is None:
+        rule_sections = RULE_SECTIONS
+    if rule_index_table is None:
+        rule_index_table = RULE_INDEX_TABLE
+    if rule_data_table is None:
+        rule_data_table = RULE_DATA_TABLE
+    if perform_action_funcs is None:
+        perform_action_funcs = PERFORM_ACTION_FUNCS
+    if num_rule_sections is None:
+        num_rule_sections = NUM_RULE_SECTIONS
+    if num_rules is None:
+        num_rules = NUM_RULES
+
     # Initialise new_ret from caller (par_pars1.c lines 1067-1086).
     new_ret = ReturnValue(
         input_pos=ret_value.input_pos + ret_value.input_offset,
@@ -235,27 +264,12 @@ def par_process_input(  # noqa: PLR0912, PLR0915
 
     state = _init_state(input_length)
 
-    tables_available = (
-        rule_sections is not None
-        and rule_index_table is not None
-        and rule_data_table is not None
-        and perform_action_funcs is not None
-    )
-
-    if not tables_available:
-        raise NotImplementedError(
-            "par_process_input rule-driver loop (par_pars1.c lines 1109-1721) is "
-            "deferred -- the Linux dectalk._capi.CAPI path provides bit-identical "
-            "output today; wiring up the Python rule engine requires the "
-            "rule_data_table / rule_index_table and par_match_rule's full "
-            f"implementation. Got rule={rule} go_until={go_until} "
-            f"input_length={input_length} state.input_length={state.input_length}."
-        )
-
     # -----------------------------------------------------------------------
     # Full rule-driving loop (par_pars1.c lines 1109-1721).
     # -----------------------------------------------------------------------
-    # These are guaranteed non-None here because tables_available is True.
+    # These are guaranteed non-None now: the preamble above falls back to
+    # the module-level defaults from ``par_rule_data`` /
+    # ``par_perform_action_funcs`` when the caller does not supply them.
     assert rule_sections is not None
     assert rule_index_table is not None
     assert rule_data_table is not None
