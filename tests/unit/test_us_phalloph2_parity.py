@@ -162,19 +162,13 @@ def test_arpabet_words_to_symbols_terminates_with_period_or_quest() -> None:
     """``is_sentence_final`` controls the trailing terminator marker."""
     from dectalk.include.phoneme_codes import PERIOD, QUEST  # noqa: PLC0415
 
-    syms_period, _ = _arpabet_words_to_symbols(
-        [["AH0"]], is_sentence_final=True, is_question=False
-    )
+    syms_period, _ = _arpabet_words_to_symbols([["AH0"]], is_sentence_final=True, is_question=False)
     assert syms_period[-1] == PERIOD
 
-    syms_quest, _ = _arpabet_words_to_symbols(
-        [["AH0"]], is_sentence_final=True, is_question=True
-    )
+    syms_quest, _ = _arpabet_words_to_symbols([["AH0"]], is_sentence_final=True, is_question=True)
     assert syms_quest[-1] == QUEST
 
-    syms_no_term, _ = _arpabet_words_to_symbols(
-        [["AH0"]], is_sentence_final=False
-    )
+    syms_no_term, _ = _arpabet_words_to_symbols([["AH0"]], is_sentence_final=False)
     assert syms_no_term[-1] not in (PERIOD, QUEST)
 
 
@@ -241,11 +235,7 @@ def test_phalloph2_populates_nonzero_allofeats() -> None:
     phalloph2(handle, arpabet_words, is_sentence_final=True)
 
     # At least one phone must have a non-zero feature word.
-    nonzero = [
-        p_dph_t.allofeats[i]
-        for i in range(p_dph_t.nallotot)
-        if p_dph_t.allofeats[i] != 0
-    ]
+    nonzero = [p_dph_t.allofeats[i] for i in range(p_dph_t.nallotot) if p_dph_t.allofeats[i] != 0]
     assert nonzero, (
         f"allofeats[:{p_dph_t.nallotot}] all zero — "
         "phalloph2 chain didn't populate any feature bits"
@@ -292,8 +282,7 @@ def test_phalloph2_marks_sentence_end_with_fsentends() -> None:
         i for i in range(p_dph_t.nallotot) if (p_dph_t.allofeats[i] & FSENTENDS) != 0
     ]
     assert sentends_phones, (
-        "no allofeats entry carries FSENTENDS — sentence-final "
-        "boundary marker didn't propagate"
+        "no allofeats entry carries FSENTENDS — sentence-final boundary marker didn't propagate"
     )
 
 
@@ -314,9 +303,7 @@ def test_phalloph2_no_dropped_phones_for_hh_l_ng() -> None:
 
     # Count allophons matching HX / LL / LX (LX is the post-vocalic L
     # allophone us_phalloph substitutes after a vowel).
-    codes = [
-        p_dph_t.allophons[i] & 0xFF for i in range(p_dph_t.nallotot)
-    ]
+    codes = [p_dph_t.allophons[i] & 0xFF for i in range(p_dph_t.nallotot)]
     has_hx = int(USPhoneme.HX) in codes
     has_ll_or_lx = int(USPhoneme.LL) in codes or int(USPhoneme.LX) in codes
     assert has_hx, "HX (US /h/) missing — HH dropped from the stream"
@@ -339,8 +326,7 @@ def test_phalloph2_word_boundaries_in_allofeats() -> None:
     phalloph2(handle, arpabet_words, is_sentence_final=True)
 
     has_boundary = any(
-        (p_dph_t.allofeats[i] & FBOUNDARY) >= FWBNEXT
-        for i in range(p_dph_t.nallotot)
+        (p_dph_t.allofeats[i] & FBOUNDARY) >= FWBNEXT for i in range(p_dph_t.nallotot)
     )
     assert has_boundary, (
         "no allofeats entry carries a FWBNEXT-or-stronger boundary "
@@ -365,8 +351,7 @@ def test_phalloph2_period_propagates_to_fpernext_or_sentends() -> None:
         for i in range(p_dph_t.nallotot)
     )
     assert has_sentence_end, (
-        "neither FPERNEXT nor FSENTENDS found — phinton's Rule 4 "
-        "(final fall) will not fire"
+        "neither FPERNEXT nor FSENTENDS found — phinton's Rule 4 (final fall) will not fire"
     )
 
 
