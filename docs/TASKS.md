@@ -25,5 +25,3 @@ checklist, and `docs/PLAN.md` for strategic phase context.
 | `src/dapi/src/ph/ph_setar.c` | `src/dectalk/ph/getendtar.py` | ph | open | — |
 | `src/dapi/src/ph/ph_setar.c` | `src/dectalk/ph/gettar.py` | ph | open | — |
 | `src/dapi/src/ph/ph_setar.c` | `src/dectalk/ph/make_dip.py` | ph | open | — |
-| `src/dapi/src/ph/ph_draw.c` | `src/dectalk/ph/phdraw.py` | ph | open | — |
-| `src/dapi/src/ph/ph_drwt02.c` | `src/dectalk/ph/pht0draw.py` | ph | open | — |

@@ -49,6 +49,15 @@ from dectalk.ph.rom_tables import (
     us_maltar,
 )
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.uk_gettar import uk_gettar
+from dectalk.ph.uk_rom_tables import (
+    uk_femamp,
+    uk_femdip,
+    uk_femtar,
+    uk_malamp,
+    uk_maldip,
+    uk_maltar,
+)
 from dectalk.ph.us_gettar import us_gettar
 
 _FONT_USA: int = PFUSA << PSFONT
@@ -71,14 +80,26 @@ def _load_us_tables(p_dph_t: DphT) -> None:
         p_dph_t.p_amp = list(us_femamp)
 
 
-def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912 -- faithful C translation
+def _load_uk_tables(p_dph_t: DphT) -> None:
+    """Repoint ``p_diph`` / ``p_tar`` / ``p_amp`` to the UK tables."""
+    if p_dph_t.malfem == MALE:
+        p_dph_t.p_diph = list(uk_maldip)
+        p_dph_t.p_tar = list(uk_maltar)
+        p_dph_t.p_amp = list(uk_malamp)
+    else:
+        p_dph_t.p_diph = list(uk_femdip)
+        p_dph_t.p_tar = list(uk_femtar)
+        p_dph_t.p_amp = list(uk_femamp)
+
+
+def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912, PLR0915 -- faithful C translation
     """Look up the per-phone target value, dispatching by language font.
 
     Faithful translation of the C ``int gettar(LPTTS_HANDLE_T, int)``.
-    The Python port currently dispatches to :func:`us_gettar` for US
-    English phones; other-language fonts raise
-    :class:`NotImplementedError` since their per-language target
-    helpers (``uk_gettar``, ``gr_gettar``, etc.) are not yet ported.
+    The Python port dispatches to :func:`us_gettar` for US English
+    phones and :func:`uk_gettar` for UK English phones; other-language
+    fonts (GR/LA/SP/FR) raise :class:`NotImplementedError` since their
+    per-language target helpers are not yet ported.
 
     Args:
         phTTS: Two-pointer engine handle. ``p_ph_thread_data`` must
@@ -91,8 +112,9 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912 -- faith
         ``0`` if no candidate position yields a real target.
 
     Raises:
-        NotImplementedError: When a non-US phone font is encountered;
-            UK/GR/LA/SP/FR ``*_gettar`` helpers are still deferred.
+        NotImplementedError: When a non-US/UK phone font is
+            encountered; GR/LA/SP/FR ``*_gettar`` helpers are still
+            deferred.
     """
     p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
     p_dphsettar = cast(DphSettarSt, p_dph_t.pSTphsettar)
@@ -116,24 +138,28 @@ def gettar(phTTS: TtsHandle, phone: int) -> int:  # noqa: N803, PLR0912 -- faith
             p_dph_t.last_lang = tmp
             if tmp == _FONT_USA:
                 _load_us_tables(p_dph_t)
-            elif tmp in (_FONT_UK, _FONT_GR, _FONT_LA, _FONT_SP, _FONT_FR):
+            elif tmp == _FONT_UK:
+                _load_uk_tables(p_dph_t)
+            elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP, _FONT_FR):
                 raise NotImplementedError(
                     f"gettar: per-language tables for font 0x{tmp:04x} "
-                    "(UK/GR/LA/SP/FR) are not yet ported; only US English "
-                    "is wired up. See docs/PLAN.md Phase E."
+                    "(GR/LA/SP/FR) are not yet ported; only US/UK English "
+                    "are wired up. See docs/PLAN.md Phase E."
                 )
             else:
                 # Default fallback in C: call us_gettar with phone & PVALUE.
                 # Reach this branch only when font is unrecognised.
                 tartemp = us_gettar(phTTS, phone & 0xFF)
 
-        # Per-language dispatch (only US wired up).
+        # Per-language dispatch (US and UK wired up).
         if tmp == _FONT_USA:
             tartemp = us_gettar(phTTS, phone + index[count])
-        elif tmp in (_FONT_UK, _FONT_GR, _FONT_LA, _FONT_SP, _FONT_FR):
+        elif tmp == _FONT_UK:
+            tartemp = uk_gettar(phTTS, phone + index[count])
+        elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP, _FONT_FR):
             raise NotImplementedError(
-                f"gettar: {_FONT_USA=:#x} is wired up but font 0x{tmp:04x} "
-                "is not. Pending uk_/gr_/la_/sp_/fr_gettar ports."
+                f"gettar: US/UK English are wired up but font 0x{tmp:04x} "
+                "is not. Pending gr_/la_/sp_/fr_gettar ports."
             )
 
         # USP_K coarticulation: F2 += 300, F3 += 500 when phone is /k/.

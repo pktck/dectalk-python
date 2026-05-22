@@ -41,6 +41,8 @@ from typing import cast
 
 import pytest
 
+from dectalk.include.cmd_codes import PSFONT
+from dectalk.include.phoneme_codes import PFUK
 from dectalk.include.usp_codes import USP_AA, USP_K
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.ph import phsettar as phsettar_module
@@ -52,6 +54,7 @@ from dectalk.ph.gettar import gettar
 from dectalk.ph.make_dip import make_dip
 from dectalk.ph.numeric_constants import F1, F2, F3, FZ
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.uk_rom_tables import uk_femtar
 from dectalk.ph.utterance_constants import GEN_SIL
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_setar.c"
@@ -298,11 +301,10 @@ def test_make_dip_callable_signature() -> None:
 def test_all_four_wrappers_no_longer_raise_for_us_path() -> None:
     """None of the four ports raise NotImplementedError on the US path.
 
-    The C dispatch routes UK/GR/LA/SP/FR fonts to per-language helpers
-    that are still deferred (issue #48 only covers the US English path
-    plus the dispatch chain itself). But the US-English code path --
-    triggered by phones whose font byte is ``PFUSA<<PSFONT`` -- must
-    complete without raising.
+    The C dispatch routes GR/LA/SP/FR fonts to per-language helpers
+    that are still deferred (issues #48 / #78 cover US and UK only).
+    But the US-English code path -- triggered by phones whose font
+    byte is ``PFUSA<<PSFONT`` -- must complete without raising.
     """
     # All four entry points on a plain US-English vowel:
     for entry, args in (
@@ -317,6 +319,23 @@ def test_all_four_wrappers_no_longer_raise_for_us_path() -> None:
             entry(*args)
         except NotImplementedError as exc:  # pragma: no cover - regression guard
             pytest.fail(f"{entry.__name__} raised NotImplementedError on US path: {exc}")
+
+
+def test_uk_dispatch_routes_through_uk_gettar() -> None:
+    """A UK-font phone code routes :func:`gettar` to :func:`uk_gettar`.
+
+    The dispatch loads the UK tables (``uk_femtar``) and calls
+    ``uk_gettar``. For a plain UK vowel like AA on F1, the returned
+    value must equal ``uk_femtar[USP_AA & 0xFF]`` -- not the US value.
+    """
+    uk_aa = (PFUK << PSFONT) | (USP_AA & 0xFF)
+    handle = _make_handle(phones=[GEN_SIL, uk_aa, GEN_SIL, GEN_SIL], np_idx=F1)
+
+    result = gettar(handle, 1)
+    expected_uk = uk_femtar[USP_AA & 0xFF]
+    assert result == expected_uk, (
+        f"UK dispatch produced {result}, expected uk_femtar value {expected_uk}"
+    )
 
 
 def test_diphthong_sentinel_routes_through_gettar() -> None:
