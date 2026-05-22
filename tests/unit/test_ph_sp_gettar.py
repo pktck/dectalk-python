@@ -20,6 +20,7 @@ from typing import cast
 import pytest
 
 from dectalk.include.spp_codes import (
+    SP_TOT_ALLOPHONES,
     SPP_A,
     SPP_BH,
     SPP_DH,
@@ -37,9 +38,8 @@ from dectalk.include.spp_codes import (
     SPP_S,
     SPP_U,
     SPP_YH,
-    SP_TOT_ALLOPHONES,
 )
-from dectalk.include.usp_codes import USP_Q
+from dectalk.include.usp_codes import USP_M, USP_Q
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
@@ -135,8 +135,6 @@ def test_nasal_zero_returns_boundary_value_for_nasal() -> None:
     # Spanish phones, so SPP_M (low byte 11) reads us_featb[11] ==
     # 31 which has no FNASAL bit. Use USP_M instead to get the
     # FNASAL bit (us_featb[USP_M & 0xFF] sets FNASAL).
-    from dectalk.include.usp_codes import USP_M
-
     handle = _make_handle(np_idx=FZ, phone=USP_M)
     assert sp_gettar(handle, 1) == NASAL_ZERO_BOUNDARY
 

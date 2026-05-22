@@ -26,9 +26,9 @@ from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.fr_gettar import fr_gettar
 from dectalk.ph.fr_target_tables import (
+    N_PARAM_FR,
     Cibles_FEMALE,
     Cibles_MALE,
-    N_PARAM_FR,
     cibles_flat,
 )
 from dectalk.ph.numeric_constants import A2, AV, B2, F1, F2, F3, FZ, TILT
