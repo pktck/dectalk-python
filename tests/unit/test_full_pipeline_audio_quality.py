@@ -36,10 +36,13 @@ def _speak(text: str, monkeypatch: pytest.MonkeyPatch) -> np.ndarray:
         # Upper bounds widened in issue #72: the trailing-silence pad
         # adds ~6-9k samples per clause so the pure-Python pipeline now
         # closer matches the C reference's trailing-pad behaviour.
-        ("hi", 2000, 12000),
-        ("hello world", 7000, 24000),
-        ("good morning", 7000, 24000),
-        ("test one two three", 11000, 30000),
+        # Further widened after PRs #102 (trailing-silence pad) and #107
+        # (SpdChip defaults) expanded sample counts by another ~10-15%;
+        # bounds carry ~30% headroom over current measured values.
+        ("hi", 2000, 18000),
+        ("hello world", 7000, 33000),
+        ("good morning", 7000, 32000),
+        ("test one two three", 11000, 38000),
     ],
 )
 def test_full_pipeline_sample_count_in_range(
@@ -91,11 +94,12 @@ def test_full_pipeline_inline_command_is_stripped(monkeypatch: pytest.MonkeyPatc
     duration in the full pipeline's current wiring).
     """
     samples = _speak("[:rate 250] testing one two three", monkeypatch)
-    # Bare "testing one two three" at rate=1.0 produces ~11-22k samples
+    # Bare "testing one two three" at rate=1.0 produces ~11-28k samples
     # (see parametrize bounds above for similar prompts). With the
     # spelled-out "rate two hundred and fifty" stripped out, the rendered
     # audio is strictly under that — and far less than the pre-fix 34540.
-    assert samples.size < 20_000, (
+    # Upper bound widened after PRs #102/#107 expanded per-clause padding.
+    assert samples.size < 26_000, (
         f"inline [:rate 250] not stripped — got {samples.size} samples "
         "(suggests command words leaked into LTS as in issue #64)"
     )
