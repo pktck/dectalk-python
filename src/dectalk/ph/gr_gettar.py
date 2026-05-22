@@ -1,4 +1,4 @@
-# ruff: noqa: PLR2004, SIM102, SIM108, SIM114, PLR5501, PLR1730 -- faithful translation of branchy C source
+# ruff: noqa: PLR2004, SIM102, SIM108, PLR5501, PLR1730 -- faithful translation of branchy C source
 """``gr_gettar`` -- German per-parameter target lookup from p_gr_st1.c.
 
 Translated from ``src/dapi/src/ph/p_gr_st1.c`` line 85 (~330 lines).
@@ -47,6 +47,7 @@ from dectalk.include.grp_codes import (
     GRP_U,
     GRP_UM,
 )
+from dectalk.include.phoneme_codes import WBOUND
 from dectalk.include.usp_codes import USP_Q
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.ph.dph_settar_st import DphSettarSt
@@ -55,7 +56,6 @@ from dectalk.ph.feature_bits import (
     FDUMMY_VOWEL,
     FSTRESS,
     FSTRESS_2,
-    WBOUND,
 )
 from dectalk.ph.get_phone import get_phone
 from dectalk.ph.numeric_constants import (
@@ -260,8 +260,7 @@ def gr_gettar(phTTS: TtsHandle, nphone_temp: int) -> int:  # noqa: N803, PLR0912
             elif (phone_feature(phone_temp) & FOBST) != 0:
                 tartemp = 7
                 if (phone_feature(phone_temp) & FVOICD) != 0 and (
-                    (phone_feature(phone_temp) & FPLOSV) != 0
-                    or p_dphsettar.phcur == GRP_DJ
+                    (phone_feature(phone_temp) & FPLOSV) != 0 or p_dphsettar.phcur == GRP_DJ
                 ):
                     tartemp = 40  # Max tilt for [b, d, g]
             elif begtyp(phone_temp) == 1 or endtyp(phone_temp) == 1:

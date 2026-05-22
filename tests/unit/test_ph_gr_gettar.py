@@ -11,6 +11,14 @@ aren't transcribed yet, these tests load the US tables as a stand-in
 for the few branches that touch ``p_tar`` / ``p_amp`` -- the
 language-specific *logic* (rules / clamps / German-only phoneme
 codes) is what matters here and is what these assertions cover.
+
+Note on begtyp/endtyp: the Python port routes :func:`begtyp` through
+``us_begtyp`` for all fonts (matching the C default), so when a test
+needs ``begtyp != 1`` we pick a German allophone whose code byte
+happens to map to a non-1 entry in ``us_begtyp`` -- typically GRP_U
+(value 8, us_begtyp[8] = 2). This is an artefact of the stand-in
+LUTs; once the German per-language tables land the lookups will
+match the C oracle exactly.
 """
 
 from __future__ import annotations
@@ -39,7 +47,7 @@ from dectalk.include.grp_codes import (
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
-from dectalk.ph.feature_bits import FDUMMY_VOWEL, FSTRESS, FSTRESS_2
+from dectalk.ph.feature_bits import FDUMMY_VOWEL, FSTRESS_1, FSTRESS_2
 from dectalk.ph.gr_gettar import gr_gettar
 from dectalk.ph.numeric_constants import AV, B2, B3, F1, F2, FZ, TILT
 from dectalk.ph.parameter_tables import partyp
@@ -159,9 +167,13 @@ def test_b3_not_clamped_for_n_before_non_ih() -> None:
 
 
 def test_b2_nudge_60_for_en_before_non_front() -> None:
-    """B2 of /n/ or /en/ adds 60 before non-front vowels (begtyp != 1)."""
+    """B2 of /n/ or /en/ adds 60 before non-front vowels (begtyp != 1).
+
+    GRP_I -> us_begtyp[5] = 1 (front-vowel): nudge does NOT fire.
+    GRP_U -> us_begtyp[8] = 2 (back-vowel): nudge fires (+60).
+    """
     base = _make_handle(np_idx=B2, phone=GRP_EN, phnex=GRP_I)
-    nudged = _make_handle(np_idx=B2, phone=GRP_EN, phnex=GRP_A)
+    nudged = _make_handle(np_idx=B2, phone=GRP_EN, phnex=GRP_U)
     assert gr_gettar(nudged, 1) - gr_gettar(base, 1) == 60
 
 
@@ -204,14 +216,28 @@ def test_dummy_vowel_reduces_av_by_7_in_german() -> None:
 
 
 def test_fstress_2_reduces_av_by_1() -> None:
-    """FSTRESS_2 in allofeats subtracts 1 from AV (improv330)."""
+    """FSTRESS_2 in allofeats subtracts 1 from AV (improv330).
+
+    The C source's stress reduction is::
+
+        if ((allofeats & FSTRESS_2) IS_PLUS) tartemp -= 1;
+        else if ((allofeats & FSTRESS) IS_MINUS) tartemp -= 2;
+
+    FSTRESS == FSTRESS_1 | FSTRESS_2 (mask 0o3). To isolate the -1
+    branch we set base = FSTRESS_1 alone (no first/no second branch
+    fires) and with_s2 = FSTRESS_2 alone (first branch fires, -1).
+    The delta is exactly 1.
+    """
     base = _make_handle(np_idx=AV, phone=GRP_A)
     with_s2 = _make_handle(np_idx=AV, phone=GRP_A)
-    # Set FSTRESS so we don't hit the unstressed-by-2 branch; then
-    # add FSTRESS_2 to trigger the -1 reduction.
-    cast(DphT, base.p_ph_thread_data).allofeats[1] = FSTRESS
-    cast(DphT, with_s2.p_ph_thread_data).allofeats[1] = FSTRESS | FSTRESS_2
-    assert gr_gettar(base, 1) - gr_gettar(with_s2, 1) == 1
+    cast(DphT, base.p_ph_thread_data).allofeats[1] = FSTRESS_1
+    cast(DphT, with_s2.p_ph_thread_data).allofeats[1] = FSTRESS_2
+    base_val = gr_gettar(base, 1)
+    with_s2_val = gr_gettar(with_s2, 1)
+    # Both stay positive (+5 hack applies to both).
+    assert base_val > 0
+    assert with_s2_val > 0
+    assert base_val - with_s2_val == 1
 
 
 def test_h_aspiration_52_before_front_vowel() -> None:
@@ -223,9 +249,12 @@ def test_h_aspiration_52_before_front_vowel() -> None:
 
 
 def test_h_aspiration_55_before_back_vowel() -> None:
-    """AP for /h/ is 55 before a back vowel (begtyp != 1)."""
-    handle = _make_handle(np_idx=AV + 1, phone=GRP_H, phnex=GRP_A)
-    cast(DphT, handle.p_ph_thread_data).allophons[2] = GRP_A
+    """AP for /h/ is 55 before a back vowel (begtyp != 1).
+
+    Picking GRP_U so us_begtyp[GRP_U & 0xff] = us_begtyp[8] = 2 != 1.
+    """
+    handle = _make_handle(np_idx=AV + 1, phone=GRP_H, phnex=GRP_U)
+    cast(DphT, handle.p_ph_thread_data).allophons[2] = GRP_U
     assert gr_gettar(handle, 1) == 55
 
 
@@ -236,8 +265,11 @@ def test_kh_aspiration_42_before_front_vowel() -> None:
 
 
 def test_kh_aspiration_44_before_back_vowel() -> None:
-    """AP for /kh/ is 44 before a back vowel."""
-    handle = _make_handle(np_idx=AV + 1, phone=GRP_KH, phnex=GRP_A)
+    """AP for /kh/ is 44 before a back vowel.
+
+    Picking GRP_U so us_begtyp[8] = 2 != 1.
+    """
+    handle = _make_handle(np_idx=AV + 1, phone=GRP_KH, phnex=GRP_U)
     assert gr_gettar(handle, 1) == 44
 
 
@@ -248,11 +280,31 @@ def test_ap_zero_for_non_aspirated() -> None:
 
 
 def test_h_aspiration_drops_12_before_silence() -> None:
-    """AP for /h/ is reduced by 12 if the following allophone is silence."""
-    front = _make_handle(np_idx=AV + 1, phone=GRP_H, phnex=GRP_I)
-    front_with_sil = _make_handle(np_idx=AV + 1, phone=GRP_H, phnex=GRP_I)
-    cast(DphT, front.p_ph_thread_data).allophons[2] = GRP_I  # not silence
+    """AP for /h/ is reduced by 12 if the following allophone is silence.
+
+    Both calls use phnex=GRP_U so the back-vowel branch fires (tartemp = 55);
+    they differ only in whether allophons[nphone+1] is silence, which
+    isolates the -12 silence drop.
+    """
+    front = _make_handle(np_idx=AV + 1, phone=GRP_H, phnex=GRP_U)
+    front_with_sil = _make_handle(np_idx=AV + 1, phone=GRP_H, phnex=GRP_U)
+    cast(DphT, front.p_ph_thread_data).allophons[2] = GRP_U  # not silence
     cast(DphT, front_with_sil.p_ph_thread_data).allophons[2] = GEN_SIL
+    # Note: setting allophons[2] also rewires phnex_temp on the
+    # silence path. To keep phnex_temp == GRP_U (so the same
+    # back-vowel 55 baseline applies), the C source reads
+    # allophons[pDph_t->nphone + 1], NOT allophons[nphone_temp + 1].
+    # Our handle uses nphone=1 so pDph_t->nphone + 1 == 2 == the slot
+    # we just rewrote. But phnex_temp comes from
+    # allophons[nphone_temp + 1] (also slot 2 since nphone_temp=1),
+    # so both rewrites cascade. The result is: with GEN_SIL,
+    # phnex_temp = GEN_SIL, begtyp(GEN_SIL) = us_begtyp[0] = 4, so
+    # the back-vowel branch still fires (tartemp = 55), then the
+    # GEN_SIL check fires (-12 -> 43). The front handle gets
+    # phnex_temp = GRP_U, begtyp = 2, back-vowel branch fires
+    # (tartemp = 55), no silence drop -> 55.
+    assert gr_gettar(front, 1) == 55
+    assert gr_gettar(front_with_sil, 1) == 43
     assert gr_gettar(front, 1) - gr_gettar(front_with_sil, 1) == 12
 
 
@@ -272,14 +324,16 @@ def test_tilt_10_for_u() -> None:
 
 
 def test_tilt_l_adds_8() -> None:
-    """TILT for GRP_L includes a +8 additive bump."""
-    base = _make_handle(np_idx=TILT, phone=GRP_A)
-    with_l = _make_handle(np_idx=TILT, phone=GRP_L)
-    base_val = gr_gettar(base, 1)
-    with_l_val = gr_gettar(with_l, 1)
-    # The +8 is observably larger than the base value.
-    assert with_l_val >= 8
-    assert with_l_val > base_val
+    """TILT for GRP_L includes a +8 additive bump.
+
+    GRP_L's code byte is 26. us_begtyp[26] = 5 and us_endtyp[26] = 3
+    (neither is 1), so the front-vowel +10 branch is skipped. The
+    other branches (nasal/silence/dummy_vowel/obstruent) are also
+    skipped for GRP_L. So tartemp starts at 0 and only the GRP_L +8
+    bump applies, giving 8.
+    """
+    handle = _make_handle(np_idx=TILT, phone=GRP_L)
+    assert gr_gettar(handle, 1) == 8
 
 
 # --- Sanity guard ---------------------------------------------------------
