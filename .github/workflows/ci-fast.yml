@@ -47,8 +47,8 @@ jobs:
       - name: Pyright strict type check
         run: uv run pyright
 
-      - name: Pytest (no c_oracle, no slow)
-        run: uv run pytest -n auto -m "not c_oracle and not slow"
+      - name: Pytest (no c_oracle, no slow, no perf)
+        run: uv run pytest -n auto -m "not c_oracle and not slow and not perf"
 
       - name: Shellcheck
         run: |
