@@ -183,9 +183,9 @@ def test_ksd_t_cmd_init_runs_on_real_ksd_t() -> None:
     routes through the real call site to catch any future regression
     in either the field set or the reset path.
     """
-    from dectalk.cmd.cmd_init import cmd_init
-    from dectalk.cmd.cmd_states import PHONEME_OFF, PHONEME_SPEAK
-    from dectalk.cmd.cmd_t import CmdT
+    from dectalk.cmd.cmd_init import cmd_init  # noqa: PLC0415
+    from dectalk.cmd.cmd_states import PHONEME_OFF, PHONEME_SPEAK  # noqa: PLC0415
+    from dectalk.cmd.cmd_t import CmdT  # noqa: PLC0415
 
     cmd_t = CmdT()
     ksd_t = KsdT()
@@ -196,8 +196,8 @@ def test_ksd_t_cmd_init_runs_on_real_ksd_t() -> None:
 
 def test_ksd_t_no_reset_path_does_not_touch_pitch_delta() -> None:
     """``cmd_init(..., b_reset_all=False)`` must leave ``pitch_delta`` alone."""
-    from dectalk.cmd.cmd_init import cmd_init
-    from dectalk.cmd.cmd_t import CmdT
+    from dectalk.cmd.cmd_init import cmd_init  # noqa: PLC0415
+    from dectalk.cmd.cmd_t import CmdT  # noqa: PLC0415
 
     cmd_t = CmdT()
     ksd_t = KsdT()
