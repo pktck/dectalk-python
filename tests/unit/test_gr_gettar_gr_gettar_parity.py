@@ -276,7 +276,7 @@ def test_gettar_dispatcher_routes_german_font() -> None:
     in :mod:`dectalk.ph.rom_tables` and the dispatcher delegates to
     :func:`gr_gettar`.
     """
-    from dectalk.ph.gettar import gettar
+    from dectalk.ph.gettar import gettar  # noqa: PLC0415
 
     handle = _make_handle()
     # Pre-set last_lang to something else so the swap branch fires.
