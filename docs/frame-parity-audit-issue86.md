@@ -435,4 +435,231 @@ These would be useful for narrowing exactly which sub-step of
 once D and E above are closed and the per-frame delta drops below
 the noise floor.
 
+## Refresh — 2026-05-22 (post-phsort / pht0draw landings)
+
+This section re-runs the same 5-prompt instrumentation against
+`dev` at `e0db2bc` and records what has changed since the original
+audit landed. The original section above is preserved verbatim for
+historical comparison — values quoted in this refresh are the
+current (live) numbers, captured by the same `[:debug 2200]` printf
+trick on the C side and the same `parstochip_to_llframe_delayed`
+monkey-patch on the Python side.
+
+The intervening PRs that materially affect the frame stream:
+
+- `b2f4a8f` — derive `allofeats[]` from ARPABET front-end so
+  `phinton` emits F0 events (closes the original audit's issue #3 —
+  T0 should now be a contour rather than the flat `f0minimum`).
+- `38ae183`, `da76b2f` — `pht0draw` F0 contour generator for MALE
+  and FEMALE.
+- `1713f9e`, `1e93aca` — `phdraw` initial silence anticipation and
+  GEN_SIL ending dcstep tracker.
+- `7cda308` — `all_phsort` / `fr_phsort` ports.
+- `42cc9cb` — once-per-phone setup + FVOWEL A2-jamming.
+- `909c5ff` — wire `all_phsort` into `_speak_via_python_full`.
+- `1893910` — emit trailing-silence pad on the full-pipeline path.
+
+### Frame counts (refreshed)
+
+| Prompt | C frames | Py frames | Δ (was) |
+|---|---:|---:|---:|
+| `hi` | 137 | 124 | -13 (was -90) |
+| `hello world` | 195 | 224 | +29 (was -63) |
+| `ah` | 128 | 144 | +16 (was -61) |
+| `the quick brown fox` | 279 | 297 | +18 (was -77) |
+| `[:rate 200]testing` | 155 | 165 | +10 (was -110) |
+
+Python now overshoots C by 10-30 frames on four of the five
+prompts (still 13 short on `hi`). The sign of the delta is now
+**both directions**, where previously Python was uniformly 30-70 %
+shorter. The ARPABET-dropout symptom from issue A of #58 is
+largely closed by the chain `9954b38 ARPABET-alias gap` → `b2f4a8f
+allofeats` → `1893910 trailing pad`.
+
+### Frame 0 — first emitted frame (refreshed)
+
+The same `[:debug 2200]` reproducer + Python adapter dump still
+shows the **same first-frame divergence pattern** as the original
+audit. Frame-0 values for the 5 prompts:
+
+| Prompt | side | F1 | TLT | T0 | F2 | F3 | B1 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `hi` | C  | 730 | 37 | 326 | 1200 | 2680 | 400 |
+| `hi` | Py | 459 |  5 | 500 | 1569 | 2539 |   0 |
+| `hello world` | C  | 550 | 36 | 332 | 1260 | 2600 | 400 |
+| `hello world` | Py | 596 |  5 | 500 | 1194 | 2607 |   0 |
+| `ah` | C  | 780 | 12 | 326 | 1200 | 2670 | 220 |
+| `ah` | Py | 647 |  5 | 500 | 1529 | 2461 |   0 |
+| `the quick brown fox` | C  | 290 | 25 | 335 | 1300 | 2560 | 200 |
+| `the quick brown fox` | Py | 313 |  5 | 500 | 1452 | 2573 |   0 |
+| `[:rate 200]testing` | C  | 350 | 26 | 322 | 1600 | 2600 | 300 |
+| `[:rate 200]testing` | Py | 364 |  5 | 500 | 1569 | 2607 |   0 |
+
+**Findings #1 (speaker definition not applied), #2 (`phsettar`
+runs late) and #3 (T0=500) all still hold unchanged** on the
+first frame. The B1/TLT defaults and T0=500 are bit-identical to
+the original audit, and F1/F2/F3 deltas are within ±20 Hz of the
+values originally measured. The `pht0draw` MALE/FEMALE ports
+(`38ae183`, `da76b2f`) and `init_clause` (`909c5ff`) fixed the
+contour *shape* later in the stream but did **not** advance the
+init-ordering of frame 0 — the very first iteration of the
+per-frame loop in `speak.py:728-742` still emits before
+`phsettar`+`phdraw` have a chance to load HX's speaker-table
+values.
+
+### New finding G — Leading `GEN_SIL` allophone is Python-only
+
+`_speak_via_python_full` in `src/dectalk/api/speak.py:496-501`
+unconditionally prepends a `GEN_SIL` token to `allophons`:
+
+```python
+allophons: list[int] = [GEN_SIL]
+for name in arpabet_phones:
+    code = _arpabet_to_us_allophone(name)
+    if code is not None:
+        allophons.append(code)
+allophons.append(GEN_SIL)
+```
+
+The C oracle's `[:debug 2200]` dump for `hi` shows the very first
+emitted frame is **`US_HX`** (no leading `SIL`), then 12 HX
+frames, then 53 AY, then 72 SIL:
+
+```
+US_HX    0  730  0  0  0  0  0  0  37  326  0 1200 2680  290  400  250  220
+...
+SIL      0  535  0  0  0  0  0  0   6  352  0 1818 2461  290  140  137  230
+```
+
+C's allophone array starts at the first real phone. The C chain
+`ph_aloph.c` → `init_phclause` → frame loop zeroes the
+`allophons[]` buffer and then fills it from the ARPABET front-end
+without a leading-SIL pad — the trailing silence is generated
+inline by the `dcstep` / `loadspdef` machinery, not by an explicit
+`GEN_SIL` token in `allophons[0]`.
+
+Python's `_render_clause_full` adds **15 leading-SIL frames** for
+`hi` (its `allodurs[0]` for the GEN_SIL pad). Those frames carry
+the PARAMETER-struct defaults (F1=459, TLT=5, T0=500, B1=0) that
+findings #1 and #2 root-cause — and Python is currently emitting
+them under a SIL phone tag even though the C side never emits
+such a SIL phone at the start of a clause.
+
+This explains the apparent `-13`/`+10..+29` frame-count delta
+pattern: Python adds 15 leading-SIL frames that C doesn't, but
+Python's vowel-duration timing is shorter than C's (see finding
+H below — wrong vowel labels yield wrong `allodurs[]`), so the
+two errors partially cancel. Removing the leading
+`GEN_SIL` would shift Python's frame count down by ~15 frames,
+making the duration-vs-C divergence cleaner.
+
+> **Issue G title proposal**: `_render_clause_full` prepends an
+> extra `GEN_SIL` to `allophons[]` that the C oracle does not emit
+>
+> Scope: drop `allophons: list[int] = [GEN_SIL]` from
+> `speak.py:496` (keep the trailing `allophons.append(GEN_SIL)`).
+> Verify the C-source frame stream by re-running the
+> `[:debug 2200]` dump and confirming `allophons[0]` is the first
+> real phone (HX for `hi`, AA for `ah`, etc.). Acceptance: Python
+> frame counts on the 5-prompt corpus drop by ~15 frames each;
+> frame 0 carries the first real phone identity rather than SIL.
+> Labels: `area/ph`, `size/small`.
+
+### New finding H — LTS vowel labels still differ on isolated words
+
+Decoding the Python `allophons[]` via the low byte of each code
+(see `src/dectalk/include/phoneme_codes.py`) and comparing to the
+C `[:debug 2200]` `phcur` field per frame:
+
+| Prompt | C allophones (post-init) | Py allophones (post-leading-SIL) |
+|---|---|---|
+| `hi` | HX AY | HX **IH** |
+| `hello world` | HX AX LL OW W RR LX D IX | HX **AH** LL OW W **ER LL** D AX |
+| `ah` | AA | **AE HX** |
+| `the quick brown fox` | DH AX K W IH K B R AW N F AA K S | DH **AH** K W IH K B R AW N F AA K S |
+| `[:rate 200]testing` | T EH S T IX NX | T EH S T **IH** NX |
+
+The differences are largely **vowel labels** (AX vs AH, IX vs
+IH, AY vs IH for the bare letter `i`), with occasional consonant
+shifts (RR LX → ER LL for `hello world`'s "world"). These are
+upstream of PH: the ARPABET symbols come out of the LTS / lexicon
+lookup chain (`dictionary lookup` → `letter-to-sound` →
+`_arpabet_to_us_allophone`) before `_render_clause_full` ever
+sees them.
+
+These are not new bugs in the strict sense — issue A of #58
+already covered "ARPABET dropouts" — but the **direction** has
+shifted: instead of phones being **dropped**, they are now
+**relabelled** to a different vowel of the same syllabic class.
+The duration-lookup tables for the wrong vowel give different
+`allodurs[]`, which is why Python's vowel segments are shorter
+than C's even when the consonant frame counts roughly agree.
+
+> **Issue H title proposal**: ARPABET front-end picks the wrong
+> vowel label for isolated words (AY→IH for `hi`, AA→AE-HX for
+> `ah`, AX→AH for schwa-final words)
+>
+> Scope: trace LTS / dictionary lookup for the 5-prompt corpus
+> and compare to the C `say -a -dump phonemes` output (or the
+> `[:phoneme on]` round-trip). Likely root cause is a missing
+> `lts_us.rul` entry or an ARPABET stress-marker dropping
+> (`AY1` vs `AY`). Acceptance: Python `_arpabet_to_us_allophone`
+> output for `hi` is `HH AY1`, for `ah` is `AA1`, etc. — matches
+> C's allophone sequence after `phalloph`. Labels: `area/lts`,
+> `size/medium`.
+
+### New finding I — `parstochip[OUT_PH]` / `[OUT_PH2]` are never written
+
+`grep -n "OUT_PH\b" src/dectalk/api/speak.py src/dectalk/ph/*.py`
+returns no writes; the SPC frame's phone-identity tag (the
+`pDph_t->parstochip[OUT_PH] = pDph_t->allophons[pDph_t->nphone];`
+line at `ph_claus.c:465`) has no Python equivalent. The current
+debug instrumentation prints `SIL` for every frame because
+`parstochip[OUT_PH]` defaults to 0 and stays there.
+
+This does not affect audio: VTM's klparse loop reads parameters
+0..16 (the actual Klatt values) and ignores 17/19 in audio mode.
+It does affect downstream parity-test instrumentation, e.g. any
+attempt to reproduce the C `[:debug 2200]` dump from the Python
+side will be missing the phone-identity column. The fix is two
+lines after the `phsettar(handle)` call in `speak.py:738`:
+
+```python
+p_dph_t.parstochip[OUT_PH] = p_dph_t.allophons[p_dph_t.nphone]
+p_dph_t.parstochip[OUT_PH2] = (
+    p_dph_t.allophons[p_dph_t.nphone + 1]
+    if p_dph_t.nphone + 1 < p_dph_t.nallotot else 0
+)
+```
+
+> **Issue I title proposal**: Python `_render_clause_full` never
+> writes `parstochip[OUT_PH]` or `[OUT_PH2]`; SPC frames carry no
+> phone identity
+>
+> Scope: mirror `ph_claus.c:465-472` in `speak.py` after the
+> nphone advance. Acceptance: the monkey-patched
+> `parstochip_to_llframe_delayed` instrumentation can decode each
+> frame's phone code via `row[OUT_PH] & 0xFF`. Labels:
+> `area/ph`, `size/small`.
+
+### Summary of the refresh
+
+| Original issue | Status as of 2026-05-22 |
+|---|---|
+| #1 SPD_CHIP not applied per frame (B1=0 etc) | still open — confirmed |
+| #2 `phsettar` runs after the first frame | still open — confirmed |
+| #3 T0=500 (no F0 events) | partly closed (`allofeats` + `phinton` now emit events later in the stream) but frame 0 still T0=500 |
+| F  vtm.dump captures only SPC type tag | still open — same patch unchanged |
+| G  leading GEN_SIL on the Python side | NEW |
+| H  LTS picks wrong vowel labels | NEW |
+| I  parstochip[OUT_PH]/OUT_PH2 never written | NEW |
+
+Recommended fix order (cheapest → most impactful):
+
+1. I (one-line wiring fix; makes instrumentation legible).
+2. G (one-line drop of the leading-SIL pad).
+3. D (port `ph_vset.c` so frame 0 has speaker bandwidths/TLT).
+4. E (run `phsettar(0)` before the per-frame loop emits frame 0).
+5. H (lexicon / LTS work — a separate audit subsystem).
+
 Authored-by: Claude:claude-opus-4-7
