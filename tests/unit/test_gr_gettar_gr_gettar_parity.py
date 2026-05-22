@@ -46,10 +46,7 @@ from dectalk.ph.rom_tables import (
 )
 from dectalk.ph.tts_handle import TtsHandle
 
-_C_FILE = (
-    Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src"))
-    / "src/dapi/src/ph/p_gr_st1.c"
-)
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/p_gr_st1.c"
 
 pytestmark = [
     pytest.mark.parity,
