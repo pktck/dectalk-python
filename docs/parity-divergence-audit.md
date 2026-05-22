@@ -340,3 +340,255 @@ The `parity_diag.py` script that generated the numbers in this
 report is reproduced in the issue body when each of A/B/C is
 filed; it is intentionally not committed under `scripts/` to keep
 the audit a doc-only PR.
+
+## F0 contour follow-up (issue #75, post-#63 / post-#66)
+
+After #63 (`ph_setallofeats` populating `FSTRESS` / `FWBNEXT` /
+`FPERNEXT`) and #66 (wiring `phinton` into `_speak_via_python_full`),
+the audit's original prediction — "synthesised pitch is a flat
+monotone" — was expected to be closed. A direct re-measurement on
+the three reference prompts (`hello world`, `testing one two three`,
+`the quick brown fox`) shows it is **not** yet closed: `phinton`
+emits only the trailing `F0_RESET` event on every prompt, the
+`OUT_T0` register stays clamped at `f0minimum` ± a few Hz of
+flutter, and the audible contour is still monotone.
+
+### Method
+
+`_speak_via_python_full` was run on each prompt with the full
+pipeline (`DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1`,
+default Paul voice). A monkey-patch on `dectalk.ph.phinton.phinton`
+captured the post-phinton state (`nf0tot`, `f0tar[]`, `f0type[]`,
+`f0length[]`, `f0tim[]`, `allofeats[]`), and a monkey-patch on
+`dectalk.ph.pht0draw.pht0draw` recorded the per-frame
+`parstochip[OUT_T0]` value (Hz × 10 in the HLSYN code path).
+For the C reference, `say -a TEXT -fo` was rendered and its
+short-time F0 estimated via autocorrelation on 110-sample
+windows (one Klatt frame). Autocorrelation overestimates the
+mean F0 of a low-pitched male voice when the second harmonic is
+stronger than the fundamental, so the comparison below focuses
+on **shape and dynamic range**, not absolute mean.
+
+### Per-prompt summary
+
+Measured against `dev` head ``fbd679d`` (which includes #74's
+`init_phclause` ending-silence fix). The new trailing-silence pad
+inflates Python sample counts (+612-837 ms) but does not change
+the F0 verdict.
+
+| Prompt | C samp | Py samp | Py `nf0tot` | C F0 range (60-350 band) | Py OUT_T0 range |
+|---|---:|---:|---:|---|---|
+| `hello world` | 13845 | 14520 | 2 | mean 154 std 67, [91, 345] Hz | mean 87 std 7, [50, 91] Hz |
+| `testing one two three` | 19099 | 25850 | 2 | mean 183 std 73, [95, 344] Hz | mean 89 std 6, [50, 97] Hz |
+| `the quick brown fox` | 19809 | 29040 | 2 | mean 158 std 70, [78, 340] Hz | mean 88 std 5, [50, 94] Hz |
+
+The two events emitted by `phinton` on each prompt are both
+`F0_RESET` writes from Rule 7's `phocur == GEN_SIL` branch — one
+at the trailing silence, one at the leading silence after the
+init_phclause padding:
+
+```
+event[0]: f0tim=89-157, f0tar=0, f0type=F0_RESET, f0length=20
+event[1]: f0tim=36-38,  f0tar=0, f0type=F0_RESET, f0length=20
+```
+
+No hat-rise (`STEP, rule=1`), no stress impulse
+(`IMPULSE, rule=21..24`), no continuation rise, no question
+gesture, no glottalize. All Rule-1 through Rule-6 branches in
+`phinton` short-circuit before reaching `make_f0_command`.
+
+### Root cause: `all_phsort` is not wired into the full pipeline
+
+The C-source feature classifier that sets `FHAT_BEGINS` /
+`FHAT_ENDS` on allophones — and counts words into
+`pDph_t->number_words` — lives in `ph_sort.c`
+(`/tmp/dectalk-src/src/dapi/src/ph/ph_sort.c`):
+
+```c
+// ph_sort.c lines 471, 1534, 1659, 1669
+pDph_t->number_words = 0;          // init
+...
+pDph_t->number_words++;            // per word boundary
+...
+add_feature(pDph_t, FHAT_BEGINS, NEXTPHONE);
+add_feature(pDph_t, FHAT_ENDS,   NEXTPHONE);
+```
+
+The Python port `dectalk.ph.all_phsort.all_phsort` exists, is
+~547 lines, and faithfully mirrors the US-English branches of
+`ph_sort.c` (including the `number_words` and FHAT writes — see
+`src/dectalk/ph/all_phsort.py:176, 441, 497, 500`). It is
+**never called** from `_speak_via_python_full`:
+
+```
+$ grep -n 'all_phsort\|ph_sort\|phsort' src/dectalk/api/speak.py
+(no matches)
+```
+
+`_speak_via_python_full` instead jumps straight from ARPABET
+tokens to `pDph_t.allophons[]` via `_arpabet_to_us_allophone`,
+skipping the symbol-stream pass that `all_phsort` operates on.
+Consequences, observed in the captured state for `hello world`:
+
+```
+allofeats (hex): [0x0, 0x0, 0x61, 0x0, 0x101, 0x0, 0x0, 0x0, 0x0, 0x0]
+   FHAT_BEGINS: all False
+   FHAT_ENDS:   all False
+number_words:  0
+clausetype:    0  (DECLARATIVE by accident — never explicitly set)
+```
+
+`phinton` guards every hat rule with
+`if pDph_t.number_words > 2` (ph_inton2.c line 911) and
+`if struccur & FHAT_BEGINS` / `FHAT_ENDS` (lines 913, 917) —
+both fail vacuously on the current allofeats, so no hat / impulse
+events are ever queued. The single trailing `F0_RESET` we observe
+comes from Rule 7's final-silence handler (`phocur == GEN_SIL`
+branch at the end of the loop).
+
+Downstream, in `pht0draw`, the empty event queue means
+`tarhat` and `tarimp` stay 0 every frame:
+
+```python
+# pht0draw.py line 506
+f0in = p_dph_t.f0minimum + pdphsettar.tarhat + pdphsettar.tarimp
+#    = 880               + 0                + 0
+#    = 880               (i.e. 88.0 Hz × 10)
+```
+
+so `parstochip[OUT_T0] ≈ f0minimum`, modulated only by the
+2-pole filter ringing and the ±10 Hz flutter from
+`getcosine_tab`. That matches the observed
+`mean 88, std 4-6, range [61, 97]` Hz exactly.
+
+### Secondary issue: speaker-definition F0 parameters incomplete
+
+`src/dectalk/api/speak.py:444-448` hand-seeds three F0
+parameters from the Paul SPD chip (QU → `f0_lp_filter`,
+AP → `f0minimum`, PR → `f0scalefac`). The C function that
+populates this group — `ph_vset.c` lines 605-619 — also writes
+`size_hat_rise = SPD_HR * 10` and `scale_str_rise = SPD_SR`,
+which `phinton` reads at line 376 (`pDphsettar.hatsize =
+pDph_t.size_hat_rise`) and line 459 (`temp = pDph_t.scale_str_rise`).
+Python leaves both at their `DphT` default of `0`, which would
+zero out the hat-rise / stress-rise magnitudes even once
+`FHAT_BEGINS` / `FSTRESS` are populated. The audit confirmed by
+grep that `size_hat_rise` and `scale_str_rise` are referenced
+exactly twice each in Python: at the DphT declaration site and
+the phinton read site — never written.
+
+This is a smaller, follow-on fix; it only bites once `all_phsort`
+is wired in.
+
+### Tertiary observation: sample count has regressed vs the C reference
+
+Between the original audit and `dev` head ``fbd679d``, sample
+counts oscillated:
+
+| Prompt | original Δsamp (#58) | pre-#74 Δsamp | post-#74 Δsamp |
+|---|---:|---:|---:|
+| `hello world` | -3175 | +675 | +675 |
+| `the quick brown fox` | -1549 | +2411 | +9231 |
+| `testing one two three` | n/a | +41 | +6751 |
+
+The original divergence was mostly under-running (Python shorter
+than C). PR #66 brought sample counts within ~4 ms on
+`testing one two three` and ~60 ms on `hello world`. PR #74's
+init_phclause padding (final allodur jumped from 12-15 to 71
+frames, see "Allodurs" in the per-prompt summary) over-pads
+some prompts by 600-850 ms.
+
+This is **not** an F0-contour blocker — it's an orthogonal
+duration regression that issue #75 is not chartered to address.
+Issue #72 ("Fix trailing silence") may already cover it. Worth
+filing or commenting on if not.
+
+### Concrete follow-up issues to file
+
+Each is self-contained and can be dispatched in parallel.
+
+#### Issue D — Wire `all_phsort` into `_speak_via_python_full`
+
+> **Title**: PH-sort engine `all_phsort` is ported but not called;
+> `phinton` sees `number_words=0` and `FHAT_BEGINS`/`FHAT_ENDS`
+> are never set → flat-monotone F0
+>
+> Scope: `_speak_via_python_full` (`src/dectalk/api/speak.py`)
+> currently builds `pDph_t.allophons[]` directly from
+> `_arpabet_to_us_allophone(arpabet_words)` and never runs the
+> upstream symbol-stream pass. The fix is to populate
+> `pDph_t.symbols[]` (and the LTS-side scaffolding `all_phsort`
+> reads — `cbsymbol`, `dcommacnt`, etc.) and then call
+> `all_phsort(handle)` between the LTS / ARPABET emission and
+> `init_phclause`. After `all_phsort`, the existing
+> `_arpabet_to_us_allophone` fallback can be retired or kept as
+> a stop-gap behind a flag.
+>
+> Acceptance criteria:
+> - On `hello world`, `testing one two three`, and `the quick
+>   brown fox`, post-`phinton` `nf0tot >= 3` for each prompt.
+> - `allofeats` after `all_phsort` includes at least one
+>   `FHAT_BEGINS` and one `FHAT_ENDS` bit on each prompt
+>   (multi-word, declarative).
+> - `pDph_t.number_words` matches the human word count
+>   (`hello world` → 2, `testing one two three` → 4,
+>   `the quick brown fox` → 4).
+> - The per-frame `OUT_T0` std on `hello world` increases from
+>   ~4 Hz (current) to > 50 Hz, matching C-oracle dynamic range.
+>
+> Labels: `area/ph`, `area/api`, `size/large`.
+
+#### Issue E — Load `size_hat_rise` and `scale_str_rise` from SPD chip
+
+> **Title**: `pDph_t.size_hat_rise` and `pDph_t.scale_str_rise`
+> are never loaded from the speaker definition
+>
+> Scope: `src/dectalk/api/speak.py:444-448` seeds three F0
+> parameters from `_us_paul_spd`; extend to write
+> `pDph_t.size_hat_rise = _us_paul_spd.hr * 10` and
+> `pDph_t.scale_str_rise = _us_paul_spd.sr` (or equivalent SPD
+> field names — confirm against `ph_vset.c` lines 611-612). The
+> `default_us_paul_spd` constructor in
+> `src/dectalk/vtm/spd_chip.py` may need the `hr` / `sr` fields
+> added if not present.
+>
+> Acceptance criteria:
+> - `pDph_t.size_hat_rise` is non-zero after the speaker-def
+>   load, matching the value the C oracle uses for Paul.
+> - Unit test asserts the SPD field load.
+>
+> Labels: `area/ph`, `size/small`.
+> Depends on Issue D landing first (otherwise the field is read
+> but never used).
+
+#### Issue F — Per-frame F0 trace fixture for future regression tests
+
+> **Title**: Capture per-frame `parstochip[OUT_T0]` from the C
+> oracle for the parity corpus prompts
+>
+> Scope: add a C-side patch (under
+> `tests/parity/c_patches/`) that prints `parstochip[OUT_T0]`
+> after each `pht0draw` call in `ph_claus.c`, plus a Python
+> fixture script that runs the patched binary on the first 15
+> corpus prompts and stores the per-frame F0 trace as a `.npz`
+> under `tests/parity/data/`. Future intonation-engine PRs can
+> then assert per-frame OUT_T0 parity (not just audio L2)
+> without re-running the binary.
+>
+> Labels: `area/parity`, `size/medium`.
+> Independent of Issue D; can land in parallel.
+
+### Reproducer
+
+```bash
+eval "$(scripts/agent_oracle_env.sh)"
+scripts/setup_c_oracle.sh
+# Render and capture F0 events + per-frame OUT_T0:
+DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/f0_audit.py
+```
+
+The diagnostic scripts (`/tmp/f0_audit.py`, `/tmp/f0_debug.py`,
+`/tmp/f0_contour_compare.py`) live in `/tmp/` to keep this audit
+a doc-only PR; their content is embedded verbatim in the
+follow-up Issue D body.
