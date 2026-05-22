@@ -198,15 +198,18 @@ def _us_f3_target(phone: int) -> int:
     return us_femtar[(phone & 0xFF) + 2 * 71]
 
 
-def test_non_us_uk_fr_sp_la_font_raises_not_implemented() -> None:
-    """GR font still raises pending its *_gettar port."""
-    # GR font is 0x1C, so build a phone code with that high byte.
+def test_gr_font_dispatches_to_gr_gettar() -> None:
+    """GR font (0x1C) routes through :func:`gr_gettar` and returns an int.
+
+    Regression guard for issue #79: the dispatcher swaps in the German
+    ROM tables and delegates to :func:`gr_gettar` instead of raising.
+    """
     handle = _make_handle(
         phones=[GEN_SIL, 0x1C00 | 6, GEN_SIL, GEN_SIL],  # GR-font AA
         np_idx=FZ,
     )
-    with pytest.raises(NotImplementedError, match=r"\(GR\)|gr_gettar"):
-        gettar(handle, 1)
+    result = gettar(handle, 1)
+    assert isinstance(result, int)
 
 
 def test_npar_zero_index_F1_returns_us_gettar() -> None:  # noqa: N802 -- F1 is C macro name
