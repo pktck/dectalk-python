@@ -12,16 +12,28 @@ speaking rate:
   (segment-duration compressibility) in Q14 fixed-point.
 - Zeros ``pDph_t->longcumdur``.
 
-The Q14 scaling factors are tuned so that:
+The Q14 scaling factors are tuned by the C source's in-line comment
+table for the ``#if defined(HLSYN) || defined(CHANGES_AFTER_V43)``
+branch:
 
 - ``sprat0 = 180`` → ``sprat1 = 1.0``, ``sprat2 = 1.0`` (normal rate)
 - ``sprat0 = 120`` → ``sprat1 = 1.5``, ``sprat2 = 1.25`` (slow)
 - ``sprat0 = 300`` → ``sprat1 = 0.4``, ``sprat2 = 0.56`` (fast)
 
+**Important**: the C comment table above describes the HLSYN
+branch (``temp2 = 400 - sprat0``), but the shipped Linux
+``libtts_us.so`` is built **without** ``HLSYN`` defined (see
+``dectalkf_klsyn.h`` line 116-118: ``HLSYN`` is gated behind
+``EPSON_ARM7``) and **without** ``CHANGES_AFTER_V43``. The active
+branch is therefore ``temp2 = 425 - sprat0`` (issue #155). With
+sprat0=180 that yields ``sprat1 = muldv(FRAC_ONE, 245, 220)
+= 18245`` (≈ Q14 1.114), **not** the comment's nominal 1.0.
+
 The C source has ``#ifdef SPANISH`` / ``ENGLISH_UK`` / ``SLOWTALK``
 guards that adjust ``sprat0``; this port models the libtts_us.so
-build (``HLSYN`` + ``ENGLISH_US`` defined, others not), so only the
-English-US path is implemented.
+build (``ENGLISH_US`` defined, ``HLSYN`` / ``SPANISH`` /
+``ENGLISH_UK`` / ``SLOWTALK`` undefined), so only the English-US
+path is implemented.
 """
 
 from __future__ import annotations
@@ -70,7 +82,9 @@ def init_timing(  # noqa: PLR0912 — faithful per-language dispatch with multip
                     pDphsettar->sprat0 = pKsd_t->sprate;
                 if (pDphsettar->sprat0 >= 180) {
                     temp3 = 220;
-                    temp2 = 400 - pDphsettar->sprat0;   // HLSYN branch
+                    // libtts_us.so: HLSYN / CHANGES_AFTER_V43 both
+                    // UNDEFINED — use the 425 branch (issue #155).
+                    temp2 = 425 - pDphsettar->sprat0;
                 } else {
                     temp3 = 120;
                     temp2 = 300 - pDphsettar->sprat0;
@@ -132,7 +146,14 @@ def init_timing(  # noqa: PLR0912 — faithful per-language dispatch with multip
         # Compute sprat1 (additive-pause scaling).
         if pst_phsettar.sprat0 >= 180:  # noqa: PLR2004
             temp3 = 220
-            temp2 = 400 - pst_phsettar.sprat0  # HLSYN branch
+            # libtts_us.so on Linux builds with HLSYN and
+            # CHANGES_AFTER_V43 both UNDEFINED (see
+            # ``dectalkf_klsyn.h`` line 116-118 — ``HLSYN`` is gated
+            # behind ``EPSON_ARM7``). The active C branch is therefore
+            # ``temp2 = 425 - sprat0``; the comment-table "sprat1=1.0
+            # at sprat0=180" describes the HLSYN branch which is dead
+            # code on this build. Issue #155.
+            temp2 = 425 - pst_phsettar.sprat0
         else:
             temp3 = 120
             temp2 = 300 - pst_phsettar.sprat0

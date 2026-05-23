@@ -33,9 +33,9 @@ _VOICED_FRIC_AV: Final[int] = 50  # voiced fricatives have both voicing and nois
 
 # Higher-formant defaults (F4-F6) used when a phoneme doesn't specify them.
 _DEFAULT_F4: Final[int] = 3500
-_DEFAULT_B4: Final[int] = 250
+_DEFAULT_B4: Final[int] = 200
 _DEFAULT_F5: Final[int] = 4500
-_DEFAULT_B5: Final[int] = 300
+_DEFAULT_B5: Final[int] = 250
 _DEFAULT_F6: Final[int] = 5500
 _DEFAULT_B6: Final[int] = 500
 

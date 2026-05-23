@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from dectalk.api import UnknownWordError, speak, text_to_phonemes, to_wav
 from dectalk.api.speak import _pump_frames_to_samples, _speak_via_python
@@ -230,6 +231,122 @@ def test_pump_frames_to_samples_empty_returns_zero() -> None:
     """``_pump_frames_to_samples([], None)`` short-circuits to zero samples."""
     out = _pump_frames_to_samples([], None)
     assert len(out) == 0
+
+
+def _pump_with_canned_samples(
+    monkeypatch: pytest.MonkeyPatch,
+    canned: NDArray[np.int16],
+    vol_att: int = 100,
+) -> NDArray[np.int16]:
+    """Drive ``_pump_frames_to_samples`` with a stubbed ``ll_synthesize``.
+
+    The real ``ll_synthesize`` requires a fully-initialised resonator
+    state (frames produced by the full PH pipeline), which is heavier
+    than this unit-level test needs. Monkeypatching it to write a
+    canonical waveform lets us assert just the post-scale arithmetic.
+
+    Returns the resulting samples after the ``vol_att`` post-scale.
+    """
+    from dectalk.hlsyn import synthesize as synthesize_mod  # noqa: PLC0415
+    from dectalk.hlsyn.llsyn import LLFrame  # noqa: PLC0415
+
+    # ll_synthesize signature: (synth, frame, wave) -> int. The pump
+    # passes a per-frame slice of ``wave``; tile our canned samples
+    # over each frame slot. Tiling (rather than truncation) means we
+    # exercise the multiply across a known, non-degenerate waveform
+    # regardless of the speaker's UI (samples-per-frame) value.
+    def fake_ll_synth(_synth: object, _frame: object, wave: NDArray[np.int16]) -> int:
+        tiled = np.tile(canned, (len(wave) + len(canned) - 1) // len(canned))
+        wave[:] = tiled[: len(wave)]
+        return 0
+
+    monkeypatch.setattr(synthesize_mod, "ll_synthesize", fake_ll_synth)
+    # Also patch the binding in dectalk.api.speak, which is the
+    # call site (the lazy import binds a local name).
+    import dectalk.api.speak as speak_mod  # noqa: PLC0415
+
+    # _pump_frames_to_samples does ``from dectalk.hlsyn.synthesize
+    # import ll_synthesize`` inside the function body, so patching the
+    # module attribute (above) covers the lookup. Sanity-check the
+    # original import path is consistent.
+    assert speak_mod is not None  # keeps the import alive for the patch.
+    # Pass two LLFrame objects so the per-frame loop iterates twice.
+    frames: list[object] = [LLFrame(), LLFrame()]
+    return _pump_frames_to_samples(frames, None, vol_att=vol_att)
+
+
+def test_pump_frames_vol_att_default_unity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``vol_att = 100`` (the C kernel default) is unity Q15 within 1 LSB.
+
+    ``int_volume_table[100] = 32767`` and Q15 unity is 32768, so the
+    post-scale ``(out * 32767) >> 15`` is the identity to within 1 LSB
+    of round-down. The no-op early-return in ``_pump_frames_to_samples``
+    triggers when ``vol_mul == 32767``, so the default call returns
+    the synth output unmodified.
+    """
+    # Use a known waveform: a small sinusoid-ish ramp.
+    canned = np.array([1000, 2000, 3000, 4000, -1000, -2000, -3000, -4000], dtype=np.int16)
+    out = _pump_with_canned_samples(monkeypatch, canned, vol_att=100)
+    # At least one full canned waveform copy fits per frame; the first
+    # ``len(canned)`` samples of each frame slot should equal canned.
+    assert np.array_equal(out[: len(canned)], canned)
+
+
+def test_pump_frames_vol_att_zero_silences_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``vol_att = 0`` mutes the output (``int_volume_table[0] = 0``).
+
+    Mirrors vtm3.c's behaviour when the kernel volume is set to the
+    minimum: every sample multiplies by 0 and the output is
+    bit-exactly silent.
+    """
+    canned = np.array([1000, 2000, 3000, -3000, -2000, -1000], dtype=np.int16)
+    out = _pump_with_canned_samples(monkeypatch, canned, vol_att=0)
+    assert int(np.max(np.abs(out))) == 0
+
+
+def test_pump_frames_vol_att_below_unity_attenuates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``vol_att < 100`` scales every sample by ``int_volume_table[vol_att] / 32768``.
+
+    ``int_volume_table[50] = 5826``; verify the per-sample multiply
+    matches the C ``frac1mul(out, vol_att)`` = ``(out * 5826) >> 15``.
+    """
+    from dectalk.vtm.volume_table import int_volume_table  # noqa: PLC0415
+
+    canned = np.array([1000, 2000, 3000, -3000, -2000, -1000], dtype=np.int16)
+    out = _pump_with_canned_samples(monkeypatch, canned, vol_att=50)
+    vol_mul = int_volume_table[50]
+    expected = ((canned.astype(np.int32) * vol_mul) >> 15).astype(np.int16)
+    assert np.array_equal(out[: len(canned)], expected)
+
+
+def test_pump_frames_vol_att_clamps_out_of_range(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``vol_att`` outside ``[0, 140]`` clamps to the table range.
+
+    Matches vtm3.c lines 515-518 which clamp ``pKsd_t->vol_att`` before
+    indexing ``int_volume_table[]``. Negative values clamp to 0 (mute);
+    values above 140 clamp to 140 (the table's maximum entry).
+    """
+    canned = np.array([1000, 2000, 3000, -1000, -2000, -3000], dtype=np.int16)
+    neg = _pump_with_canned_samples(monkeypatch, canned, vol_att=-99)
+    zero = _pump_with_canned_samples(monkeypatch, canned, vol_att=0)
+    assert np.array_equal(neg, zero)
+
+    huge = _pump_with_canned_samples(monkeypatch, canned, vol_att=999)
+    max_idx = _pump_with_canned_samples(monkeypatch, canned, vol_att=140)
+    assert np.array_equal(huge, max_idx)
+
+
+def test_ksd_t_vol_att_default_matches_c_kernel() -> None:
+    """``KsdT.vol_att`` defaults to 100 to mirror the C kernel.
+
+    Documented in ``ttsapi.c`` lines 2050 / 6609:
+    ``pKsd_t->vol_att=100;`` is the value set at every full kernel
+    reset, and ``int_volume_table[100] = 32767`` (unity Q15 within
+    1 LSB), so the default-volume path is ~no-op.
+    """
+    from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
+
+    assert KsdT().vol_att == 100
 
 
 def test_assertiveness_loaded_for_us_paul(monkeypatch: pytest.MonkeyPatch) -> None:
