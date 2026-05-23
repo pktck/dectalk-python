@@ -180,7 +180,7 @@ def test_full_pipeline_emits_trailing_silence(
     nonzero = np.flatnonzero(samples != 0)
     assert nonzero.size > 0, f"{text!r} produced all-zero audio"
     trail = int(samples.size - nonzero[-1] - 1)
-    assert trail > 200, (  # noqa: PLR2004 — see docstring for threshold rationale
+    assert trail > 200, (
         f"{text!r}: trailing-silence pad is {trail} samples (was 0 pre-#72); "
         "the per-frame loop is dropping the trailing GEN_SIL allophone."
     )
