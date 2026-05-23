@@ -116,6 +116,33 @@ def test_initial_cluster_silent_letter(word: str, first_phone: str) -> None:
     assert leading == first_phone, f"{word!r} -> {out!r}; expected first phone {first_phone}"
 
 
+@pytest.mark.parametrize(
+    ("word", "expected"),
+    [
+        # The orthographic suffix -OUGH has six different pronunciations
+        # in English. Each row is one of them, with the expected ARPABET
+        # phoneme stream taken from the C oracle
+        # (``CAPI.convert_to_phonemes`` on the DECtalk 4.2CD library).
+        # See issue #135 / PR #123 §4 (LTS audit).
+        ("cough", ["K", "AO1", "F"]),  # OUGH -> AO F after C
+        ("though", ["DH", "OW1"]),  # voiced TH + silent GH
+        ("through", ["TH", "R", "UW1"]),  # OUGH -> UW after THR
+        ("thought", ["TH", "AO1", "T"]),  # OUGH -> AO before T
+        ("rough", ["R", "AH1", "F"]),  # OUGH -> AH F (default)
+        ("bough", ["B", "AW1"]),  # OUGH alone -> AW after B
+    ],
+)
+def test_ough_lexical_variants(word: str, expected: list[str]) -> None:
+    """All six -OUGH pronunciations resolve correctly via LTS rules.
+
+    The C oracle for these six words returns six phonetically distinct
+    pronunciations of the same orthographic suffix. The LTS fallback
+    must replicate each one — see :mod:`dectalk.lts.rules_us` for the
+    ordered rule set.
+    """
+    assert lts(word) == expected
+
+
 def test_initial_cluster_does_not_over_silence() -> None:
     """Silent-letter rules anchor at the word start only.
 

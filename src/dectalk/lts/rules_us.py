@@ -51,8 +51,50 @@ _VOWEL_RULES: Final[tuple[_Rule, ...]] = (
     _Rule("OUR", "", "", ("AW", "ER")),
     _Rule("EER", "", "", ("IY", "R")),
     _Rule("OOR", "", "", ("UH", "R")),
-    _Rule("OUGH", "", "T", ("AO",)),  # bought, thought
-    _Rule("OUGH", "", "", ("AH", "F")),  # rough
+    # -OUGH has six different pronunciations in English; sort by
+    # increasing generality so the matcher picks the most specific
+    # match first.
+    #
+    # The orthographic suffix -OUGH covers (with the C-oracle ARPABET
+    # in parentheses):
+    #   bought / thought / sought / ought  -> AO T   (OUGH + T)
+    #   though / although                  -> DH OW  (special-cased
+    #                                                  via THOUGH and
+    #                                                  ALTHOUGH below;
+    #                                                  the TH normally
+    #                                                  becomes voiceless
+    #                                                  but is voiced
+    #                                                  here)
+    #   through / throughout / throughput  -> TH R UW
+    #   bough / plough / slough            -> AW    (OUGH alone, no
+    #                                                  trailing letter)
+    #   cough / trough                     -> AO F  (OUGH at word end
+    #                                                  after C- / TR-)
+    #   rough / tough / enough             -> AH F  (default OUGH at
+    #                                                  word end; most
+    #                                                  common case)
+    #
+    # Multi-letter forms for the irregular voiced-TH cases ("though",
+    # "through") need to consume the leading consonants too — otherwise
+    # the default ``TH`` consonant rule fires first and emits a
+    # voiceless TH. ``ALTHOUGH`` is included so the leading ``AL`` does
+    # not also misfire.
+    _Rule("ALTHOUGH", "", "$", ("AO", "L", "DH", "OW")),  # although
+    _Rule("THROUGHOUT", "", "$", ("TH", "R", "UW", "AW", "T")),  # throughout
+    _Rule("THROUGH", "", "", ("TH", "R", "UW")),  # through, throughput
+    _Rule("THOUGH", "", "$", ("DH", "OW")),  # though
+    _Rule("OUGH", "", "T", ("AO",)),  # bought, thought, sought, ought
+    _Rule("OUGH", "^C", "$", ("AO", "F")),  # cough
+    _Rule("OUGH", "TR", "$", ("AO", "F")),  # trough
+    # OUGH at end of word with no trailing consonant -> AW
+    # (bough, plough, slough). Restricted by left context to B/PL/SL so
+    # it doesn't capture rough/tough/enough, which take the AH F rule
+    # below.
+    _Rule("OUGH", "^B", "$", ("AW",)),  # bough
+    _Rule("OUGH", "PL", "$", ("AW",)),  # plough
+    _Rule("OUGH", "SL", "$", ("AW",)),  # slough
+    _Rule("OUGH", "", "$", ("AH", "F")),  # rough, tough, enough (default)
+    _Rule("OUGH", "", "", ("AW",)),  # fallthrough: medial -ough- -> AW
     _Rule("AUGH", "", "T", ("AO",)),  # caught
     _Rule("EIGH", "", "", ("EY",)),  # eight
     _Rule("IGH", "", "", ("AY",)),  # high
