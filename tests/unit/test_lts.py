@@ -143,6 +143,58 @@ def test_ough_lexical_variants(word: str, expected: list[str]) -> None:
     assert lts(word) == expected
 
 
+@pytest.mark.parametrize(
+    ("word", "expected"),
+    [
+        # Latinate stress-shift rules ported from
+        # ``src/dapi/src/lts/l_us_suf.c``. Each entry's expected list
+        # asserts both the phoneme sequence (unchanged from the
+        # grapheme rules) AND the stress digit, so a regression in
+        # either dimension would fail.
+        # -IC: primary stress on the vowel before the suffix.
+        ("atomic", ["AE0", "T", "AA1", "M", "IH0", "K"]),
+        ("magnetic", ["M", "AE0", "G", "N", "EH1", "T", "IH0", "K"]),
+        ("electric", ["EH0", "L", "EH1", "K", "T", "R", "IH0", "K"]),
+        ("fantastic", ["F", "AE0", "N", "T", "AE1", "S", "T", "IH0", "K"]),
+        # -ITY: primary stress two vowel groups before the end of word
+        # (i.e. on the last vowel of the stem before -ITY).
+        ("ability", ["AE0", "B", "IH1", "L", "IH0", "T", "IY0"]),
+        ("velocity", ["V", "EH0", "L", "AA1", "S", "IH0", "T", "IY0"]),
+        # -ICAL: primary on the last stem vowel (stem before -ICAL).
+        ("classical", ["K", "L", "AE1", "S", "S", "IH0", "K", "AE0", "L"]),
+        # -ION / -IONAL: primary on the last stem vowel before -ION.
+        ("tradition", ["T", "R", "AE1", "D", "IH0", "T", "IH0", "AA0", "N"]),
+        ("national", ["N", "AE1", "T", "IH0", "AA0", "N", "AE0", "L"]),
+    ],
+)
+def test_latinate_stress_shift(word: str, expected: list[str]) -> None:
+    """Latinate-suffix stress-shift rules from C ``l_us_suf.c`` (issue #132).
+
+    Without these rules ``rules_us.lts`` defaulted to "primary stress
+    on the first vowel" which gave the wrong accent for words like
+    ``atomic``/``ability``/``classical``/``tradition`` (where English
+    shifts primary stress to the stem syllable immediately preceding
+    the Latinate suffix).
+    """
+    assert lts(word) == expected
+
+
+def test_latinate_does_not_misfire_on_short_stems() -> None:
+    """Latinate stress shift only applies when the stem has a vowel.
+
+    Words like ``ic`` (stem empty), ``it`` (no Latinate suffix) and
+    monosyllables like ``tic`` (stem ``t`` has no vowel) must fall
+    back to the default first-vowel stress, not crash or stress a
+    non-existent stem vowel.
+    """
+    assert lts("ic") == ["IH1", "K"]  # whole word is the "suffix"
+    assert lts("tic")[-1] == "K"  # ends in -IC but stem ``T`` has no vowel
+    # Banana doesn't end in a Latinate suffix.
+    out = lts("banana")
+    digits = [p[-1] for p in out if p[-1].isdigit()]
+    assert digits[0] == "1"
+
+
 def test_initial_cluster_does_not_over_silence() -> None:
     """Silent-letter rules anchor at the word start only.
 

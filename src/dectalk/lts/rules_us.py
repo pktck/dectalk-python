@@ -213,6 +213,82 @@ _VOWEL_PHONEMES: Final[frozenset[str]] = frozenset(
 )  # fmt: skip
 
 
+# Letters that count as vowels for spelling-side syllable counting. ``Y`` is
+# treated as a vowel when not in word-initial position (mirroring the C
+# oracle's behaviour for words like ``city`` → CIT-Y).
+_VOWEL_LETTERS: Final[frozenset[str]] = frozenset("AEIOUY")
+
+
+# Latinate stress-shift suffixes, ported from the suffix-stress rules in
+# ``src/dapi/src/lts/l_us_suf.c`` / ``l_us_ru1.c`` (the C oracle's
+# stress-shift table; the binary encoding lives in ``suffix_table[]``).
+#
+# Each entry maps a word-final suffix (matched against the upper-case
+# spelling) to the position of the primary-stressed vowel, expressed as
+# the number of *spelling-side* vowel groups counted from the last vowel
+# of the stem (i.e. 1 = penult-of-stem = vowel immediately before the
+# suffix; 2 = antepenult = vowel two groups before the suffix start).
+#
+# Empirically calibrated against the C oracle (``CAPI.convert_to_phonemes``):
+#
+#   atomic    -> AX T 'AA M IX K        (-IC,    shift=1: vowel before -IC)
+#   ability   -> AX B 'IH L IX T IY     (-ITY,   shift=2: vowel before -L-ITY)
+#   national  -> N 'AE SH IX N AX L     (-IONAL, shift=2: vowel before -TION-AL)
+#   tradition -> T R AX D 'IH SH IX N   (-ITION, shift=1: vowel before -TION)
+#   classical -> K LL 'AE S IX K EL     (-ICAL,  shift=2: vowel before -IC-AL)
+#   velocity  -> V IX LL 'AA S IX T IY  (-ICITY, shift=3: vowel 3 groups back)
+#   electric  -> AX LL 'EH K T R IX K   (-IC,    shift=1)
+#   periodic  -> P IY R IY 'AA D IX K   (-IC,    shift=1)
+#   fantastic -> F AX N T 'AE S T IX K  (-IC,    shift=1)
+#   magnetic  -> M AX G N 'EH T IX K    (-IC,    shift=1)
+#   energetic -> EH N R RJH 'EH T IX K  (-IC,    shift=1)
+#
+# Longer suffixes are listed first so the matcher picks the most
+# specific pattern (``-ICITY`` before ``-ITY``, ``-IONAL`` before
+# ``-IAL``/``-AL``, etc.).
+_LATINATE_SUFFIXES: Final[tuple[tuple[str, int], ...]] = (
+    # The shift is the number of vowel groups counted back from the END
+    # of the stem (the portion before the suffix). ``shift = 1`` always
+    # means "place primary stress on the last vowel of the stem", which
+    # is the standard Latinate behaviour for ``-IC``/``-ITY``/``-ION``
+    # and friends. The C oracle has a few longer suffixes (e.g.
+    # ``-ICALLY`` from ``-ICAL`` + ``-LY``) that shift further back;
+    # those are listed first so the matcher picks the most specific
+    # pattern.
+    #
+    # 6-letter
+    ("ICALLY", 1),  # economically: stem=ECONOM, last vowel = O
+    # 5-letter
+    ("ICITY", 1),  # publicity, electricity: stem ends just before -ICITY
+    ("ICIAN", 1),  # musician, physician
+    ("ICIAL", 1),  # official, financial
+    ("ICIST", 1),  # publicist, classicist
+    ("ICISM", 1),  # criticism, classicism
+    ("IONAL", 1),  # national, traditional, rational
+    ("IATIC", 1),  # dramatic, fanatic (treated as -IC + -IATIC variant)
+    # 4-letter
+    ("ICAL", 1),  # classical, logical, physical
+    ("ICLE", 1),  # particle, vehicle, article
+    ("IOUS", 1),  # gracious, ambitious, religious
+    ("EOUS", 1),  # gaseous, hideous, igneous
+    ("UOUS", 1),  # tenuous, conspicuous, continuous
+    ("ITUDE", 1),  # altitude, magnitude, attitude
+    ("ITION", 1),  # tradition, addition, condition
+    ("ATION", 1),  # nation, creation, station
+    ("UTION", 1),  # solution, evolution, resolution
+    ("ETION", 1),  # completion, accretion, deletion
+    # 3-letter
+    ("ITY", 1),  # ability, sanity, velocity
+    ("ION", 1),  # mention, vision, religion
+    ("IAN", 1),  # Italian, librarian
+    ("IAL", 1),  # facial, racial, special
+    ("IUM", 1),  # medium, premium, stadium
+    ("OUS", 1),  # famous, joyous, generous
+    # 2-letter
+    ("IC", 1),  # atomic, magnetic, electric
+)
+
+
 def lts(word: str) -> list[str]:
     """Convert an upper-case English word to ARPABET phonemes by rule.
 
@@ -221,12 +297,15 @@ def lts(word: str) -> list[str]:
     whose context constraints hold. Always makes progress (default
     single-letter rules exist for every letter).
 
-    A simple stress heuristic is layered on top: the first vowel in
-    polysyllabic words receives primary stress (digit ``1``), other
-    vowels secondary (``2`` for monosyllables, ``0`` for the rest). This
-    is wrong roughly half the time for English nouns/verbs, but is
-    enough to make the prosody pass produce audibly accented output for
-    out-of-lexicon words. The lexicon is preferred whenever available.
+    A simple stress heuristic is layered on top. By default the first
+    vowel in a polysyllabic word receives primary stress (digit ``1``)
+    and others receive ``0``. When the word ends in a Latinate
+    stress-shift suffix (``-IC``, ``-ITY``, ``-ICAL``, ``-ION``,
+    ``-IONAL``, ``-IOUS``, etc., ported from the C oracle's
+    ``l_us_suf.c`` rule table), primary stress is repositioned to the
+    appropriate stem vowel: e.g. ``atomic`` → ``AH0 T AA1 M IH0 K``,
+    ``ability`` → ``AH0 B IH1 L IH0 T IY0``. The lexicon is preferred
+    whenever available.
 
     Args:
         word: Input word in any case; folded to upper-case internally.
@@ -237,28 +316,114 @@ def lts(word: str) -> list[str]:
     """
     text = word.upper()
     raw: list[str] = []
+    # Track which spelling-side vowel group produced each phoneme, so we
+    # can later map a "stress on the Nth vowel group from the end" rule
+    # back onto a phoneme index.
+    vowel_group_per_phone: list[int] = []
+    last_letter_was_vowel = False
+    current_vowel_group = -1
     i = 0
     n = len(text)
     while i < n:
         rule = _match_rule(text, i)
         if rule is None:
-            # Unknown character — skip it rather than raise. This handles
-            # apostrophes / hyphens leaking into the LTS path.
             i += 1
+            last_letter_was_vowel = False
             continue
-        raw.extend(rule.phones)
+        # Detect whether this grapheme starts a new spelling-side vowel
+        # group. ``Y`` counts as a vowel only when not word-initial
+        # (mirroring the C oracle's "city"-style behaviour).
+        first_letter = rule.grapheme[0]
+        is_vowel_group = first_letter in _VOWEL_LETTERS and not (
+            first_letter == "Y" and i == 0
+        )
+        if is_vowel_group and not last_letter_was_vowel:
+            current_vowel_group += 1
+        for ph in rule.phones:
+            raw.append(ph)
+            vowel_group_per_phone.append(current_vowel_group if is_vowel_group else -1)
+        # Track the last *letter* (not grapheme) to decide group boundaries.
+        last_letter_was_vowel = rule.grapheme[-1] in _VOWEL_LETTERS
+
         i += len(rule.grapheme)
 
-    return _add_stress(raw)
+    total_vowel_groups = current_vowel_group + 1
+    stress_group = _latinate_stress_group(text, total_vowel_groups)
+    return _add_stress(raw, vowel_group_per_phone, stress_group)
 
 
-def _add_stress(phones: list[str]) -> list[str]:
-    """Annotate vowels with simple stress digits (CMUDict convention)."""
+def _latinate_stress_group(text: str, total_vowel_groups: int) -> int | None:
+    """Return the 0-based spelling vowel-group index that should bear primary stress.
+
+    Scans ``text`` for a recognised Latinate stress-shift suffix (see
+    :data:`_LATINATE_SUFFIXES`) and, when found, maps the suffix's
+    ``shift`` (groups counted back from the last stem vowel) into an
+    absolute group index. Returns ``None`` when no suffix matches, in
+    which case the caller falls back to the default first-vowel rule.
+    """
+    if total_vowel_groups < 2:
+        # Monosyllables / single-vowel stems get the default first-vowel
+        # stress; suffix-shift rules don't apply.
+        return None
+    for suffix, shift in _LATINATE_SUFFIXES:
+        if not text.endswith(suffix) or len(text) <= len(suffix):
+            continue
+        # Count vowel groups in the stem (the part before the suffix).
+        stem = text[: -len(suffix)]
+        stem_groups = _count_vowel_groups(stem, leading_pos=0)
+        if stem_groups < shift:
+            # Stem is too short for this shift — skip and try the next
+            # (less specific) suffix.
+            continue
+        # The stressed group is ``shift`` groups back from the end of
+        # the stem (i.e. ``stem_groups - shift`` in 0-based indexing).
+        return stem_groups - shift
+    return None
+
+
+def _count_vowel_groups(text: str, leading_pos: int = 0) -> int:
+    """Count contiguous spelling-side vowel groups in ``text``.
+
+    ``leading_pos`` is the starting absolute position within the larger
+    word (only used to decide whether a leading ``Y`` is a vowel).
+    """
+    groups = 0
+    last_was_vowel = False
+    for idx, ch in enumerate(text):
+        is_vowel = ch in _VOWEL_LETTERS and not (
+            ch == "Y" and (leading_pos + idx) == 0
+        )
+        if is_vowel and not last_was_vowel:
+            groups += 1
+        last_was_vowel = is_vowel
+    return groups
+
+
+def _add_stress(
+    phones: list[str],
+    vowel_group_per_phone: list[int] | None = None,
+    stress_group: int | None = None,
+) -> list[str]:
+    """Annotate vowels with stress digits (CMUDict convention).
+
+    If ``stress_group`` is supplied (from the Latinate suffix matcher),
+    primary stress is placed on the first vowel phoneme belonging to
+    that spelling-side vowel group. Otherwise the first vowel phoneme
+    receives primary stress (the default heuristic).
+    """
     vowel_indices = [idx for idx, p in enumerate(phones) if p in _VOWEL_PHONEMES]
     if not vowel_indices:
         return phones
     out = list(phones)
     primary_idx = vowel_indices[0]
+    if stress_group is not None and vowel_group_per_phone is not None:
+        # Find the first vowel phoneme whose source spelling group is
+        # the target stress group. Fall back to the default when no
+        # phoneme matches (e.g. the stressed vowel got silenced).
+        for idx in vowel_indices:
+            if vowel_group_per_phone[idx] == stress_group:
+                primary_idx = idx
+                break
     for idx in vowel_indices:
         if idx == primary_idx:
             out[idx] = out[idx] + "1"
