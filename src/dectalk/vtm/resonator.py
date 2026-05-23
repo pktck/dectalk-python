@@ -85,9 +85,7 @@ def d2pole_cf45(
     Returns:
         ``(acoef, bcoef, ccoef)``.
     """
-    frequency, bandwidth = _scale_freq_bw(
-        frequency, bandwidth, inv_rate_scale, sample_rate_change
-    )
+    frequency, bandwidth = _scale_freq_bw(frequency, bandwidth, inv_rate_scale, sample_rate_change)
     if frequency >= _FREQ_CAP or bandwidth > _BW_CAP:
         bcoef = 0
         ccoef = 0
@@ -125,9 +123,7 @@ def d2pole_cf123(
     Returns:
         ``(acoef, bcoef, ccoef)``.
     """
-    frequency, bandwidth = _scale_freq_bw(
-        frequency, bandwidth, inv_rate_scale, sample_rate_change
-    )
+    frequency, bandwidth = _scale_freq_bw(frequency, bandwidth, inv_rate_scale, sample_rate_change)
     if frequency >= _FREQ_CAP or bandwidth > _BW_CAP:
         frequency = sample_rate >> 1
         bandwidth = sample_rate >> 2
@@ -162,9 +158,7 @@ def d2pole_pf(
     Returns:
         ``(acoef, bcoef, ccoef)`` — ``(0, 0, 0)`` when zapped.
     """
-    frequency, bandwidth = _scale_freq_bw(
-        frequency, bandwidth, inv_rate_scale, sample_rate_change
-    )
+    frequency, bandwidth = _scale_freq_bw(frequency, bandwidth, inv_rate_scale, sample_rate_change)
     if frequency >= _FREQ_CAP or bandwidth > _BW_CAP:
         return 0, 0, 0
     radius = radius_table[bandwidth >> 3]

@@ -211,13 +211,9 @@ def speech_waveform_generator(
 
     # Parallel R2 / R3 coefficient setup (lines 608-620).
     b2p = 210
-    r2pa, r2pb, r2pc = d2pole_pf(
-        state.inv_rate_scale, state.uiSampleRateChange, F2inHZ, b2p, r2pg
-    )
+    r2pa, r2pb, r2pc = d2pole_pf(state.inv_rate_scale, state.uiSampleRateChange, F2inHZ, b2p, r2pg)
     b3p = 280
-    r3pa, r3pb, r3pc = d2pole_pf(
-        state.inv_rate_scale, state.uiSampleRateChange, F3inHZ, b3p, r3pg
-    )
+    r3pa, r3pb, r3pc = d2pole_pf(state.inv_rate_scale, state.uiSampleRateChange, F3inHZ, b3p, r3pg)
 
     # MAIN LOOP (lines 628-1458).
     for ns in range(state.uiNumberOfSamplesPerFrame):
@@ -365,9 +361,7 @@ def speech_waveform_generator(
         # End inner nsr4 loop.
 
         # Tilt filter (lines 1108-1110).
-        voice = frac1mul(state.one_minus_decay, voice) + frac1mul(
-            state.decay, state.vlast
-        )
+        voice = frac1mul(state.one_minus_decay, voice) + frac1mul(state.decay, state.vlast)
         state.vlast = voice
 
         # Breathiness (line 1128; !CHANGES_AFTER_V43, !NEW_VTM).
