@@ -17,7 +17,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from dectalk.hlsyn.llsyn import LLFrame
 from dectalk.ph.param_indices import OUT_DU, OUT_PH, OUT_PH2
+from dectalk.ph.spdef_chip import SpdChip
 
 
 def _run_full_pipeline(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[int]]:
@@ -37,9 +39,13 @@ def _run_full_pipeline(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[
     snapshots: list[list[int]] = []
     real = ptf.parstochip_to_llframe_delayed
 
-    def _capture(parstochip: list[int], previous: list[int] | None):  # type: ignore[no-untyped-def]
+    def _capture(
+        parstochip: list[int],
+        previous: list[int] | None,
+        spd_chip: SpdChip | None = None,
+    ) -> LLFrame:
         snapshots.append(list(parstochip))
-        return real(parstochip, previous)
+        return real(parstochip, previous, spd_chip)
 
     # Patch BOTH the source module and the alias inside speak.py: the
     # driver loop binds the name at function-define time via ``from
