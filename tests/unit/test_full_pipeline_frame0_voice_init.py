@@ -41,9 +41,9 @@ def _capture_frame0(text: str, monkeypatch: pytest.MonkeyPatch) -> list[int]:
     snapshots: list[list[int]] = []
     real = ptf.parstochip_to_llframe_delayed
 
-    def _capture(parstochip: list[int], previous: list[int] | None):  # type: ignore[no-untyped-def]
+    def _capture(parstochip, previous, *args, **kwargs):  # type: ignore[no-untyped-def]
         snapshots.append(list(parstochip))
-        return real(parstochip, previous)
+        return real(parstochip, previous, *args, **kwargs)
 
     monkeypatch.setattr(ptf, "parstochip_to_llframe_delayed", _capture)
     import dectalk.api.speak as speak_mod  # noqa: PLC0415

@@ -37,9 +37,9 @@ def _run_full_pipeline(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[
     snapshots: list[list[int]] = []
     real = ptf.parstochip_to_llframe_delayed
 
-    def _capture(parstochip: list[int], previous: list[int] | None):  # type: ignore[no-untyped-def]
+    def _capture(parstochip, previous, *args, **kwargs):  # type: ignore[no-untyped-def]
         snapshots.append(list(parstochip))
-        return real(parstochip, previous)
+        return real(parstochip, previous, *args, **kwargs)
 
     # Patch BOTH the source module and the alias inside speak.py: the
     # driver loop binds the name at function-define time via ``from

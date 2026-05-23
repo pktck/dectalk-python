@@ -214,6 +214,80 @@ class TestSpdChipFieldParity:
         assert default_us_paul_spd().osgain == -1
 
 
+class TestSpdChipThreadedIntoLlframe:
+    """End-to-end parity: paul_8[F4/B4/F5/B5] → SpdChip → LLFrame.
+
+    Issue #159. The VTM audit (PR #103 §3) identified that
+    ``parstochip_to_llframe_delayed`` was using Klatt-1980 reference
+    defaults (F4=3500, B4=250, F5=4500, B5=300) instead of Paul's
+    per-voice SpdChip values. Now that the adapter accepts an
+    ``spd_chip`` argument, the literal F4/B4/F5/B5 values from the C
+    source's ``paul_8[SPDEF]`` table flow all the way through to the
+    emitted LLFrame.
+    """
+
+    def _emit_paul_llframe(self) -> object:
+        from dectalk.ph.parstochip_to_frames import (  # noqa: PLC0415
+            parstochip_to_llframe_delayed,
+        )
+        from dectalk.vtm.spd_chip import default_us_paul_spd  # noqa: PLC0415
+
+        empty = [0] * 64
+        return parstochip_to_llframe_delayed(empty, None, spd_chip=default_us_paul_spd())
+
+    def test_llframe_f4_eq_paul_8_spdef_f4(
+        self,
+        paul_8_c_values: dict[str, int],
+    ) -> None:
+        frame = self._emit_paul_llframe()
+        assert frame.F4 == paul_8_c_values["F4"]  # type: ignore[attr-defined]
+
+    def test_llframe_b4_eq_paul_8_spdef_b4(
+        self,
+        paul_8_c_values: dict[str, int],
+    ) -> None:
+        frame = self._emit_paul_llframe()
+        assert frame.B4 == paul_8_c_values["B4"]  # type: ignore[attr-defined]
+
+    def test_llframe_f5_eq_paul_8_spdef_f5(
+        self,
+        paul_8_c_values: dict[str, int],
+    ) -> None:
+        frame = self._emit_paul_llframe()
+        assert frame.F5 == paul_8_c_values["F5"]  # type: ignore[attr-defined]
+
+    def test_llframe_b5_eq_paul_8_spdef_b5(
+        self,
+        paul_8_c_values: dict[str, int],
+    ) -> None:
+        frame = self._emit_paul_llframe()
+        assert frame.B5 == paul_8_c_values["B5"]  # type: ignore[attr-defined]
+
+    def test_llframe_not_klatt_1980_reference_defaults(
+        self,
+        paul_8_c_values: dict[str, int],
+    ) -> None:
+        """The threaded LLFrame must NOT match the Klatt-1980 reference defaults.
+
+        Without the SpdChip threading, the LLFrame would carry the
+        Klatt-1980 reference values (F4=3500, B4=250, F5=4500, B5=300).
+        This guards against a regression where ``spd_chip`` is dropped
+        from the call-site and the Klatt fallback path is re-activated.
+        """
+        # Sanity: confirm Paul's values are NOT the Klatt-1980 defaults
+        # (so the regression guard below has actual signal).
+        assert paul_8_c_values["F4"] != 3500
+        assert paul_8_c_values["B4"] != 250
+        assert paul_8_c_values["F5"] != 4500
+        assert paul_8_c_values["B5"] != 300
+
+        frame = self._emit_paul_llframe()
+        assert frame.F4 != 3500  # type: ignore[attr-defined]
+        assert frame.B4 != 250  # type: ignore[attr-defined]
+        assert frame.F5 != 4500  # type: ignore[attr-defined]
+        assert frame.B5 != 300  # type: ignore[attr-defined]
+
+
 class TestSpdefParseSanity:
     """Defensive checks on the SPDEF reparse, independent of SpdChip."""
 

@@ -755,7 +755,13 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             phsettar(handle)
         pht0draw(handle)
         phdraw(handle)
-        frames.append(parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip))
+        frames.append(
+            parstochip_to_llframe_delayed(
+                p_dph_t.parstochip,
+                previous_parstochip,
+                spd_chip=_us_paul_spd,
+            )
+        )
         previous_parstochip = list(p_dph_t.parstochip)
 
     # 7. Pump the collected Klatt frames through ll_synthesize for

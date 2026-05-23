@@ -68,6 +68,7 @@ from dectalk.ph.param_indices import (
     OUT_UE,
 )
 from dectalk.ph.parameter_tables import lineartilt
+from dectalk.ph.spdef_chip import SpdChip
 
 # Pre-pht0draw fallback: a 122 Hz adult-male F0 so voicing is audible
 # while the PH module's F0 contour engine isn't running per-frame.
@@ -82,6 +83,15 @@ _INT16_WRAP: Final[int] = 0x10000
 # Resting positions for fields parstochip doesn't carry. These match
 # the LLFrame defaults so a freshly-constructed adapter output frame
 # is identical to ``LLFrame()`` except for the PH-driven cells.
+#
+# ``F4``/``B4``/``F5``/``B5`` here are the Klatt-1980 reference defaults
+# preserved as a last-resort fallback when no :class:`SpdChip` is
+# threaded through. The active synthesizer path resolves them from
+# Paul's per-voice ``SpdChip`` (see ``default_us_paul_spd()``):
+# Paul's values are F4=3400, B4=260, F5=4300, B5=280 — materially
+# different from the Klatt-1980 defaults of F4=3500, B4=250, F5=4500,
+# B5=300. F6/B6 are not on the chip; the synthesizer derives them
+# from F5 + a fixed offset (these literals stay as the resting fallback).
 _DEFAULT_OQ: Final[int] = 50
 _DEFAULT_SQ: Final[int] = 200
 _DEFAULT_F4: Final[int] = 3500
@@ -178,6 +188,7 @@ def parstochip_to_llframe(parstochip: list[int]) -> LLFrame:
 def parstochip_to_llframe_delayed(
     parstochip: list[int],
     previous_parstochip: list[int] | None,
+    spd_chip: SpdChip | None = None,
 ) -> LLFrame:
     """One-frame-delayed LLFrame, mirroring ``send_pars()``'s delaybuf.
 
@@ -199,6 +210,20 @@ def parstochip_to_llframe_delayed(
             source's ``initpardelay==0`` first-call path that
             outputs the unused delaypars seed with TLT=T0=AV=0
             and never spcwrite's it).
+        spd_chip: Optional :class:`~dectalk.ph.spdef_chip.SpdChip`
+            holding the per-voice speaker-definition parameters.
+            When provided, ``F4``/``B4``/``F5``/``B5`` are sourced
+            from ``spd_chip.r4cc`` / ``r4cb`` / ``r5cc`` / ``r5cb``
+            (the chip-format mirror of SPDEF slots ``F4``/``B4``/
+            ``F5``/``B5``; see :mod:`dectalk.vtm.spd_chip`). When
+            ``None`` (legacy callers, fixture / test parstochips
+            without an attached voice) the function falls back to
+            the Klatt-1980 reference defaults baked into
+            :data:`_DEFAULT_F4` etc. The PH-stage SPDEF audit
+            (PR #103 §3) identified this fallback path as a parity
+            regression for the active US-Paul voice; threading
+            ``spd_chip`` through restores Paul's values (F4=3400,
+            B4=260, F5=4300, B5=280) at the synthesizer boundary.
 
     Returns:
         :class:`LLFrame` populated with the skewed mix.
@@ -212,6 +237,15 @@ def parstochip_to_llframe_delayed(
     f0 = parstochip[OUT_T0] if parstochip[OUT_T0] > 0 else _DEFAULT_F0_DECIHZ
     tilt_idx = _clamp(parstochip[OUT_TLT], 0, len(lineartilt) - 1)
     tl = lineartilt[tilt_idx]
+
+    # Resolve F4/B4/F5/B5 from the SpdChip when available, else fall
+    # back to the Klatt-1980 reference defaults. The SpdChip mirrors
+    # the per-voice speaker definition: ``r4cc``/``r4cb`` carry the
+    # SPDEF ``F4``/``B4`` slots and ``r5cc``/``r5cb`` carry ``F5``/``B5``.
+    f4 = spd_chip.r4cc if spd_chip is not None else _DEFAULT_F4
+    b4 = spd_chip.r4cb if spd_chip is not None else _DEFAULT_B4
+    f5 = spd_chip.r5cc if spd_chip is not None else _DEFAULT_F5
+    b5 = spd_chip.r5cb if spd_chip is not None else _DEFAULT_B5
 
     return LLFrame(
         # Real-time slots from the current parstochip.
@@ -234,13 +268,15 @@ def parstochip_to_llframe_delayed(
         A5f=_clamp(feed[OUT_A5], 0, 80),
         A6f=_clamp(feed[OUT_A6], 0, 80),
         Ab=_clamp(feed[OUT_AB], 0, 80),
+        # Per-voice speaker-definition F4/B4/F5/B5 (from SpdChip when
+        # threaded; Klatt-1980 reference defaults otherwise).
+        F4=f4,
+        B4=b4,
+        F5=f5,
+        B5=b5,
         # Synth-neutral fixed defaults.
         OQ=_DEFAULT_OQ,
         SQ=_DEFAULT_SQ,
-        F4=_DEFAULT_F4,
-        B4=_DEFAULT_B4,
-        F5=_DEFAULT_F5,
-        B5=_DEFAULT_B5,
         F6=_DEFAULT_F6,
         B6=_DEFAULT_B6,
     )

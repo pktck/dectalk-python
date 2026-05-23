@@ -155,6 +155,75 @@ def test_delayed_applies_lineartilt_to_current_tlt() -> None:
     assert frame.TL == 17
 
 
+# -- SpdChip F4/B4/F5/B5 threading (VTM audit PR #103 §3) -------------------
+
+
+def test_delayed_without_spd_chip_uses_klatt_1980_reference_defaults() -> None:
+    """Without an ``spd_chip``, F4/B4/F5/B5 fall back to Klatt-1980 reference values.
+
+    Preserves the legacy behaviour for tests / callers that don't have a
+    SpdChip on hand. The Klatt-1980 reference values (F4=3500, B4=250,
+    F5=4500, B5=300) are the original Klatt synthesizer defaults from
+    his JASA paper — they are NOT what the active US-Paul voice uses.
+    """
+    frame = parstochip_to_llframe_delayed(_empty_parstochip(), None)
+    assert frame.F4 == 3500
+    assert frame.B4 == 250
+    assert frame.F5 == 4500
+    assert frame.B5 == 300
+
+
+def test_delayed_threads_spd_chip_f4_b4_f5_b5() -> None:
+    """``spd_chip.r4cc/r4cb/r5cc/r5cb`` overrides the Klatt defaults.
+
+    The VTM audit (PR #103 §3) noted that ``parstochip_to_llframe_delayed``
+    was using Klatt-1980 reference values instead of Paul's per-voice
+    SpdChip values. Each chip-field name encodes the SPDEF slot it
+    holds (``r4cc`` = resonator-4 cascade centre = SPDEF F4, ``r4cb`` =
+    resonator-4 cascade bandwidth = SPDEF B4, etc.).
+    """
+    from dectalk.ph.spdef_chip import SpdChip
+
+    chip = SpdChip(
+        r4cc=1234,  # F4
+        r4cb=56,  # B4
+        r5cc=7890,  # F5
+        r5cb=78,  # B5
+    )
+    frame = parstochip_to_llframe_delayed(_empty_parstochip(), None, spd_chip=chip)
+    assert frame.F4 == 1234
+    assert frame.B4 == 56
+    assert frame.F5 == 7890
+    assert frame.B5 == 78
+
+
+def test_delayed_threads_paul_spd_chip_values_not_klatt_defaults() -> None:
+    """With Paul's ``default_us_paul_spd()``, F4/B4/F5/B5 match SpdChip not Klatt-1980.
+
+    Acceptance criterion #2 for issue #159: when the live synthesizer
+    threads Paul's SpdChip through, the emitted LLFrame's higher-formant
+    fields must reflect Paul's voice (F4=3400, B4=260, F5=4300, B5=280)
+    and explicitly NOT the Klatt-1980 reference defaults (F4=3500,
+    B4=250, F5=4500, B5=300).
+    """
+    from dectalk.vtm.spd_chip import default_us_paul_spd
+
+    paul = default_us_paul_spd()
+    frame = parstochip_to_llframe_delayed(_empty_parstochip(), None, spd_chip=paul)
+
+    # Match SpdChip values:
+    assert frame.F4 == paul.r4cc == 3400
+    assert frame.B4 == paul.r4cb == 260
+    assert frame.F5 == paul.r5cc == 4300
+    assert frame.B5 == paul.r5cb == 280
+
+    # Explicitly NOT the Klatt-1980 reference defaults:
+    assert frame.F4 != 3500
+    assert frame.B4 != 250
+    assert frame.F5 != 4500
+    assert frame.B5 != 300
+
+
 # -- _build_hl_frame_from_parstochip unit conversions ----------------------
 #
 # Mirror the SPC-frame → HLFrame reader at vtm/vtmiont.c:720-750 (HLSYN build).
