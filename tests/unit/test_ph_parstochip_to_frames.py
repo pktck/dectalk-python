@@ -102,7 +102,7 @@ def test_higher_formants_get_synth_neutral_defaults() -> None:
     """F4..F6 and B4..B6 fall back to LLFrame's neutral resting values."""
     frame = parstochip_to_llframe(_empty_parstochip())
     assert frame.F4 == 3500
-    assert frame.B4 == 250
+    assert frame.B4 == 200
     assert frame.F5 == 4500
     assert frame.F6 == 5500
 
