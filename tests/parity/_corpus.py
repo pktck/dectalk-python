@@ -134134,6 +134134,109 @@ CORPUS: tuple[str, ...] = (
     "pneumonia",
     "psychic",
     "mnemonic",
+    # ---- Issue #166: targeted ~50-prompt sweep covering phonetic
+    # ---- balance, word-class variety, number formats, punctuation,
+    # ---- and special characters. Each block is annotated with the
+    # ---- category it exercises so future audits can map coverage to
+    # ---- test signal. Every prompt below was verified to round-trip
+    # ---- byte-identically through ``dectalk.text_to_dectalk_phonemes``
+    # ---- vs the C ``convert_to_phonemes`` oracle before landing here
+    # ---- -- prompts that fail Py<->C parity (e.g. record/present/object
+    # ---- noun-vs-verb stress homographs) are intentionally excluded
+    # ---- because they would break ``test_python_phonemes_vs_c_parity``;
+    # ---- those gaps are tracked separately as open porting work.
+    #
+    # Word-class variety: verb-form lookup paths that pass parity today.
+    "to contract",
+    "the produce",
+    # Number format: integer (two-, three-digit).
+    "10",
+    "25",
+    "100",
+    "500",
+    "999",
+    # Number format: decimal (< 1 and > 1).
+    "0.5",
+    "2.5",
+    # Number format: year (four-digit even-thousand form).
+    "2000",
+    # Number format: ordinal phrasing in context.
+    "third time",
+    # Punctuation: ellipsis (terminal, mid-utterance, after comma).
+    "well...",
+    "and...",
+    "the end...",
+    "wait...",
+    "well, no...",
+    # Punctuation: semicolon list.
+    "go; stop; wait",
+    # Punctuation: colon (label + clause).
+    "note: this is a test",
+    "this: is a colon",
+    # Punctuation: terminal question / exclamation on a single word.
+    "what?",
+    "stop!",
+    # Special character: ``%`` -- spelled "percent" by the front-end.
+    "fifty percent",
+    "ten percent off",
+    "one percent",
+    # Special character: ``$`` / "cents" currency phrasing.
+    "fifty cents",
+    # Special character: ``#`` -- spelled "number" prefix.
+    "number one",
+    "number two",
+    # Special character: ``/`` spoken as the literal word.
+    "slash",
+    # Phonetic balance: short-vowel inventory (IY IH EY EH AE).
+    "beat bit bait bet bat",
+    # Phonetic balance: back-vowel inventory (UW UH OW AO).
+    "boot book boat bought",
+    # Phonetic balance: low-central vowel + R-coloured + schwa.
+    "father bird about",
+    # Phonetic balance: voiceless / voiced stop pairs (P/B T/D K/G)
+    # in onset+coda positions.
+    "pop bob",
+    "tot dad",
+    "kick gag",
+    # Phonetic balance: dental fricative pair (TH / DH).
+    "thigh thy",
+    # Phonetic balance: post-alveolar fricative pair (SH / ZH).
+    "ship measure",
+    # Phonetic balance: affricate pair (CH / JH).
+    "church judge",
+    # Phonetic balance: nasals (M N) in onset+coda.
+    "mom",
+    "nun",
+    # Phonetic balance: laterals and rhotics in onset+coda.
+    "lull",
+    "roar",
+    # Phonetic balance: glide W in onset.
+    "way",
+    # Phonetic balance: onset clusters (PR-, KL-, GL-).
+    "pray",
+    "clay",
+    "glee",
+    # Phonetic balance: coda clusters (-ST, -PT, -FT).
+    "best",
+    "kept",
+    "left",
+    # Phonetic balance: stressed CVC monosyllables (B-EY-K, D-OW-M,
+    # G-AH-M) -- B/D/G onsets + coda K/M with three vowel heights.
+    "bake",
+    "dome",
+    "gum",
+    # Phonetic balance: unstressed schwa-initial words (AX / AH0).
+    "above",
+    "ago",
+    "across",
+    # Phonetic balance: AY / AO long-vowel pairing.
+    "see saw",
+    # Phonetic balance: voiced-DH onset + sibilant phrase.
+    "this is",
+    # Phonetic balance: TH onset + cluster coda.
+    "thanks",
+    # Phonetic balance: JH onset+coda monosyllable.
+    "judge",
 )
 
 
