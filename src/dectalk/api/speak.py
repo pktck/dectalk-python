@@ -40,6 +40,7 @@ from dectalk.data.voices import PRESETS, VoicePreset, get_preset
 from dectalk.dic import lookup
 from dectalk.kernel.text import Token, TokenKind, tokenize
 from dectalk.lts import lts
+from dectalk.lts.homo_disambig import HOMOGRAPH_FC_BITS, disambiguate
 from dectalk.nt.audio import write_wav
 from dectalk.ph.prosody import split_sentences
 from dectalk.ph.sequencer import synthesize_phonemes
@@ -1845,7 +1846,36 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 elif token.text in word_phoneme_overrides:
                     phones = list(word_phoneme_overrides[token.text])
                 else:
-                    phones = lookup(token.text, lang=lang)
+                    # Form-class homograph disambiguation (issue #144 /
+                    # LTS audit §2). Words like RECORD / PRESENT / OBJECT
+                    # ship two readings in the lexicon (``WORD|P`` and
+                    # ``WORD|S``); pick the right one from context.
+                    homo_fc: str | None = None
+                    if token.text in HOMOGRAPH_FC_BITS:
+                        prev_word_text: str | None = None
+                        prev_prev_word_text: str | None = None
+                        for back_tok in reversed(tokens[:tok_idx]):
+                            if back_tok.kind is TokenKind.WORD:
+                                if prev_word_text is None:
+                                    prev_word_text = back_tok.text
+                                else:
+                                    prev_prev_word_text = back_tok.text
+                                    break
+                        homo_fc = disambiguate(
+                            token.text,
+                            prev_word=prev_word_text,
+                            prev_prev_word=prev_prev_word_text,
+                            is_sentence_initial=is_sentence_initial,
+                        )
+                    if homo_fc is not None:
+                        phones = lookup(token.text, lang=lang, form_class=homo_fc)
+                        # Fall back to the default reading if the
+                        # specific form-class entry isn't present (e.g.
+                        # an N-only homograph that doesn't ship P/S).
+                        if phones is None:
+                            phones = lookup(token.text, lang=lang)
+                    else:
+                        phones = lookup(token.text, lang=lang)
                     # ``'s`` contraction (``that's`` = ``that is``,
                     # ``it's`` = ``it is``). Strip the apostrophe + S
                     # and look up the base form; if found, append S
