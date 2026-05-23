@@ -164,3 +164,54 @@ def decode_lang(dectalk_phonemic: str, lang: str = "us") -> list[str]:
             else:
                 out.append(tok)
     return out
+
+
+def decode_lang_with_markers(dectalk_phonemic: str, lang: str = "us") -> list[str]:
+    """Like :func:`decode_lang` but preserves the compound-boundary ``*`` marker.
+
+    The DECtalk dictionary encodes closed compounds (``breakfast``,
+    ``pipeline``, ``database``) with an internal ``*`` between the two
+    components -- the C LTS turns this into an ``MBOUND`` (``*``) phoneme
+    that downstream stages use for stress/timing. The plain decoder
+    silently drops ``*``; this variant emits ``"__PUNCT__*"`` so callers
+    re-encoding via :func:`dectalk.dic.dectalk_phonemes.encode_to_dectalk`
+    get a byte-identical compound emission to the C source.
+
+    Args:
+        dectalk_phonemic: Pronunciation string in DECtalk's notation.
+        lang: Language tag (``"us"``, ``"uk"``, ``"sp"``, ``"la"``,
+            ``"fr"``, ``"de"``).
+
+    Returns:
+        ARPABET phoneme list with vowels carrying CMUDict-style stress
+        digits, plus ``"__PUNCT__*"`` tokens at compound boundaries.
+
+    Raises:
+        ValueError: If ``lang`` is not a recognised language tag.
+    """
+    if lang not in _LANGUAGE_TABLES:
+        raise ValueError(f"unknown lang {lang!r}; supported: {sorted(_LANGUAGE_TABLES)}")
+
+    table = _LANGUAGE_TABLES[lang]
+    pending_stress = "0"
+    out: list[str] = []
+    for ch in dectalk_phonemic:
+        if ch == "'":
+            pending_stress = "1"
+            continue
+        if ch == "`":
+            pending_stress = "2"
+            continue
+        if ch == "*":
+            out.append("__PUNCT__*")
+            continue
+        mapped = table.get(ch)
+        if mapped is None:
+            continue
+        for tok in mapped:
+            if is_vowel(tok):
+                out.append(tok + pending_stress)
+                pending_stress = "0"
+            else:
+                out.append(tok)
+    return out
