@@ -116,6 +116,45 @@ def test_initial_cluster_silent_letter(word: str, first_phone: str) -> None:
     assert leading == first_phone, f"{word!r} -> {out!r}; expected first phone {first_phone}"
 
 
+@pytest.mark.parametrize(
+    ("word", "expected"),
+    [
+        # The six canonical "-ough" pronunciations in modern English.
+        # ARPABET captured from the C oracle's
+        # ``CAPI.convert_to_phonemes`` for the bare lower-case word.
+        # ``thought`` and ``rough`` are handled by the generic
+        # ``OUGH + T -> AO`` / ``OUGH -> AH F`` rules; the other four
+        # need explicit whole-word lexical entries because no local
+        # letter context disambiguates them.
+        ("cough", ["K", "AO1", "F"]),
+        ("though", ["DH", "OW1"]),
+        ("through", ["TH", "R", "UW1"]),
+        ("thought", ["TH", "AO1", "T"]),
+        ("rough", ["R", "AH1", "F"]),
+        ("bough", ["B", "AW1"]),
+    ],
+)
+def test_ough_lexical_variants(word: str, expected: list[str]) -> None:
+    """Six distinct ``-OUGH`` pronunciations (issue #135)."""
+    assert lts(word) == expected
+
+
+def test_ough_exceptions_anchored_at_word_boundary() -> None:
+    """Whole-word OUGH rules must not consume a leading or trailing
+    grapheme of longer compounds; ``thought`` is the immediate
+    regression target since ``THOUGH`` is a strict prefix of
+    ``THOUGHT``.
+    """
+    # If the THOUGH rule fired greedily, "thought" would come out as
+    # DH OW T (which is wrong); the rule must anchor at end-of-word.
+    assert lts("thought") == ["TH", "AO1", "T"]
+    # Compound words containing the cluster keep falling through to
+    # the generic rule — coughing exists in real lexicons; we just
+    # check the rule engine doesn't crash and produces *some* output.
+    out = lts("coughing")
+    assert out, "coughing produced no phonemes"
+
+
 def test_initial_cluster_does_not_over_silence() -> None:
     """Silent-letter rules anchor at the word start only.
 

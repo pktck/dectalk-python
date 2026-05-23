@@ -22,6 +22,12 @@ from typing import Final
 # A rule is (grapheme, left_pattern_re, right_pattern_re, [phonemes]).
 # Empty patterns mean "any context".
 
+# ``^`` and ``$`` denote word boundaries (anchored at position 0 and at
+# end-of-text). The ``-OUGH`` cluster is the canonical example of why
+# whole-word lexical exceptions are needed: ``cough`` / ``though`` /
+# ``through`` / ``thought`` / ``rough`` / ``bough`` share an
+# orthographic suffix but six different pronunciations.
+
 
 @dataclass(frozen=True, slots=True)
 class _Rule:
@@ -40,6 +46,35 @@ class _Rule:
     left: str
     right: str
     phones: tuple[str, ...]
+
+
+# ------------------------------------------------------- lexical exceptions
+# Whole-word rules for the ``-OUGH`` family. The same six-letter
+# orthographic ending takes six distinct pronunciations in modern
+# English — there is no consonant/vowel context that would let the
+# per-letter rule engine disambiguate them. Match the whole word at the
+# start position and consume it in one go. C-oracle ARPABET (from
+# ``CAPI.convert_to_phonemes``):
+#
+#   cough    -> K  AO  F
+#   though   -> DH OW
+#   through  -> TH R   UW
+#   thought  -> TH AO  T   (already handled by ``OUGH + T -> AO``)
+#   rough    -> R  AH  F   (already handled by default ``OUGH -> AH F``)
+#   bough    -> B  AW
+#
+# ``thought`` / ``rough`` keep their existing rules; the four
+# remaining words need explicit whole-word entries because their
+# pronunciation doesn't fall out of any local letter pattern. The
+# right context ``$`` anchors the rule to the word boundary so longer
+# words containing the cluster (e.g. ``coughing``) keep falling
+# through to the generic rules.
+_OUGH_EXCEPTIONS: Final[tuple[_Rule, ...]] = (
+    _Rule("COUGH", "^", "$", ("K", "AO", "F")),
+    _Rule("THOUGH", "^", "$", ("DH", "OW")),
+    _Rule("THROUGH", "^", "$", ("TH", "R", "UW")),
+    _Rule("BOUGH", "^", "$", ("B", "AW")),
+)
 
 
 # ---------------------------------------------------------------- vowels
@@ -159,10 +194,12 @@ _CONSONANT_RULES: Final[tuple[_Rule, ...]] = (
     _Rule("W", "", "", ("W",)),
 )
 
-# Concatenated rule list — vowel rules are tried first (since multi-letter
-# vowel digraphs need precedence over their first-letter consonant rules,
-# but this is fine because consonant rules don't match vowel graphemes).
-_RULES: Final[tuple[_Rule, ...]] = _VOWEL_RULES + _CONSONANT_RULES
+# Concatenated rule list — exceptions come first so whole-word lexical
+# rules pre-empt the general per-letter matchers; vowel rules come next
+# (since multi-letter vowel digraphs need precedence over their
+# first-letter consonant rules, but this is fine because consonant
+# rules don't match vowel graphemes).
+_RULES: Final[tuple[_Rule, ...]] = _OUGH_EXCEPTIONS + _VOWEL_RULES + _CONSONANT_RULES
 
 
 _VOWEL_PHONEMES: Final[frozenset[str]] = frozenset(
