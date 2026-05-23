@@ -167,15 +167,20 @@ def test_full_pipeline_emits_trailing_silence(
 
     The exact length depends on synth-state divergence with the C
     reference (out of scope for this issue) so the assertion is just
-    "more than 500 trailing zeros" — well above the pre-fix value
-    of zero, well below pathological runaway.
+    "more than 200 trailing zeros" — well above the pre-fix value
+    of zero, well below pathological runaway. The threshold was
+    relaxed from 500 to 200 after issue #139 dropped the spurious
+    leading GEN_SIL prepend; the synth's AV-ramp differs slightly
+    when frame 0 is a real phone instead of silence, and very short
+    clauses (e.g. single-char ``"a"``) end up with ~300 trailing
+    zeros instead of ~600.
     """
     samples = _speak(text, monkeypatch)
     assert samples.size > 0, f"{text!r} produced no audio"
     nonzero = np.flatnonzero(samples != 0)
     assert nonzero.size > 0, f"{text!r} produced all-zero audio"
     trail = int(samples.size - nonzero[-1] - 1)
-    assert trail > 500, (
+    assert trail > 200, (  # noqa: PLR2004 — see docstring for threshold rationale
         f"{text!r}: trailing-silence pad is {trail} samples (was 0 pre-#72); "
         "the per-frame loop is dropping the trailing GEN_SIL allophone."
     )
