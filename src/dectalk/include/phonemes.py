@@ -70,12 +70,22 @@ _DIPHTHONG_DURATION_MS: Final[int] = 180
 _VOWELS: Final[tuple[Phoneme, ...]] = (
     Phoneme("AA", PhonemeKind.VOWEL, voiced=True, duration_ms=_LONG_VOWEL_DURATION_MS),  # father
     Phoneme("AE", PhonemeKind.VOWEL, voiced=True, duration_ms=_VOWEL_DURATION_MS),  # cat
-    Phoneme("AH", PhonemeKind.VOWEL, voiced=True, duration_ms=_VOWEL_DURATION_MS),  # but, sofa
+    # AH = the stressed wedge in "but" / "cup". Per the C oracle
+    # (l_us_ph.h, US_AH = 9) this is distinct from the unstressed
+    # schwas AX and IX; see issue #133 for the audit that collapsed
+    # the three into AH in the approximate Python path.
+    Phoneme("AH", PhonemeKind.VOWEL, voiced=True, duration_ms=_VOWEL_DURATION_MS),  # but (stressed wedge)
     Phoneme("AO", PhonemeKind.VOWEL, voiced=True, duration_ms=_LONG_VOWEL_DURATION_MS),  # bought
-    Phoneme("AX", PhonemeKind.VOWEL, voiced=True, duration_ms=70),  # schwa
+    # AX = unstressed mid-central schwa ("sofa", "banana"). C: US_AX=17.
+    Phoneme("AX", PhonemeKind.VOWEL, voiced=True, duration_ms=70),  # schwa (US_AX)
     Phoneme("EH", PhonemeKind.VOWEL, voiced=True, duration_ms=_VOWEL_DURATION_MS),  # bet
     Phoneme("ER", PhonemeKind.VOWEL, voiced=True, duration_ms=_LONG_VOWEL_DURATION_MS),  # bird
     Phoneme("IH", PhonemeKind.VOWEL, voiced=True, duration_ms=_VOWEL_DURATION_MS),  # bit
+    # IX = unstressed high-front-centralised schwa ("roses", "hospital",
+    # "civil"). C: US_IX=18. Distinct from AX (mid-central) and from
+    # AH (stressed wedge); see ``docs/c_audit/lts.md`` §6 for the
+    # audit that motivated splitting them out in the Python inventory.
+    Phoneme("IX", PhonemeKind.VOWEL, voiced=True, duration_ms=70),  # high schwa (US_IX)
     Phoneme("IY", PhonemeKind.VOWEL, voiced=True, duration_ms=_LONG_VOWEL_DURATION_MS),  # see
     Phoneme("UH", PhonemeKind.VOWEL, voiced=True, duration_ms=_VOWEL_DURATION_MS),  # book
     Phoneme("UW", PhonemeKind.VOWEL, voiced=True, duration_ms=_LONG_VOWEL_DURATION_MS),  # boot
