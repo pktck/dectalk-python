@@ -130,7 +130,6 @@ from dectalk.ph.param_indices import (
     OUT_F3,
     OUT_F4,
     OUT_FZ,
-    OUT_GF,
     OUT_PLACE,
     OUT_PS,
     OUT_T0,
@@ -461,7 +460,7 @@ def _amp_param_trajectory(p_dph_t: DphT, p: Parameter) -> int:
     return value
 
 
-def _apply_amp_special_double_burst(p_dph_t: DphT, param_idx: int, p: Parameter, value: int) -> int:  # noqa: ARG001 -- signature kept for caller symmetry
+def _apply_amp_special_double_burst(p_dph_t: DphT, param_idx: int, p: Parameter, value: int) -> int:
     """No-op on the libtts_us.so HLSYN build.
 
     The C source's double-burst rule (``ph_draw.c`` lines 508-524) for
