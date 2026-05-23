@@ -182,6 +182,4 @@ def test_latinate_suffix_palatalisation(word: str, tail: list[str]) -> None:
     suffix tables in ``l_us_suf.c`` for the reference behaviour.
     """
     out = lts(word)
-    assert out[-len(tail):] == tail, (
-        f"{word!r} -> {out!r}; expected suffix {tail!r}"
-    )
+    assert out[-len(tail) :] == tail, f"{word!r} -> {out!r}; expected suffix {tail!r}"
