@@ -35,7 +35,7 @@ class TestD2PoleCf45:
         assert (a, b, c) == (8192, 0, 0)
 
     def test_zaps_above_bw_cap(self) -> None:
-        a, b, c = d2pole_cf45(29722, NO_SAMPLE_RATE_CHANGE, 2000, 5000, 4096)
+        _a, b, c = d2pole_cf45(29722, NO_SAMPLE_RATE_CHANGE, 2000, 5000, 4096)
         assert b == 0
         assert c == 0
 
