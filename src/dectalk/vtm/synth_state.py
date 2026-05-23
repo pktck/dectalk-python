@@ -43,7 +43,7 @@ NOISEC: int = 1499  # Q4.12 -> 0.365966796875
 
 
 @dataclass(slots=True)
-class SynthState:  # noqa: N801
+class SynthState:
     """Per-handle state for ``vtm1.c::speech_waveform_generator``.
 
     Field names match the C source verbatim so the per-line port is
@@ -60,29 +60,29 @@ class SynthState:  # noqa: N801
     rate_scale: int = 18063  # Q14 (=1.1025) at 11 kHz
     inv_rate_scale: int = 29722  # Q15 (=0.909) at 11 kHz
     uiNumberOfSamplesPerFrame: int = DEFAULT_FRAMES_PER_BUFFER  # noqa: N815
-    SampleRate: float = 11025.0  # noqa: N815
+    SampleRate: float = 11025.0
     bEightKHz: bool = False  # noqa: N815
 
     # Speaker-definition parameters (loaded by read_speaker_definition) -------
     fnscal: int = 4096
     t0jitr: int = 0
-    Aturb: int = 0  # noqa: N815
+    Aturb: int = 0
     avgain: int = 0
-    APgain: int = 0  # noqa: N815
-    AFgain: int = 0  # noqa: N815
-    AFcgain: int = 0  # noqa: N815
+    APgain: int = 0
+    AFgain: int = 0
+    AFcgain: int = 0
     r1cg: int = 0
     r2cg: int = 0
     r3cg: int = 0
-    R4ca: int = 0  # noqa: N815
-    R4cb: int = 0  # noqa: N815
-    R4cc: int = 0  # noqa: N815
-    R5ca: int = 0  # noqa: N815
-    R5cb: int = 0  # noqa: N815
-    R5cc: int = 0  # noqa: N815
-    R4pb: int = 0  # noqa: N815
+    R4ca: int = 0
+    R4cb: int = 0
+    R4cc: int = 0
+    R5ca: int = 0
+    R5cb: int = 0
+    R5cc: int = 0
+    R4pb: int = 0
     r4pc: int = 0
-    R5pb: int = 0  # noqa: N815
+    R5pb: int = 0
     r5pc: int = 0
     r6pb: int = -5702  # vtm1.c line 1759
     r6pc: int = -1995  # vtm1.c line 1760
@@ -98,7 +98,7 @@ class SynthState:  # noqa: N801
     k1: int = 0
     k2: int = 0
     noiseb: int = -2913  # Q4.12 at 11 kHz (SAMPLE_RATE_INCREASE branch)
-    SpeakerGain: int = 0  # noqa: N815
+    SpeakerGain: int = 0
 
     # Resonator delays --------------------------------------------------------
     r2pd1: int = 0
@@ -113,17 +113,17 @@ class SynthState:  # noqa: N801
     r6pd2: int = 0
     r1cd1: int = 0
     r1cd2: int = 0
-    R1ca: int = 0  # noqa: N815
+    R1ca: int = 0
     r1cb: int = 0
     r1cc: int = 0
     r2cd1: int = 0
     r2cd2: int = 0
-    R2ca: int = 0  # noqa: N815
+    R2ca: int = 0
     r2cb: int = 0
     r2cc: int = 0
     r3cd1: int = 0
     r3cd2: int = 0
-    R3ca: int = 0  # noqa: N815
+    R3ca: int = 0
     r3cb: int = 0
     r3cc: int = 0
     r4cd1: int = 0
@@ -150,7 +150,7 @@ class SynthState:  # noqa: N801
     avlind: int = 0
     aturb1: int = 0
     nper: int = 0
-    T0: int = 100  # noqa: N815
+    T0: int = 100
     nopen: int = 40
     nmod: int = 0
     nolast: int = 0

@@ -32,6 +32,11 @@ production audio should continue to go through ``dectalk._capi.CAPI``.
 
 from __future__ import annotations
 
+# This module is a 1:1 faithful translation of vtm1.c::speech_waveform_generator;
+# the C source uses many literal thresholds (40, 263, 95, 16383, ...) and
+# `if x > N: x = N` clamp patterns that PLR2004/PLR1730 would flag. The values
+# are inherent to the algorithm, not magic constants we should refactor.
+# ruff: noqa: PLR0912, PLR0915, PLR1730, PLR2004
 from dectalk.include.cmd_codes import PVALUE
 from dectalk.ph.param_indices import (
     OUT_A2,
@@ -85,7 +90,7 @@ def _to_s32(x: int) -> int:
     return x - (1 << 32) if x & 0x80000000 else x
 
 
-def speech_waveform_generator(  # noqa: C901, PLR0912, PLR0915, PLR1730, PLR2004
+def speech_waveform_generator(
     state: SynthState,
     sample_rate: int = 11025,
 ) -> None:
