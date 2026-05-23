@@ -75,6 +75,48 @@ _MONO_CHANNELS: int = 1
 # volume — keeping the hot path zero-cost.
 _DEFAULT_VOL_ATT_INDEX: int = 100
 
+# Per-utterance leading / trailing silence pads matching the DECtalk
+# binary's envelope. The C kernel emits a short leading silence (~20 ms)
+# before any audible audio and a longer trailing silence (~380 ms) after
+# the final sentence (the ``nfperiod`` end-of-utterance pad in
+# ``ph_phram`` -- empirically 4170-4571 samples / 380-415 ms across the
+# parity corpus). The approximate Python pipeline (used when ``_capi``
+# is unavailable) renders only the phoneme contents and produces nearly
+# zero leading / trailing silence, leaving every prompt under-running by
+# ~4 K samples vs the C reference. Padding here closes that gap on the
+# under-running prompts (e.g. ``DECtalk version 6.2.0``, ``hello!``)
+# from -4060 samples down to within ±400 (issue #201). The pad sizes
+# are tuned to the median of the C reference rather than per-prompt --
+# the leading number is consistent across the corpus, and the trailing
+# number is uniform for any utterance ending in a sentence-final
+# punctuation mark or at end-of-text (which DECtalk treats as implicit
+# sentence end).
+_LEADING_SILENCE_SAMPLES: int = 213
+"""Samples of silence prepended to every approximate-pipeline utterance.
+
+Mirrors the ~19 ms onset pad the C kernel emits before any phoneme audio
+(observed via first-nonzero sample analysis on the 15-prompt parity
+corpus -- 213 samples is the floor / most common value)."""
+
+_TRAILING_SILENCE_SAMPLES_SENTENCE: int = 4200
+"""Samples appended after a sentence-final approximate utterance.
+
+Mirrors the ~380 ms end-of-utterance pad the C kernel emits after the
+last phoneme of any utterance that ends in ``.``, ``!``, ``?``, or at
+end-of-text (which DECtalk treats as an implicit period). Empirically
+the C trailing pad ranges 4170-4571 samples; 4200 is in the middle of
+that band."""
+
+_TRAILING_SILENCE_SAMPLES_CLAUSE: int = 100
+"""Samples appended after a non-sentence-final approximate utterance.
+
+When the text ends with a clause mark (``,``, ``;``, ``:``) rather than
+a sentence terminator, the C kernel emits only a token (~100-sample)
+trailing pad."""
+
+_SENTENCE_FINAL_PUNCT: frozenset[str] = frozenset({".", "?", "!"})
+"""Punctuation marks that trigger the long end-of-utterance silence."""
+
 # Lazily-constructed CAPI singleton; created on first audio call so
 # imports of this module don't require the C library to be present.
 # ``_capi_unavailable`` is set to True after a failed attempt so we
@@ -866,6 +908,32 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     return _pump_frames_to_samples(frames, voice_preset, p_ksd_t.vol_att)
 
 
+def _utterance_trailing_silence_samples(text: str) -> int:
+    """Return the trailing-silence pad length for an approximate-path utterance.
+
+    DECtalk's C kernel appends a long (~380 ms) silence after any
+    utterance that ends in a sentence terminator (``.``, ``!``, ``?``)
+    or at end-of-text (which the kernel treats as an implicit period).
+    Utterances that end at a clause boundary (``,``, ``;``, ``:``) get
+    only a short (~10 ms) pad. The approximate Python pipeline doesn't
+    model these pads natively, so this helper picks the right length
+    based on the raw text's trailing punctuation. Used by
+    :func:`_speak_via_python` to close the front-end under-run gap on
+    short sentence-final prompts (issue #201).
+    """
+    stripped = text.rstrip()
+    if not stripped:
+        return _TRAILING_SILENCE_SAMPLES_CLAUSE
+    last = stripped[-1]
+    # End-of-text without an explicit terminator is treated as an
+    # implicit sentence end by the C kernel -- matches the empirical
+    # ~4200-sample trailing pad on prompts like "DECtalk version 6.2.0"
+    # (no terminator) and "hello!" (explicit ``!``).
+    if last in _SENTENCE_FINAL_PUNCT or last.isalnum():
+        return _TRAILING_SILENCE_SAMPLES_SENTENCE
+    return _TRAILING_SILENCE_SAMPLES_CLAUSE
+
+
 def _speak_via_python(
     text: str,
     rate: float,
@@ -885,6 +953,14 @@ def _speak_via_python(
     Used as the fallback when the C library isn't available, and for
     languages other than US English. Output is intelligible but not
     byte-identical to the DECtalk binary.
+
+    The output is wrapped with leading + trailing silence pads matching
+    the C reference's per-utterance envelope (issue #201). The
+    approximate phoneme sequencer renders only the audible phoneme
+    contents, so without these pads every prompt under-ran the C
+    reference by ~4000 samples (the missing trailing pause). The pad
+    sizes mirror the C kernel's ``nfperiod`` / leading-onset behaviour
+    on the 15-prompt parity corpus.
     """
     if os.environ.get(_FULL_PIPELINE_ENV) == "1":
         return _speak_via_python_full(text, rate, voice, lang, lts_fallback)
@@ -932,7 +1008,16 @@ def _speak_via_python(
 
     if not chunks:
         return np.zeros(0, dtype=np.int16)
-    return np.concatenate(chunks)
+    # Wrap the synthesised content with the C-kernel-equivalent
+    # leading + trailing silence pads (issue #201). The leading pad is
+    # uniform; the trailing pad's length depends on whether the text
+    # ends at a sentence terminator (long pad) or a clause mark (short
+    # pad). Both are no-op silence -- they only shift the output
+    # envelope to match the binary's, closing the front-end under-run
+    # observed on prompts like ``DECtalk version 6.2.0`` and ``hello!``.
+    leading = np.zeros(_LEADING_SILENCE_SAMPLES, dtype=np.int16)
+    trailing = np.zeros(_utterance_trailing_silence_samples(text), dtype=np.int16)
+    return np.concatenate([leading, *chunks, trailing])
 
 
 def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) -> list[str]:
