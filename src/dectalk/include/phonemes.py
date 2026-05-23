@@ -74,7 +74,7 @@ _VOWELS: Final[tuple[Phoneme, ...]] = (
     # (l_us_ph.h, US_AH = 9) this is distinct from the unstressed
     # schwas AX and IX; see issue #133 for the audit that collapsed
     # the three into AH in the approximate Python path.
-    Phoneme("AH", PhonemeKind.VOWEL, voiced=True, duration_ms=_VOWEL_DURATION_MS),  # but (stressed wedge)
+    Phoneme("AH", PhonemeKind.VOWEL, voiced=True, duration_ms=_VOWEL_DURATION_MS),
     Phoneme("AO", PhonemeKind.VOWEL, voiced=True, duration_ms=_LONG_VOWEL_DURATION_MS),  # bought
     # AX = unstressed mid-central schwa ("sofa", "banana"). C: US_AX=17.
     Phoneme("AX", PhonemeKind.VOWEL, voiced=True, duration_ms=70),  # schwa (US_AX)
