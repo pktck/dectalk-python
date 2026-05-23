@@ -182,6 +182,37 @@ _CONSONANT_RULES: Final[tuple[_Rule, ...]] = (
     _Rule("P", "^", "N", ()),
     _Rule("P", "^", "S", ()),
     _Rule("M", "^", "N", ()),
+    # ---- Latinate suffix palatalisation -------------------------------
+    # The C LTS, via the suffix tables in `l_us_suf.c`, palatalises
+    # consonant + front-vowel clusters at the end of Latinate words:
+    #
+    #   -TURE  -> CH ER       (nature, fixture, future, picture, culture)
+    #   -TION  -> SH AH N     (nation, station, motion)
+    #   -SION  -> SH AH N     after a consonant (mansion, pension, mission)
+    #   -SION  -> ZH AH N     after a vowel (vision, fusion, occasion)
+    #   -CIAN  -> SH AH N     (musician, physician, electrician)
+    #   -CIAL  -> SH AH L     (social, special, official, racial)
+    #   -TIAL  -> SH AH L     (partial, initial, essential)
+    #   -CIOUS -> SH AH S     (delicious, gracious, vicious)
+    #   -TIOUS -> SH AH S     (cautious, fictitious, ambitious)
+    #
+    # These multi-letter rules sit at the top of the consonant rule list
+    # so they win against the single-letter T/S/C defaults that would
+    # otherwise emit literal `T Y UW R` / `S IH AH N` etc. Each rule is
+    # anchored at the right with ``$`` so it only fires at word-final
+    # position; mid-word ``-tion-`` etc. fall through to default rules.
+    _Rule("TURE", "", "$", ("CH", "ER")),
+    _Rule("TION", "", "$", ("SH", "AH", "N")),
+    # -SSION (mission, expression, discussion) collapses to a single
+    # SH cluster — the doubled S would otherwise emit `S SH AH N`.
+    _Rule("SSION", "", "$", ("SH", "AH", "N")),
+    _Rule("SION", "[AEIOU]", "$", ("ZH", "AH", "N")),
+    _Rule("SION", "[BCDFGHJKLMNPQRSTVWXZ]", "$", ("SH", "AH", "N")),
+    _Rule("CIAN", "", "$", ("SH", "AH", "N")),
+    _Rule("CIAL", "", "$", ("SH", "AH", "L")),
+    _Rule("TIAL", "", "$", ("SH", "AH", "L")),
+    _Rule("CIOUS", "", "$", ("SH", "AH", "S")),
+    _Rule("TIOUS", "", "$", ("SH", "AH", "S")),
     # Multi-letter clusters first.
     _Rule("CH", "", "", ("CH",)),
     _Rule("CK", "", "", ("K",)),

@@ -198,3 +198,60 @@ def test_initial_cluster_does_not_over_silence() -> None:
     # GN cluster here).
     out = lts("signal")
     assert "G" in out, f"signal -> {out!r}; expected default G to be emitted"
+
+
+@pytest.mark.parametrize(
+    ("word", "tail"),
+    [
+        # -TURE palatalisation: t->ch / _ U at the end of Latinate nouns
+        # (`l_us_suf.c` suffix tables in the C source; missing from
+        # this Python rule list before issue #131).
+        ("nature", ["CH", "ER0"]),
+        ("fixture", ["CH", "ER0"]),
+        ("future", ["CH", "ER0"]),
+        ("picture", ["CH", "ER0"]),
+        ("culture", ["CH", "ER0"]),
+        ("creature", ["CH", "ER0"]),
+        # -TION palatalisation: t->sh / _ I O N $
+        ("nation", ["SH", "AH0", "N"]),
+        ("station", ["SH", "AH0", "N"]),
+        ("motion", ["SH", "AH0", "N"]),
+        # -SSION (mission, expression) -> single SH cluster
+        ("mission", ["SH", "AH0", "N"]),
+        ("passion", ["SH", "AH0", "N"]),
+        ("session", ["SH", "AH0", "N"]),
+        # -SION after consonant -> SH AH N
+        ("mansion", ["SH", "AH0", "N"]),
+        ("pension", ["SH", "AH0", "N"]),
+        # -SION after vowel -> ZH AH N (voiced)
+        ("vision", ["ZH", "AH0", "N"]),
+        ("fusion", ["ZH", "AH0", "N"]),
+        # -CIAN palatalisation: c->sh / _ I A N $
+        ("musician", ["SH", "AH0", "N"]),
+        ("physician", ["SH", "AH0", "N"]),
+        ("electrician", ["SH", "AH0", "N"]),
+        # -CIAL palatalisation: c->sh / _ I A L $
+        ("social", ["SH", "AH0", "L"]),
+        ("special", ["SH", "AH0", "L"]),
+        ("official", ["SH", "AH0", "L"]),
+        # -TIAL palatalisation: t->sh / _ I A L $
+        ("partial", ["SH", "AH0", "L"]),
+        ("initial", ["SH", "AH0", "L"]),
+        # -CIOUS / -TIOUS palatalisation
+        ("delicious", ["SH", "AH0", "S"]),
+        ("gracious", ["SH", "AH0", "S"]),
+        ("cautious", ["SH", "AH0", "S"]),
+    ],
+)
+def test_latinate_suffix_palatalisation(word: str, tail: list[str]) -> None:
+    """Latinate `-TURE`/`-TION`/`-CIAN`/`-CIAL`/`-SION` palatalise to SH/ZH/CH.
+
+    Without these rules, ``rules_us.lts`` emits literal T/S/C clusters
+    (e.g. ``nature -> N AE1 T Y UW0 R`` instead of ``N AE1 CH ER0``).
+    See ``docs/c_audit/lts.md`` §5.3-5.4 for the audit gap; see the C
+    suffix tables in ``l_us_suf.c`` for the reference behaviour.
+    """
+    out = lts(word)
+    assert out[-len(tail):] == tail, (
+        f"{word!r} -> {out!r}; expected suffix {tail!r}"
+    )
