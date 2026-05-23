@@ -33,12 +33,9 @@ from dectalk.include.spp_codes import (
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.numeric_constants import F1, F2, F3
-from dectalk.ph.sp_special_coartic import span_spec_coart, sp_special_coartic
+from dectalk.ph.sp_special_coartic import sp_special_coartic, span_spec_coart
 
-_C_FILE = (
-    Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src"))
-    / "src/dapi/src/ph/p_sp_st1.c"
-)
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/p_sp_st1.c"
 
 pytestmark = pytest.mark.skipif(
     not _C_FILE.is_file(),
@@ -123,9 +120,7 @@ def test_ie_diphthong_constant() -> None:
 # -- Python behavioural assertions ----------------------------------------
 
 
-def _make_state(
-    phones: list[int], np_param: int, stress: int = 0
-) -> DphT:
+def _make_state(phones: list[int], np_param: int, stress: int = 0) -> DphT:
     state = DphT()
     state.pSTphsettar = DphSettarSt()
     state.pSTphsettar.np = np_param

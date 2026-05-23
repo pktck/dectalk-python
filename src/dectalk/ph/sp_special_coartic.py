@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import cast
 
-# ruff: noqa: PLR0911, PLR0912, PLR0915, C901, SIM102 -- C-literal switch-cases preserved
+# ruff: noqa: PLR0911, PLR0912, PLR0915, SIM102 -- C-literal switch-cases preserved
 from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.spp_codes import (
     SPP_A,
@@ -106,7 +106,7 @@ def span_spec_coart(p_dph_t: DphT, vowel: int, other: int) -> int:
             # OUT 30-Apr-86 to prevent overload; back in 30-Jul-86.
             if other in (SPP_M, SPP_F):
                 return -50
-            if loc == FDENTAL or other == SPP_S or loc == FPALATL:
+            if loc == FDENTAL or other == SPP_S or loc == FPALATL:  # noqa: SIM109
                 return 75
     elif p_dphsettar.np == F3:
         if vowel == SPP_A:
@@ -154,11 +154,10 @@ def span_spec_coart(p_dph_t: DphT, vowel: int, other: int) -> int:
                 return 100
             if other in (SPP_J, SPP_F):
                 pass  # break out of the switch (no return)
-            else:
-                if loc == FLABIAL:
-                    return -50
-                elif loc == FVELAR:
-                    return -100
+            elif loc == FLABIAL:
+                return -50
+            elif loc == FVELAR:
+                return -100
         elif vowel == SPP_U:
             if other in (SPP_M, SPP_N, SPP_NH, SPP_LL, SPP_G, SPP_GH):
                 return -75
