@@ -87,7 +87,10 @@ So `b"hxaxll' ow. w ' rrlld . "` reads "hello [pause] world
 | `-5` | `m ' ayn axs   f ' ayv` | `FIVE` | no | sign stripped |
 | `1/2` | `w ' ahn   hx' aef` | `1/2` | no | `ls_task_frac_processing` not ported |
 | `3/4` | `thr ' iy  f ' orths` | `3/4` | no | same |
-| `12/25` | `t w ' ehllv   t w ' ehn t iy  f ' ihf ths` | `12/25` | no | **Surprise:** in C, `12/25` with no year reads as the fraction "twelve twenty-fifths" (frac_processing), not a date. The Python tokenizer does not match it as either date or fraction. |
+| `12/25` | `t w ' ehllv   t w ' ehn t iy  f ' ihf ths` | `12/25` | no | **Surprise:** in C, `12/25` with no year reads as the fraction "twelve twenty-fifths" (frac_processing), not a date. The Python tokenizer does not match it as either date or fraction. Re-verified for issue #145 (2026-05-23): C oracle does NOT do date detection on bare `M/D` or `MM/DD` forms. |
+| `01/01` | `z ' iyr ow  w ' ahn   s ll' aesh  z ' iyr ow  w ' ahn` | `01/01` | no | Issue #145 verification: leading-zero numerator/denominator suppresses C's frac_processing entirely — emits "zero one slash zero one" literal. Python emits raw `01/01`. |
+| `7/8` | `s ' ehv axn   ' eyths` | `7/8` | no | C frac_processing → "seven eighths"; Python raw. Confirms `M/D` form is always fraction in C, never date. |
+| `13/45` | `th' rr* t ' iyn   f ' ort iy  f ' ihf ths` | `13/45` | no | Same — even with month=13 (out of range), C reads as fraction "thirteen forty-fifths", not as anything date-shaped. |
 | `60s` | `s ' ihk s t iyz` | `60S` | no | plural-decade rule (`sflag`) not ported |
 | `'60s` | `s ' ihk s t iyz` | `60S` | no | same; the apostrophe variant also normalises in C |
 | `the 1990s` | `dhax  w ' ahn   th' awz axn d , n ' ayn   hx' ahn d r axd   ) ehn d   n ' ayn t iyz` | `THE 1990S` | no | 4-digit + `s` → "nineteen-ninety-s" via combined year-form + plural-decade |
@@ -225,6 +228,20 @@ These divergences were not tabulated in the prior doc:
    requires year), so `12/25` falls through to raw — but the
    "correct" C interpretation isn't `MAY 12 25` either; it's
    the fraction.
+
+   **Issue #145 verification (2026-05-23, NO-OP):** Probed the
+   C oracle via `CAPI.convert_to_phonemes()` on `12/25`, `01/01`,
+   `7/8`, `13/45`. Confirmed: no date detection at all in the C
+   `M/D` or `MM/DD` form. `12/25` → fraction, `7/8` → fraction,
+   `13/45` → fraction, `01/01` → literal "zero one slash zero
+   one" (leading zeros suppress frac_processing). Adding
+   Python-side date detection for these patterns would
+   **diverge** Python from C and regress the bit-parity goalpost
+   in `docs/PLAN.md` Phase E. Issue #145 closed as
+   no-op-by-design; the gap (raw `12/25` in Python vs.
+   "twelve twenty-fifths" in C) is the unported
+   `ls_task_frac_processing` listed in
+   `docs/c_audit/kernel_textnorm.md` recommended-ports table.
 4. **Unit-abbreviation table (`nabtab[]`) is wide-ranging.**
    `5cm`, `5km`, `5lb`, `10kg`, `60mph` all expand in C
    (mph → "miles per hour", cm → "C M", lb → "L B", etc.).
