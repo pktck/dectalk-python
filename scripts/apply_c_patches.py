@@ -111,6 +111,8 @@ def _rebuild(src_root: Path) -> None:
         src_dir / "dapi" / "src" / "api" / "ttsapi.c",
         src_dir / "dapi" / "src" / "lts" / "ls_task.c",
         src_dir / "dapi" / "src" / "lts" / "lsa_task.c",
+        src_dir / "dapi" / "src" / "ph" / "ph_task.c",
+        src_dir / "dapi" / "src" / "vtm" / "vtmiont.c",
     ]
     for patched in patched_files:
         if patched.is_file():

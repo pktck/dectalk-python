@@ -1,0 +1,85 @@
+--- a/src/dapi/src/vtm/vtmiont.c
++++ b/src/dapi/src/vtm/vtmiont.c
+@@ -52,6 +52,69 @@
+ 	fflush(_dectalk_dump_fp_vtm);
+ }
+ 
++/* dectalk-python port: per-frame OUT_T0 / full voice-packet dump hook.
++ *
++ * The sibling _dectalk_dump_vtm_chunk above captures only the SPC control
++ * word per vtm_loop call (sufficient for "boundary firing" smoke tests
++ * but blind to per-frame F0 / formant / amplitude data). This hook
++ * writes the full SPC_type_voice parameter block to a separate file
++ * `vtm_frames.dump` so per-frame OUT_T0 (and any other OUT_* cell) can
++ * be compared against the Python pipeline.
++ *
++ * Format (one line per voice frame):
++ *   vtm_frame <VOICE_PARS> <p0> <p1> ... <p_VOICE_PARS-1>
++ * Values are decimal int16 (sign-aware reinterpret). Indices are the
++ * OUT_* offsets from ph_defs.h (OUT_T0 == 9, etc.). See issue #149.
++ */
++static FILE *_dectalk_dump_fp_vtm_frames = NULL;
++static char  _dectalk_dump_vtm_frames_dir[1024] = {0};
++
++static void _dectalk_dump_vtm_frames_open(void)
++{
++	const char *dir;
++	char path[1024];
++
++	dir = getenv("DECTALK_DUMP_DIR");
++	if (dir == NULL || dir[0] == '\0') {
++		if (_dectalk_dump_fp_vtm_frames != NULL) {
++			fclose(_dectalk_dump_fp_vtm_frames);
++			_dectalk_dump_fp_vtm_frames = NULL;
++			_dectalk_dump_vtm_frames_dir[0] = '\0';
++		}
++		return;
++	}
++	if (_dectalk_dump_fp_vtm_frames != NULL
++	    && strcmp(dir, _dectalk_dump_vtm_frames_dir) == 0)
++		return;
++	if (_dectalk_dump_fp_vtm_frames != NULL) {
++		fclose(_dectalk_dump_fp_vtm_frames);
++		_dectalk_dump_fp_vtm_frames = NULL;
++	}
++	if (strlen(dir) + sizeof("/vtm_frames.dump") >= sizeof(path))
++		return;
++	snprintf(path, sizeof(path), "%s/vtm_frames.dump", dir);
++	_dectalk_dump_fp_vtm_frames = fopen(path, "wb");
++	if (_dectalk_dump_fp_vtm_frames != NULL) {
++		strncpy(_dectalk_dump_vtm_frames_dir, dir,
++		        sizeof(_dectalk_dump_vtm_frames_dir) - 1);
++		_dectalk_dump_vtm_frames_dir[sizeof(_dectalk_dump_vtm_frames_dir) - 1] = '\0';
++	}
++}
++
++static void _dectalk_dump_vtm_frame(const unsigned short *params, unsigned int count)
++{
++	unsigned int i;
++
++	_dectalk_dump_vtm_frames_open();
++	if (_dectalk_dump_fp_vtm_frames == NULL)
++		return;
++	fprintf(_dectalk_dump_fp_vtm_frames, "vtm_frame %u", count);
++	for (i = 0; i < count; i++)
++		fprintf(_dectalk_dump_fp_vtm_frames, " %d", (int)(short)params[i]);
++	fputc('\n', _dectalk_dump_fp_vtm_frames);
++	fflush(_dectalk_dump_fp_vtm_frames);
++}
++
+ /* ****************************************************************************
+  *                                                 
+  *  DECtalk Vocal Tract Model I/O for Windows/NT
+@@ -700,6 +763,12 @@
+ 		  pVtm_t->parambuff[i]=input[i];
+ 	  }
+ #endif
++#ifdef SINGLE_THREADED
++	  /* dectalk-python port (issue #149): per-frame OUT_* dump for parity
++	   * tests. parambuff[1..VOICE_PARS] holds the SPC_type_voice payload;
++	   * OUT_T0 is at offset 9 (parambuff[10]). */
++	  _dectalk_dump_vtm_frame((const unsigned short *)&pVtm_t->parambuff[1], VOICE_PARS);
++#endif
+ 	  /* MGS BATS #409 07/18/97 */
+ #ifndef SINGLE_THREADED
+ 	  LeaveCriticalSection(pKsd_t->pcsVtmPipeRead);
