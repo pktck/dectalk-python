@@ -384,9 +384,7 @@ def lts(word: str) -> list[str]:
         # group. ``Y`` counts as a vowel only when not word-initial
         # (mirroring the C oracle's "city"-style behaviour).
         first_letter = rule.grapheme[0]
-        is_vowel_group = first_letter in _VOWEL_LETTERS and not (
-            first_letter == "Y" and i == 0
-        )
+        is_vowel_group = first_letter in _VOWEL_LETTERS and not (first_letter == "Y" and i == 0)
         if is_vowel_group and not last_letter_was_vowel:
             current_vowel_group += 1
         for ph in rule.phones:
@@ -411,7 +409,7 @@ def _latinate_stress_group(text: str, total_vowel_groups: int) -> int | None:
     absolute group index. Returns ``None`` when no suffix matches, in
     which case the caller falls back to the default first-vowel rule.
     """
-    if total_vowel_groups < 2:
+    if total_vowel_groups < 2:  # noqa: PLR2004 -- need at least 2 groups for suffix-shift
         # Monosyllables / single-vowel stems get the default first-vowel
         # stress; suffix-shift rules don't apply.
         return None
@@ -440,9 +438,7 @@ def _count_vowel_groups(text: str, leading_pos: int = 0) -> int:
     groups = 0
     last_was_vowel = False
     for idx, ch in enumerate(text):
-        is_vowel = ch in _VOWEL_LETTERS and not (
-            ch == "Y" and (leading_pos + idx) == 0
-        )
+        is_vowel = ch in _VOWEL_LETTERS and not (ch == "Y" and (leading_pos + idx) == 0)
         if is_vowel and not last_was_vowel:
             groups += 1
         last_was_vowel = is_vowel
