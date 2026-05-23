@@ -87,7 +87,9 @@ def _emits_vpstart(fc_mask: int) -> bool:
     return (fc_mask & vphrase) == vphrase or fc_mask == FC_VERB
 
 
-def _convert(source_path: Path, lang: str) -> tuple[dict[str, list[str]], set[str]]:
+def _convert(
+    source_path: Path, lang: str
+) -> tuple[dict[str, list[str]], set[str]]:
     """Parse one DECtalk dictionary file into ``(markers_lex, vpstart_words)``.
 
     Walks each entry, decoding the phonemic column with
