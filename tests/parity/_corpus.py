@@ -134125,6 +134125,66 @@ CORPUS: tuple[str, ...] = (
     "we don't have money",
     "we don't have time",
     "we were wondering",
+    # ---- Issue #166: targeted 50-prompt sweep covering phonetic balance,
+    # word-class variety, number formats, punctuation, and special
+    # characters. Each prompt is annotated with the category it
+    # exercises so future audits can map coverage to test signal.
+    #
+    # Phonetic balance: under-exercised onsets / codas / clusters.
+    "zebras zoom by zinc zones",  # onset Z + coda Z (US_Z stressed/unstressed)
+    "azure measure pleasure treasure",  # medial ZH (US_ZH, rare phoneme)
+    "thick thin thumb thatched",  # onset TH (US_TH voiceless, four samples)
+    "this these those that",  # onset DH (US_DH voiced)
+    "young yellow yodel yes",  # onset Y / US_YX coverage
+    "wheels whales which whisper",  # onset WH / US_W coverage
+    "ring rang rung ringing",  # coda NG (US_NX) all four ablaut grades
+    "church cheese choose chair",  # onset CH (US_TX) with varied vowels
+    "judge gem jingle joy",  # onset JH (US_DX) variants
+    "blue brown bread broken",  # BR / BL onset clusters (US_B + liquid)
+    "stripe spray strung string",  # ST/SP/STR onset clusters
+    "vivid vapor velvet voice",  # onset V (US_V) coverage
+    # Word-class variety: orthographic homographs (noun vs verb stress).
+    "i record a record",  # record (verb) vs record (noun)
+    "they present a present",  # present (verb) vs present (noun)
+    "we object to the object",  # object (verb) vs object (noun)
+    "please permit the permit",  # permit (verb/noun homograph)
+    "she will conduct the conduct",  # conduct (verb/noun)
+    "the lead pipe will lead us",  # lead (noun /lEd/) vs lead (verb /li:d/)
+    "i read what you read",  # read (present /ri:d/) vs read (past /rEd/)
+    "wind the clock in the wind",  # wind (verb /waInd/) vs wind (noun /wInd/)
+    "the dove dove into the water",  # dove (noun) vs dove (past of dive)
+    "do not desert me in the desert",  # desert (verb /dI'zVrt/) vs desert (noun /'dEzVrt/)
+    # Number formats: integer, decimal, fraction, ordinal, year, time, phone.
+    "the price is 42 dollars",  # integer in context
+    "the value is 3.14159",  # decimal expansion
+    "we ate one half of the pie",  # fraction expressed as word "half"
+    "the first of january",  # ordinal "first"
+    "the twenty second amendment",  # ordinal "twenty second"
+    "the third quarter",  # ordinal "third"
+    "in the year 1999",  # 4-digit year
+    "born in 2024",  # recent 4-digit year
+    "the meeting is at 10 30",  # time spoken as two integers (h m)
+    "call me at 8 o'clock",  # o'clock variant
+    "phone 5 5 5 1 2 3 4",  # phone digits as spaced singletons
+    "room 101",  # 3-digit integer in context
+    # Punctuation: comma, semicolon, em-dash, ellipsis, question, exclamation.
+    "first, second, third, fourth.",  # comma series
+    "one; two; three; four.",  # semicolon series
+    "this -- that -- the other.",  # em-dash via double hyphen
+    "well... maybe... probably not.",  # multi-clause ellipsis
+    "really?! you can't be serious?!",  # interrobang sequence (? + !)
+    "stop! wait! listen!",  # exclamation series
+    "is it monday, tuesday, or wednesday?",  # comma list inside question
+    "an aside: two parentheticals.",  # colon-introduced clause
+    # Special characters: %, #, @, &, /, $, +, =.
+    "the rate is 50%",  # percent sign after integer
+    "the answer is #1",  # hash / pound sign
+    "send mail to me @ home",  # at sign
+    "salt & pepper",  # ampersand
+    "yes / no / maybe",  # forward slash separator
+    "the cost is $100",  # dollar sign before integer
+    "two + two = four",  # plus and equals operators
+    "x = y + z",  # variable assignment with operators
 )
 
 
