@@ -31,7 +31,10 @@ from dectalk.ph.math_helpers import mlsh1
 from dectalk.ph.numeric_constants import F2, NSAMP_FRAME
 from dectalk.ph.parameter_tables import divtab
 from dectalk.ph.q14_percent_constants import N10PRCNT, N15PRCNT, N25PRCNT
+from dectalk.ph.gr_special_coartic import gr_special_coartic
+from dectalk.ph.la_special_coartic import la_special_coartic
 from dectalk.ph.shrdur import shrdur
+from dectalk.ph.sp_special_coartic import sp_special_coartic
 from dectalk.ph.us_special_coartic import us_special_coartic
 
 _FONT_USA: int = PFUSA << PSFONT
@@ -92,10 +95,12 @@ def make_dip(  # noqa: PLR0912, PLR0915 -- faithful 180-line C function
         tmp = get_phone(p_dph_t, p_dph_t.nphone) & PFONT
         if tmp == _FONT_USA:
             oldvalue += us_special_coartic(p_dph_t, p_dph_t.nphone, 0)
-        elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP):
-            raise NotImplementedError(
-                f"make_dip: special_coartic for font 0x{tmp:04x} not yet ported."
-            )
+        elif tmp == _FONT_GR:
+            oldvalue += gr_special_coartic(p_dph_t, p_dph_t.nphone, 0)
+        elif tmp == _FONT_LA:
+            oldvalue += la_special_coartic(p_dph_t, p_dph_t.nphone, 0)
+        elif tmp == _FONT_SP:
+            oldvalue += sp_special_coartic(p_dph_t, p_dph_t.nphone, 0)
         # FR branch is commented out in C; no-op here too.
 
     np_param.tarcur = oldvalue
@@ -124,10 +129,12 @@ def make_dip(  # noqa: PLR0912, PLR0915 -- faithful 180-line C function
                 tmp = p_dph_t.nphone & PFONT
                 if tmp == _FONT_USA:
                     newvalue += us_special_coartic(p_dph_t, p_dph_t.nphone, 0)
-                elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP):
-                    raise NotImplementedError(
-                        f"make_dip: special_coartic for font 0x{tmp:04x} not yet ported."
-                    )
+                elif tmp == _FONT_GR:
+                    newvalue += gr_special_coartic(p_dph_t, p_dph_t.nphone, 0)
+                elif tmp == _FONT_LA:
+                    newvalue += la_special_coartic(p_dph_t, p_dph_t.nphone, 0)
+                elif tmp == _FONT_SP:
+                    newvalue += sp_special_coartic(p_dph_t, p_dph_t.nphone, 0)
 
         # Halve newtime if NSAMP_FRAME == 128 (DOS 1/2-sample-rate mode).
         # The Linux build uses NSAMP_FRAME == 71, so the halving branch
