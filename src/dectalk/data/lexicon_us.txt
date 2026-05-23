@@ -53,7 +53,7 @@ THEIRS DH EH1 R Z
 # determiners / function words
 A AH0
 AN AE1 N
-THE DH AH0
+THE DH AX
 THIS DH IH1 S
 THAT DH AE1 T
 THESE DH IY1 Z
