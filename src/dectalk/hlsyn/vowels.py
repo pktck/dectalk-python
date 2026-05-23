@@ -21,13 +21,26 @@ def default_speaker(sr_hz: int = 11025) -> Speaker:
     natural KLGLOT88 source, modest gain. The gain values are tuned so a
     typical fricative-heavy phoneme stream stays below int16 saturation.
 
+    ``UI`` (samples per frame) matches the C reference's
+    ``vtm3.c::SetSampleRate`` table: 71 samples at 11025 Hz (~6.4 ms),
+    51 samples at 8000 Hz (~6.4 ms). PH ``allodurs[]`` are calibrated
+    in 6.4 ms units, so any other value stretches synthesis
+    (issue #152, VTM audit §1, PR #103). For non-standard sample
+    rates the same ~6.4 ms target is applied.
+
     Args:
         sr_hz: Sample rate. DECtalk's native rate is 11025 Hz.
 
     Returns:
         A :class:`Speaker` with sensible defaults.
     """
-    samples_per_frame = round(sr_hz * 0.01)  # ~10 ms frames
+    if sr_hz == 11025:
+        samples_per_frame = 71
+    elif sr_hz == 8000:
+        samples_per_frame = 51
+    else:
+        # Match the C reference's ~6.4 ms frame for off-spec rates.
+        samples_per_frame = round(sr_hz * 0.0064)
     return Speaker(
         DU=0,
         UI=samples_per_frame,

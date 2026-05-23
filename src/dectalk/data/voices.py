@@ -49,9 +49,14 @@ class VoicePreset:
 
 
 def _adult_male_speaker() -> Speaker:
+    # ``UI`` (samples per frame) = 71 matches
+    # ``vtm3.c::SetSampleRate``'s ``uiNumberOfSamplesPerFrame = 71`` for
+    # ``PC_SAMPLE_RATE == 11025`` (the ~6.4 ms VTM frame). PH
+    # ``allodurs[]`` are calibrated in 6.4 ms units, so any other value
+    # stretches synthesis (issue #152, VTM audit §1, PR #103).
     return Speaker(
         DU=0,
-        UI=110,
+        UI=71,
         SR=11025,
         NF=5,
         SS=SOURCE_NATURAL,
