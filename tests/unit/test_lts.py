@@ -26,6 +26,49 @@ def test_known_spelling_patterns(word: str, expected: list[str]) -> None:
     assert lts(word) == expected
 
 
+@pytest.mark.parametrize(
+    ("word", "expected"),
+    [
+        # Issue #140: vowel-picker rule gaps for common diphthong/schwa words.
+        # ``hi`` -- word-final I after consonant is the long-i diphthong
+        # (matches C oracle's ``hx' ay``), not the default short ``IH``.
+        ("hi", ["HH", "AY1"]),
+        ("pi", ["P", "AY1"]),
+        ("ski", ["S", "K", "AY1"]),
+        # ``ah`` -- word-final ``AH`` collapses to the open-back ``AA``
+        # with a silent H (matches C oracle's ``' aa``).
+        ("ah", ["AA1"]),
+        ("bah", ["B", "AA1"]),
+        # ``testing`` -- unstressed I in the word-final ``-ING`` suffix is
+        # the centralised ``IX`` schwa (matches C oracle's ``ixnx``).
+        ("testing", ["T", "EH1", "S", "T", "IX0", "NG"]),
+    ],
+)
+def test_issue_140_vowel_mispredictions(word: str, expected: list[str]) -> None:
+    """Frame-audit refresh §H: fix LTS picks of wrong vowels on common words."""
+    assert lts(word) == expected
+
+
+@pytest.mark.parametrize(
+    "word",
+    [
+        # ``-ING`` rule only fires in non-monosyllables; bare ``sing`` /
+        # ``ring`` / ``king`` keep the default ``IH`` short-i.
+        "sing",
+        "ring",
+        "king",
+        "ping",
+        "wing",
+    ],
+)
+def test_monosyllabic_ing_keeps_ih(word: str) -> None:
+    """``-ING`` IX rule shouldn't fire on monosyllabic words."""
+    out = lts(word)
+    # Bare X+ING words should end in IH<digit> + NG.
+    assert out[-1] == "NG"
+    assert out[-2].startswith("IH"), f"{word!r} -> {out!r}; expected IH before NG"
+
+
 def test_returns_list_of_strings() -> None:
     result = lts("hello")
     assert isinstance(result, list)

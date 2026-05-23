@@ -98,6 +98,19 @@ _VOWEL_RULES: Final[tuple[_Rule, ...]] = (
     _Rule("AUGH", "", "T", ("AO",)),  # caught
     _Rule("EIGH", "", "", ("EY",)),  # eight
     _Rule("IGH", "", "", ("AY",)),  # high
+    # Word-final ``AH`` is the bare-vowel interjection (``ah``, ``bah``,
+    # ``hurrah``): the H is silent and the A is the open back vowel
+    # ``AA``, matching the C oracle's ``' aa`` for "ah". Anchored at word
+    # end so medial ``ah`` (e.g. ``ahead``) still goes through the default
+    # A + H rules.
+    _Rule("AH", "", "$", ("AA",)),
+    # Word-final ``-ING`` is the productive English present-participle /
+    # gerund suffix. The unstressed I in this position is the centralised
+    # ``IX`` schwa-like vowel in DECtalk's phoneme set (matches the C
+    # oracle's ``ixnx`` for "testing"). Restricted to non-monosyllables
+    # via a non-empty left context so "sing" / "ring" / "king" still pick
+    # up the default ``IH`` short-i.
+    _Rule("ING", r".[^AEIOUY]", "$", ("IX", "NG")),
     _Rule("AY", "", "", ("EY",)),
     _Rule("AI", "", "", ("EY",)),
     _Rule("AU", "", "", ("AO",)),
@@ -135,6 +148,12 @@ _VOWEL_RULES: Final[tuple[_Rule, ...]] = (
     # Default short vowels.
     _Rule("A", "", "", ("AE",)),
     _Rule("E", "", "", ("EH",)),
+    # Word-final lone I after a consonant is the long-i diphthong (``hi``,
+    # ``pi``, ``ski``, ``ti``): matches the C oracle's ``hx' ay`` for
+    # "hi". The non-empty left context ensures bare-letter ``I`` (the
+    # pronoun) still routes through the lexicon, and that medial / vowel-
+    # adjacent ``I`` falls through to the default ``IH``.
+    _Rule("I", r"[BCDFGHJKLMNPQRSTVWXZ]", "$", ("AY",)),
     _Rule("I", "", "", ("IH",)),
     _Rule("O", "", "", ("AA",)),
     _Rule("U", "", "", ("AH",)),
@@ -208,7 +227,7 @@ _RULES: Final[tuple[_Rule, ...]] = _VOWEL_RULES + _CONSONANT_RULES
 
 
 _VOWEL_PHONEMES: Final[frozenset[str]] = frozenset(
-    {"AA", "AE", "AH", "AO", "AX", "EH", "ER", "IH", "IY", "UH", "UW",
+    {"AA", "AE", "AH", "AO", "AX", "EH", "ER", "IH", "IX", "IY", "UH", "UW",
      "AY", "AW", "EY", "OW", "OY"}
 )  # fmt: skip
 
