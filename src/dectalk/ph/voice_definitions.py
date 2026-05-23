@@ -47,6 +47,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from dectalk.api.spdefs_struct import Spdefs
+
 voice_paul: Final[tuple[int, ...]] = (
     1,
     3,
@@ -421,7 +423,120 @@ voices: Final[tuple[tuple[int, ...], ...]] = (
     voice_dennis,
 )
 
+# Name-keyed lookup mirroring :data:`dectalk.data.voices.PRESETS`. The
+# C ``p_us_vdf_dectalk43.c`` file declares one ``const short
+# <name>[SPDEF]`` per voice; this map keeps the row addressable by the
+# same lower-case name the public API uses (``"paul"``..``"dennis"``).
+# ``"chris"`` aliases ``voice_chris`` (identical row to ``voice_paul``
+# in the v43 table). Wendy and Willy are *not* one-to-one in the v43
+# table (the public API exposes Willy via the breathy preset; the C
+# voice-table row used in the binary tree is ``wendy_8``), so we map
+# the public ``"willy"`` name to ``voice_wendy`` -- the only female
+# breathy-tradition row in the table -- to keep the public preset
+# names round-trippable through the Spdefs scaling.
+VOICES_BY_NAME: Final[dict[str, tuple[int, ...]]] = {
+    "paul": voice_paul,
+    "betty": voice_betty,
+    "harry": voice_harry,
+    "frank": voice_frank,
+    "dennis": voice_dennis,
+    "kit": voice_kit,
+    "ursula": voice_ursula,
+    "rita": voice_rita,
+    "willy": voice_wendy,
+    "chris": voice_chris,
+    "wendy": voice_wendy,
+}
+
+
+def voice_tuple_to_spdefs(row: tuple[int, ...]) -> Spdefs:
+    """Convert a raw 33-int voice row into an :class:`Spdefs` dataclass.
+
+    The C ``SPDEF`` struct is 39 ints; the per-voice initialiser fills
+    the first 33 and leaves the remaining 6 (``avg_glot_open``,
+    ``avg_glot_voicd_open``, ``avg_glot_unv_open``, ``area_chink``,
+    ``open_quo``, ``output_gain_mult``) zero-defaulted. The Python
+    ``Spdefs`` dataclass matches the C field order exactly, so the
+    mapping is positional.
+
+    Args:
+        row: A 33-int (or shorter) tuple from one of the
+            ``voice_<name>`` constants in this module.
+
+    Returns:
+        An :class:`Spdefs` instance with the first ``len(row)`` fields
+        populated from ``row`` and the remainder left at their zero
+        defaults.
+    """
+    # ``output_gain_mult`` sits at index 32 in the C initialiser; the
+    # zero-defaulted tail (junk / junk1 / etc.) is unchanged from the
+    # dataclass default.
+    return Spdefs(
+        sex=row[0],
+        smoothness=row[1],
+        assertiveness=row[2],
+        average_pitch=row[3],
+        pitch_range=row[4],
+        breathiness=row[5],
+        richness=row[6],
+        num_fixed_samp_og=row[7],
+        laryngealization=row[8],
+        head_size=row[9],
+        formant4_res_freq=row[10],
+        formant4_bandwidth=row[11],
+        formant5_res_freq=row[12],
+        formant5_bandwidth=row[13],
+        parallel4_freq=row[14],
+        parallel5_freq=row[15],
+        gain_frication=row[16],
+        gain_aspiration=row[17],
+        gain_voicing=row[18],
+        gain_nasalization=row[19],
+        gain_cfr1=row[20],
+        gain_cfr2=row[21],
+        gain_cfr3=row[22],
+        gain_cfr4=row[23],
+        loudness=row[24],
+        spectral_tilt=row[25],
+        baseline_fall=row[26],
+        lax_breathiness=row[27],
+        quickness=row[28],
+        hat_rise=row[29],
+        stress_rise=row[30],
+        avg_glot_open=row[31],
+        output_gain_mult=row[32],
+    )
+
+
+def spdefs_for_voice(name: str | None) -> Spdefs:
+    """Return the :class:`Spdefs` scalar table for a public voice name.
+
+    Falls back to Paul when ``name`` is ``None`` (matching the C
+    library's default-voice behaviour: a fresh kernel handle starts in
+    ``CURRENT_PAUL`` per ``ttsapi.c``'s ``LoadStartupVoice`` path).
+    Unknown names also fall back to Paul rather than raising; the
+    public-API surface in :func:`dectalk.speak` already validates voice
+    names against :data:`dectalk.data.voices.PRESETS`, so any name that
+    reaches this layer has already been checked.
+
+    Args:
+        name: A canonical voice name (``"paul"``..``"willy"``,
+            ``"chris"``, ``"wendy"``). Case-insensitive. ``None`` is
+            treated as Paul.
+
+    Returns:
+        An :class:`Spdefs` instance representing the requested voice's
+        per-scalar parameters.
+    """
+    if name is None:
+        return voice_tuple_to_spdefs(voice_paul)
+    row = VOICES_BY_NAME.get(name.lower(), voice_paul)
+    return voice_tuple_to_spdefs(row)
+
+
 __all__ = [
+    "VOICES_BY_NAME",
+    "spdefs_for_voice",
     "voice_betty",
     "voice_chris",
     "voice_dennis",
@@ -430,6 +545,7 @@ __all__ = [
     "voice_kit",
     "voice_paul",
     "voice_rita",
+    "voice_tuple_to_spdefs",
     "voice_ursula",
     "voice_wendy",
     "voices",

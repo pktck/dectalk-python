@@ -146,6 +146,32 @@ def _resolve_voice(voice: str | VoicePreset | None) -> VoicePreset | None:
     return get_preset(voice)
 
 
+def _voice_name_for_spdefs(voice: str | VoicePreset | None) -> str | None:
+    """Extract a canonical voice name from the public-API voice argument.
+
+    Used by :func:`_render_clause_full` to look up the right row in the
+    C voice-definition table (:mod:`dectalk.ph.voice_definitions`). The
+    table is keyed by the same lower-case strings as
+    :data:`dectalk.data.voices.PRESETS`; a :class:`VoicePreset`'s
+    :class:`~dectalk.include.dectalk.Voice` enum lets us recover that
+    string by reverse-lookup. Returns ``None`` when no name is supplied
+    so :func:`~dectalk.ph.voice_definitions.spdefs_for_voice` picks the
+    Paul default.
+    """
+    if voice is None:
+        return None
+    if isinstance(voice, str):
+        return voice.lower()
+    # ``VoicePreset``: reverse-lookup the canonical name via the global
+    # PRESETS registry (each preset's ``voice`` enum is unique within
+    # the table). Falling back to ``None`` (== Paul) is safe -- the
+    # value still feeds the LL synthesizer's per-voice speaker/F0.
+    for name, preset in PRESETS.items():
+        if preset is voice or preset.voice == voice.voice:
+            return name
+    return None
+
+
 def _speak_via_capi(
     text: str,
     rate: float,
@@ -463,12 +489,15 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     from dectalk.ph.phsettar import phsettar  # noqa: PLC0415
     from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
     from dectalk.ph.us_phtiming import us_phtiming  # noqa: PLC0415
+    from dectalk.ph.voice_definitions import spdefs_for_voice  # noqa: PLC0415
 
-    # TODO: thread voice through DphT.curspdef / malfem etc. For now
-    # only the speaker/sample-rate piece (via _resolve_voice) flows
-    # into the LL synthesizer; the PH module always runs with its
-    # default spdef.
     voice_preset = _resolve_voice(voice)
+    # Per-voice scalar table (Spdefs). Threading these through the
+    # phinton / pht0draw scalars below removes the Paul-only literals
+    # that used to live here (issue #164): non-Paul voices like Betty
+    # (AS=35, HR=0, SR=20, AP=208, PR=240, QU=80) now get their
+    # documented C voice-table values rather than Paul's defaults.
+    spdefs = spdefs_for_voice(_voice_name_for_spdefs(voice))
 
     # 1. Text -> ARPABET phonemes via the existing approximate path.
     # Capture the per-word grouping (rather than a flat phone list) so
@@ -529,25 +558,32 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # unchanged. Without this seed, fnscale stays 0 and every formant
     # collapses to ``(4096 - 0) >> N`` regardless of the per-phone target.
     p_dph_t.fnscale = _us_paul_spd.fnscale
-    # malfem: 1=MALE, 0=FEMALE. Loaded from the voice's SPD_CHIP.sex field.
-    # Paul is MALE (sex=1). TODO: thread through voice selection properly.
+    # malfem: 1=MALE, 0=FEMALE. The C kernel loads it from the SPD_CHIP
+    # source-section (vtm-side struct) but the value mirrors the
+    # public-side ``Spdefs.sex`` field — both are derived from the same
+    # SEX entry in the voice-definition row. We keep the SPD_CHIP load
+    # here (it's the canonical vtm seed) and assert/observe the
+    # equivalent on Spdefs in the parity tests.
     p_dph_t.malfem = _us_paul_spd.sex
     # F0 parameters derived from speaker definition (ph_vset.c lines 610-619).
-    # QU=40 -> f0_lp_filter=1500+15*40=2100; AP=100 -> f0minimum=(100-12)*10=880
-    # (HLSYN formula); PR=100 -> f0scalefac=100*41=4100.
-    p_dph_t.f0_lp_filter = 1500 + 15 * 40  # QU=40 for Paul
-    p_dph_t.f0minimum = (100 - 12) * 10  # AP=100 for Paul, HLSYN: (AP-12)*10
-    p_dph_t.f0scalefac = 100 * 41  # PR=100 for Paul
-    # Hat-rise / stress-rise scalars. Paul's voice-definition row in
-    # ``p_us_vdf_dectalk43.c`` (lines 36-37, the first SPDEF entry)
-    # supplies ``HR = 18`` (hat-pattern F0 rise in Hz) and ``SR = 32``
-    # (max stress-rise impulse height). ``phinton`` Rule 1 uses
-    # ``size_hat_rise`` for hat-rise amplitude (line 376) and Rule 2
-    # scales the stress-impulse height by ``scale_str_rise`` (line 459).
-    # Without these the per-frame OUT_T0 clamps at f0minimum +/- flutter
-    # (issue #94 / audit "F0 contour follow-up").
-    p_dph_t.size_hat_rise = 18  # HR for Paul (p_us_vdf_dectalk43.c line 36)
-    p_dph_t.scale_str_rise = 32  # SR for Paul (p_us_vdf_dectalk43.c line 37)
+    # f0_lp_filter = 1500 + 15 * QU       (QU = quickness, % of max)
+    # f0minimum   = (AP - 12) * 10        (AP = average pitch, Hz)
+    # f0scalefac  = PR * 41               (PR = pitch range, %)
+    # All three now thread through the per-voice :class:`Spdefs` so
+    # non-Paul voices pick up their documented C voice-table scalars.
+    p_dph_t.f0_lp_filter = 1500 + 15 * spdefs.quickness
+    p_dph_t.f0minimum = (spdefs.average_pitch - 12) * 10
+    p_dph_t.f0scalefac = spdefs.pitch_range * 41
+    # Hat-rise / stress-rise scalars. ``phinton`` Rule 1 (ph_inton.c
+    # line 376) reads ``pDph_t->size_hat_rise`` for the hat-pattern F0
+    # rise amplitude; Rule 2 (line 459) scales the stress-impulse height
+    # by ``pDph_t->scale_str_rise``. Both are direct copies of the SPDEF
+    # ``HR`` and ``SR`` fields (per-voice row in ``p_us_vdf_dectalk43.c``
+    # -- Paul: HR=18, SR=32; Betty: HR=0, SR=20; Harry: HR=20, SR=30;
+    # Frank: HR=20, SR=22). Without these the per-frame OUT_T0 clamps
+    # at f0minimum +/- flutter (issue #94 / #122 F0 contour follow-up).
+    p_dph_t.size_hat_rise = spdefs.hat_rise
+    p_dph_t.scale_str_rise = spdefs.stress_rise
     # Assertiveness: SPD AS (final F0-fall, % of full fall) scaled to the
     # Q12-style multiplier ``phinton`` Rules 3/4/6 pass to ``frac4mul`` on
     # the rule's f0fall / targf0 magnitude. The C bridge in ``phram.c``
@@ -557,7 +593,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # and the ``frac4mul(*, 0)`` calls in ``phinton.py`` lines 514/611/650
     # zero out every Rule 3/4/6 final-fall target — visible in traces as
     # ``tar=0`` for every Rule 6 event (issue #122 / F0 contour follow-up).
-    p_dph_t.assertiveness = 100 * 41  # AS=100 for Paul (Q12-style multiplier)
+    p_dph_t.assertiveness = spdefs.assertiveness * 41
     # Speaker-tuning scalars consulted by ``phdraw``'s per-frame
     # bandwidth computations. C's ``ph_vset.c`` (lines 607-630) loads
     # these from ``curspdef[]`` once per voice change; without the seeds
@@ -745,6 +781,12 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     p_dph_t.nphone = -1
     p_dph_t.durfon = 0
     frames: list[object] = []
+    # Also accumulate raw parstochip snapshots so the alternative vtm1
+    # synth path (issue #158) can pump them through
+    # ``speech_waveform_generator`` without re-running the PH stage.
+    # Only used when ``DECTALK_USE_VTM1=1`` is set; the conversion
+    # itself is cheap (list copy), so we always populate.
+    parstochip_frames: list[list[int]] = []
     # Cap the loop to keep buggy state from running away during the
     # multi-month port. 8000 frames is ~51 s of audio -- well past
     # any reasonable clause.
@@ -802,6 +844,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             frames.append(
                 parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip, _us_paul_spd)
             )
+            parstochip_frames.append(list(p_dph_t.parstochip))
         else:
             # First iteration: matches C's send_pars initpardelay==0
             # branch, which only seeds delaypars and skips the
@@ -809,10 +852,17 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             first_frame_consumed = True
         previous_parstochip = list(p_dph_t.parstochip)
 
-    # 7. Pump the collected Klatt frames through ll_synthesize for
-    # int16 PCM output. Apply the per-clause vol_att post-scale that
-    # mirrors vtm3.c line 1642 (per docs/vtm-divergence-audit.md §5;
-    # source value lives on KsdT, default 100 = ~unity Q15 gain).
+    # 7. Pump the collected Klatt frames through the synthesizer for
+    # int16 PCM output. By default this routes through the hlsyn
+    # SenSyn 2.2 cascade-parallel synth (the existing
+    # bit-accurate path). When ``DECTALK_USE_VTM1=1`` is set, frames
+    # are pumped through the alternative ``speech_waveform_generator``
+    # (vtm1.c) path -- the same synthesiser the shipped
+    # ``libtts_us.so`` uses (issue #158).
+    if os.environ.get("DECTALK_USE_VTM1") == "1":
+        from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
+
+        return pump_frames_via_vtm1(list(parstochip_frames), voice_preset)
     return _pump_frames_to_samples(frames, voice_preset, p_ksd_t.vol_att)
 
 
