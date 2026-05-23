@@ -100,8 +100,8 @@ def _c_oracle_f0_series(capi: CAPI, text: str) -> list[float]:
         prev = os.environ.get("DECTALK_DUMP_DIR")
         os.environ["DECTALK_DUMP_DIR"] = dump_dir
         try:
-            with capi._instance_lock:  # noqa: SLF001 -- mirroring dump_pipeline()
-                capi._speak_locked(text, speaker=0, rate=None, encoding=1)  # noqa: SLF001
+            with capi._instance_lock:
+                capi._speak_locked(text, speaker=0, rate=None, encoding=1)
         finally:
             if prev is None:
                 os.environ.pop("DECTALK_DUMP_DIR", None)
@@ -148,7 +148,7 @@ def _python_f0_series(text: str) -> list[float]:
     """
     # Import lazily so the test module can import without the full
     # pipeline being wired up.
-    from dectalk.ph import parstochip_to_frames as _ptf
+    from dectalk.ph import parstochip_to_frames as _ptf  # noqa: PLC0415
 
     captured: list[int] = []
     original = _ptf.parstochip_to_llframe_delayed
@@ -234,15 +234,17 @@ def test_per_frame_out_t0_within_tolerance(capi: CAPI, prompt: str) -> None:
     worst_delta = deltas[worst_idx]
     mean_delta = statistics.mean(deltas)
 
-    detail = "\n".join([
-        f"prompt: {prompt!r}",
-        _summarize("c_oracle", c_voiced),
-        _summarize("python  ", py_voiced),
-        f"compared frames: {n} (c={len(c_voiced)} py={len(py_voiced)})",
-        f"mean |Δ|: {mean_delta:.1f} Hz",
-        f"worst |Δ|: {worst_delta:.1f} Hz at frame {worst_idx} "
-        f"(c={c_voiced[worst_idx]:.1f} py={py_voiced[worst_idx]:.1f})",
-    ])
+    detail = "\n".join(
+        [
+            f"prompt: {prompt!r}",
+            _summarize("c_oracle", c_voiced),
+            _summarize("python  ", py_voiced),
+            f"compared frames: {n} (c={len(c_voiced)} py={len(py_voiced)})",
+            f"mean |Δ|: {mean_delta:.1f} Hz",
+            f"worst |Δ|: {worst_delta:.1f} Hz at frame {worst_idx} "
+            f"(c={c_voiced[worst_idx]:.1f} py={py_voiced[worst_idx]:.1f})",
+        ]
+    )
     assert worst_delta <= MAX_ABS_HZ, (
         f"per-frame F0 delta exceeds {MAX_ABS_HZ} Hz tolerance\n{detail}"
     )
