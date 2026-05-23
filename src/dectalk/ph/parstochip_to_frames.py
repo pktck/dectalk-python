@@ -85,9 +85,9 @@ _INT16_WRAP: Final[int] = 0x10000
 _DEFAULT_OQ: Final[int] = 50
 _DEFAULT_SQ: Final[int] = 200
 _DEFAULT_F4: Final[int] = 3500
-_DEFAULT_B4: Final[int] = 250
+_DEFAULT_B4: Final[int] = 200
 _DEFAULT_F5: Final[int] = 4500
-_DEFAULT_B5: Final[int] = 300
+_DEFAULT_B5: Final[int] = 250
 _DEFAULT_F6: Final[int] = 5500
 _DEFAULT_B6: Final[int] = 500
 
