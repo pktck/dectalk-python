@@ -24,18 +24,14 @@ from dectalk.include.grp_codes import (
     GRP_I,
     GRP_L,
     GRP_U,
-    GRP_UE,
 )
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
-from dectalk.ph.feature_bits import FSTRESS, FSTRESS_1, FVPNEXT
+from dectalk.ph.feature_bits import FSTRESS_1, FVPNEXT
 from dectalk.ph.gr_special_coartic import gr_special_coartic
 from dectalk.ph.numeric_constants import F1, F2, F3
 
-_C_FILE = (
-    Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src"))
-    / "src/dapi/src/ph/p_gr_st1.c"
-)
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/p_gr_st1.c"
 
 pytestmark = pytest.mark.skipif(
     not _C_FILE.is_file(),
@@ -115,9 +111,7 @@ def test_clamp_to_pm400_present() -> None:
 # -- Python behavioural assertions ----------------------------------------
 
 
-def _make_state(
-    phones: list[int], np_param: int, stress: int = 0, boundary: int = 0
-) -> DphT:
+def _make_state(phones: list[int], np_param: int, stress: int = 0, boundary: int = 0) -> DphT:
     state = DphT()
     state.pSTphsettar = DphSettarSt()
     state.pSTphsettar.np = np_param

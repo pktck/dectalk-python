@@ -27,12 +27,12 @@ from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import FSTRESS
 from dectalk.ph.get_phone import get_phone
+from dectalk.ph.gr_special_coartic import gr_special_coartic
+from dectalk.ph.la_special_coartic import la_special_coartic
 from dectalk.ph.math_helpers import mlsh1
 from dectalk.ph.numeric_constants import F2, NSAMP_FRAME
 from dectalk.ph.parameter_tables import divtab
 from dectalk.ph.q14_percent_constants import N10PRCNT, N15PRCNT, N25PRCNT
-from dectalk.ph.gr_special_coartic import gr_special_coartic
-from dectalk.ph.la_special_coartic import la_special_coartic
 from dectalk.ph.shrdur import shrdur
 from dectalk.ph.sp_special_coartic import sp_special_coartic
 from dectalk.ph.us_special_coartic import us_special_coartic

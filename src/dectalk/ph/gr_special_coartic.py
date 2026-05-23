@@ -62,7 +62,7 @@ from dectalk.ph.phoneme_features import FALVEL
 from dectalk.ph.rom_tables import gr_place
 
 
-def gr_special_coartic(p_dph_t: DphT, nfon: int, diphpos: int) -> int:
+def gr_special_coartic(p_dph_t: DphT, nfon: int, diphpos: int) -> int:  # noqa: PLR0912
     """Compute the German coarticulation delta for one diphthong segment.
 
     Faithful translation of the C static helper. Caller adds the
@@ -94,23 +94,23 @@ def gr_special_coartic(p_dph_t: DphT, nfon: int, diphpos: int) -> int:
             # compared against two distinct constants); mirror the
             # collapsed expression below.
             if (
-                ((foncur == GRP_E) and (foncur == GRP_AE))
+                ((foncur == GRP_E) and (foncur == GRP_AE))  # noqa: PLR1714
                 or (foncur == GRP_I)
                 or (foncur == GRP_EH)
                 or (foncur == GRP_AEH)
                 or (foncur == GRP_IH)
             ):
                 temp = -150
-            if ((foncur == GRP_AU) or (foncur == GRP_EU)) and (diphpos == 1):
+            if ((foncur == GRP_AU) or (foncur == GRP_EU)) and (diphpos == 1):  # noqa: PLR1714, SIM109
                 temp = -250
-            if ((foncur == GRP_AU) or (foncur == GRP_EU)) and (diphpos > 1):
+            if ((foncur == GRP_AU) or (foncur == GRP_EU)) and (diphpos > 1):  # noqa: PLR1714, SIM109
                 temp = -350
 
         # Front vowel F2 target lowered after [L].
         # (C source has a commented-out W/LL/LX check; only [L] is active.)
         if fonlas == GRP_L:
             if (
-                ((foncur == GRP_E) and (foncur == GRP_AE))
+                ((foncur == GRP_E) and (foncur == GRP_AE))  # noqa: PLR1714
                 or (foncur == GRP_I)
                 or (foncur == GRP_EH)
                 or (foncur == GRP_AEH)

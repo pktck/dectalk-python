@@ -30,10 +30,7 @@ from dectalk.ph.la_special_coartic import la_special_coartic
 from dectalk.ph.numeric_constants import F1, F2
 from dectalk.ph.sp_special_coartic import span_spec_coart
 
-_C_FILE = (
-    Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src"))
-    / "src/dapi/src/ph/p_la_st1.c"
-)
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/p_la_st1.c"
 
 pytestmark = pytest.mark.skipif(
     not _C_FILE.is_file(),
@@ -99,9 +96,7 @@ def test_la_spec_coart_is_dead_helper() -> None:
 # -- Python behavioural assertions ----------------------------------------
 
 
-def _make_state(
-    phones: list[int], np_param: int, stress: int = 0
-) -> DphT:
+def _make_state(phones: list[int], np_param: int, stress: int = 0) -> DphT:
     state = DphT()
     state.pSTphsettar = DphSettarSt()
     state.pSTphsettar.np = np_param
@@ -135,9 +130,7 @@ def test_python_sp_phones_at_la_callsite_fire_rules() -> None:
 def test_python_delegation_matches_span_spec_coart_directly() -> None:
     """``la_special_coartic`` is the sum of two ``span_spec_coart`` calls."""
     state = _make_state([SPP_M, SPP_E, SPP_M], F2)
-    expected = span_spec_coart(state, SPP_E, SPP_M) + span_spec_coart(
-        state, SPP_E, SPP_M
-    )
+    expected = span_spec_coart(state, SPP_E, SPP_M) + span_spec_coart(state, SPP_E, SPP_M)
     assert la_special_coartic(state, 1, 0) == expected
 
 
