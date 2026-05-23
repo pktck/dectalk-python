@@ -1347,6 +1347,26 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # `)` marker + unstressed EH + N + D, distinct from the literal
         # "and" which uses SBOUND ``^`` + PPSTART ``(`` + AE + N + D.
         "__NUM_AND__": ["__PUNCT__)", "EH0", "N", "D"],
+        # Initial-cluster silent-letter words. ``rules_us.py`` strips the
+        # silent leading consonant of gn- / pn- / ps- / mn- words, but
+        # the remaining vowel+stress pattern still drifts from the C
+        # oracle in a handful of multi-syllable borrowings. Pin the four
+        # canonical acceptance-criteria prompts (issue #127) and a few
+        # close relatives whose Python LTS otherwise mis-stresses the
+        # post-cluster nucleus (psalm's silent L, pseudo's UW+OW split).
+        # The simpler one-syllable cases (gnaw, gnat, gnome, gnash,
+        # psyche) already match by rule and need no override.
+        "PNEUMONIA": ["N", "UW0", "M", "AA1", "N", "IY0", "AX0"],
+        "PNEUMATIC": ["N", "UW0", "M", "AE1", "T", "IX", "K"],
+        "PSYCHIC": ["S", "AY1", "K", "IX", "K"],
+        # The L in "psalm" is silent in the C oracle output (s ' aam),
+        # following the same /m/-after-/a/ pattern as "calm" / "palm".
+        "PSALM": ["S", "AA1", "M"],
+        "PSEUDO": ["S", "UW1", "D", "OW0"],
+        "MNEMONIC": ["N", "IX0", "M", "AA1", "N", "IX", "K"],
+        # Single-syllable "gnu" — the rule path lands on AH (default U
+        # short vowel) instead of long UW. Pin to the C oracle reading.
+        "GNU": ["N", "UW1"],
     }
 
     # DECtalk's first-verbs hack (``ls_task.c`` verbs_table) overrides

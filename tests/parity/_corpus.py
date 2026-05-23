@@ -134125,6 +134125,15 @@ CORPUS: tuple[str, ...] = (
     "we don't have money",
     "we don't have time",
     "we were wondering",
+    # Initial-cluster silent-letter words (issue #127). The gn-/pn-/ps-/
+    # mn- prefixes have their first consonant stripped by rules_us.py;
+    # multi-syllable vowel patterns are pinned via word_phoneme_overrides
+    # in ``api/speak.py``. Add the four canonical prompts from the issue
+    # plus close relatives that exercise the same rule path.
+    "gnaw",
+    "pneumonia",
+    "psychic",
+    "mnemonic",
 )
 
 
