@@ -48,6 +48,17 @@ def _dectalk_dump_vtm_chunk(*args: object, **kwargs: object) -> int:
     return _MMSYSERR_NOERROR
 
 
+def _dectalk_dump_vtm_packet_words(*args: object, **kwargs: object) -> int:
+    """No-op: C-side dump-hook helper (#151 extension); maps control word to packet size.
+
+    The Python-side equivalent table is ``_EXPECTED_PACKET_WORDS`` in
+    ``tests/parity/test_vtm_dump_payload.py``, which is what consumes
+    the resulting rich dump.
+    """
+    del args, kwargs
+    return _MMSYSERR_NOERROR
+
+
 # OP_THREAD_ROUTINE is the macro that the C source uses to define
 # sync_main / vtm_main. Both thread entries are ported as Python
 # synchronous tick functions (sync_main_tick / vtm_main_tick); we
@@ -66,5 +77,6 @@ __all__ = [
     "WaitForAudioSampleToPlay",
     "_dectalk_dump_vtm_chunk",
     "_dectalk_dump_vtm_open",
+    "_dectalk_dump_vtm_packet_words",
     "speech_waveform_generator",
 ]
