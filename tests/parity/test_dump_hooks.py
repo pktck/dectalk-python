@@ -126,14 +126,24 @@ def test_vtm_dump_is_non_empty(capi: CAPI) -> None:
     Validates the hook added by
     ``tests/parity/c_patches/0005-vtm-stage-dump-hooks.patch``. In
     ``SINGLE_THREADED`` builds the hook lives in ``vtm_loop`` (the entry
-    point of the VTM stage) and captures each 16-bit token the PH stage
-    pushes across the (now-elided) ``pKsd_t->vtm_pipe`` boundary.
+    point of the VTM stage) and captures every word the PH stage pushes
+    across the (now-elided) ``pKsd_t->vtm_pipe`` boundary -- not just
+    the packet control header. The full PH->VTM packet payload is
+    captured so downstream parity tests can compare per-frame Klatt
+    parameters quantitatively (see ``test_vtm_dump_payload.py``).
     """
     dumps = capi.dump_pipeline("hello world", ["vtm"])
     assert "vtm" in dumps
     payload = dumps["vtm"]
     assert payload, "vtm dump was empty -- patch not applied or hook misfired?"
     assert b"vtm_write" in payload
+    # The extended patch dumps the full packet, so each voice packet
+    # contributes 21 words (1 control + 20 VOICE_PARS). A regression
+    # to single-word-only would not produce any 21-word headers.
+    assert b"vtm_write 21" in payload, (
+        "expected at least one 21-word voice packet in vtm dump; "
+        "the patch may have regressed to dumping only the control word"
+    )
 
 
 def test_vtm_dump_is_deterministic(capi: CAPI) -> None:

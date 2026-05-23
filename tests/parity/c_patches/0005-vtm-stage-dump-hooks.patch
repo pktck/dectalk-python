@@ -1,6 +1,6 @@
 --- a/src/dapi/src/vtm/vtmiont.c
 +++ b/src/dapi/src/vtm/vtmiont.c
-@@ -1,3 +1,57 @@
+@@ -1,3 +1,98 @@
 +/* dectalk-python port: VTM-stage boundary dump hook (Phase A.4) */
 +#include <stdio.h>
 +#include <stdlib.h>
@@ -55,15 +55,56 @@
 +	fflush(_dectalk_dump_fp_vtm);
 +}
 +
++/*
++ * Determine the full packet size (control word + payload) for a given
++ * SPC control word, so the boundary dump captures every word the PH
++ * stage handed to the VTM stage -- not just the control header.
++ *
++ * Packet word counts must match those in ``spc_size()`` in
++ * ``src/dapi/src/nt/spc.c`` (which is what ``spcwrite()`` uses to size
++ * the buffer it forwards to ``vtm_loop()``). Packet types whose size
++ * isn't dictated by ``spc_size()`` (force / flush / nop / sync) are
++ * single-word packets at this boundary in SINGLE_THREADED builds.
++ */
++static unsigned int _dectalk_dump_vtm_packet_words(unsigned short control)
++{
++	/* Strip subtype bits so we get the bare packet-type field. */
++	switch (control & 0x00ff) {
++	case 0:  /* SPC_type_voice    */
++#ifdef MSDOS
++		return 1u + 18u; /* VOICE_PARS=18 on MSDOS */
++#else
++		return 1u + 20u; /* VOICE_PARS=20 elsewhere */
++#endif
++	case 1:  /* SPC_type_speaker  */
++#ifdef MSDOS
++		return 1u + 22u; /* SPDEF_PARS=22 on MSDOS */
++#else
++		return 1u + 24u; /* SPDEF_PARS=24 elsewhere */
++#endif
++	case 2:  /* SPC_type_tone     */
++		return 1u + 5u;  /* TONE_PARS=5 */
++	case 7:  /* SPC_type_index    */
++		return 1u + 2u;  /* INDEX_PARS=2 */
++	case 8:  /* SPC_type_sync     */
++	case 9:  /* SPC_type_flush    */
++	case 10: /* SPC_type_flush_sync */
++	case 11: /* SPC_type_force    */
++	case 4:  /* SPC_type_nop      */
++	default:
++		return 1u;
++	}
++}
++
  /* ****************************************************************************
-  *                                                 
+  *
   *  DECtalk Vocal Tract Model I/O for Windows/NT
-@@ -536,6 +590,9 @@
+@@ -536,6 +631,9 @@
  	S16 temp6;
  	S16 tempAB;
  
 +#ifdef SINGLE_THREADED
-+	_dectalk_dump_vtm_chunk((const unsigned short *)input, 1);
++	_dectalk_dump_vtm_chunk((const unsigned short *)input, _dectalk_dump_vtm_packet_words(input[0]));
 +#endif
  #else
  	for(;;)

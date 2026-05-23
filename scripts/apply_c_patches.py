@@ -29,6 +29,18 @@ What's patched:
   ``lts_pipe``; the patch hooks ``lts_loop`` in
   ``src/dapi/src/lts/ls_task.c`` and emits one record per call into
   ``<DECTALK_DUMP_DIR>/cmd.dump``.
+- ``0004-ph-stage-dump-hooks.patch`` — sibling for the PH-stage entry
+  point (``ph_loop()`` in ``src/dapi/src/ph/ph_task.c``). Captures
+  each 16-bit token the LTS stage hands off to PH; one record per
+  call into ``<DECTALK_DUMP_DIR>/ph.dump``.
+- ``0005-vtm-stage-dump-hooks.patch`` — sibling for the VTM-stage
+  entry point (``vtm_loop()`` in ``src/dapi/src/vtm/vtmiont.c``).
+  Captures the *full* PH -> VTM packet, not just the control word:
+  packet length is computed from the control word via the same
+  size table that ``spc_size()`` in ``src/dapi/src/nt/spc.c`` uses
+  (1 + VOICE_PARS for voice packets, 1 + SPDEF_PARS for speaker-def,
+  etc.). Enables quantitative per-frame VTM parity comparison.
+  Records land in ``<DECTALK_DUMP_DIR>/vtm.dump``.
 
 Usage:
     uv run python scripts/apply_c_patches.py             # apply + rebuild
@@ -111,6 +123,8 @@ def _rebuild(src_root: Path) -> None:
         src_dir / "dapi" / "src" / "api" / "ttsapi.c",
         src_dir / "dapi" / "src" / "lts" / "ls_task.c",
         src_dir / "dapi" / "src" / "lts" / "lsa_task.c",
+        src_dir / "dapi" / "src" / "ph" / "ph_task.c",
+        src_dir / "dapi" / "src" / "vtm" / "vtmiont.c",
     ]
     for patched in patched_files:
         if patched.is_file():
