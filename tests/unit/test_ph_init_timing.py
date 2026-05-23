@@ -25,16 +25,26 @@ def test_zeroes_longcumdur_on_every_call() -> None:
 
 
 def test_english_normal_rate_180() -> None:
-    """sprate=180 → sprat0=180, sprat1=FRAC_ONE, sprat2=FRAC_ONE."""
+    """sprate=180 → sprat0=180, sprat1≈Q14(1.114), sprat2≈Q14(1.057).
+
+    The libtts_us.so build defines neither ``HLSYN`` nor
+    ``CHANGES_AFTER_V43`` (see ``dectalkf_klsyn.h``), so the active
+    C branch is ``temp2 = 425 - sprat0`` (not 400). Verified against
+    instrumented ``libtts_us.so`` for issue #155.
+    """
     state = DphT()
     settar = DphSettarSt()
     init_timing(state, settar, sprate_ref=[180], lang_curr=LANG_english)
     assert settar.sprat0 == 180
-    # sprat0 = 180: sprat1 = muldv(FRAC_ONE, 400-180, 220) = muldv(16384, 220, 220) = 16384
-    assert settar.sprat1 == FRAC_ONE
-    # sprat0 = 180: sprat2 = (sprat1+FRAC_ONE)/2 = (16384+16384)/2 = 16384
-    assert settar.sprat2 == FRAC_ONE
+    # sprat0 = 180: sprat1 = muldv(FRAC_ONE, 425-180, 220)
+    #             = muldv(16384, 245, 220) = 18245
+    assert settar.sprat1 == 18245
+    # sprat0 = 180 (not > 180): sprat2 = (sprat1+FRAC_ONE)/2
+    #             = (18245+16384)/2 = 17314
+    assert settar.sprat2 == 17314
     assert state.timeref == 16000 // 180
+    # Sanity: FRAC_ONE is exposed so callers see the unit value.
+    assert FRAC_ONE == 16384
 
 
 def test_english_fast_rate_300() -> None:
@@ -129,14 +139,20 @@ def test_french_clamps_to_120_350() -> None:
 
 
 def test_sprat1_clamped_to_1_when_negative() -> None:
-    """When temp2 would be negative, the C source clamps it to 1."""
+    """When temp2 would be negative, the C source clamps it to 1.
+
+    Non-HLSYN branch uses ``temp2 = 425 - sprat0``, so the clamp
+    fires when ``sprat0 > 425``. After linearisation
+    ``sprat0 = 250 + ((sprate-250)>>1)``, that needs
+    ``sprate > 600`` — which the engine never produces because
+    ``sprate`` is clamped to ``[75, 600]`` upstream. The clamp is
+    still reachable from a direct call with ``sprate = 600``
+    yielding ``sprat0 = 425`` (border case).
+    """
     state = DphT()
     settar = DphSettarSt()
-    # sprate = 500 → sprat0 = 250 + (250>>1) = 375.
-    # sprat0 >= 180: temp2 = 400 - 375 = 25. (Still positive.)
-    # Test instead with a higher rate that would make temp2 negative:
-    # sprate = 550 → sprat0 = 250 + (300>>1) = 400.
-    # sprat0 >= 180: temp2 = 400 - 400 = 0 — clamped to 1.
-    init_timing(state, settar, sprate_ref=[550], lang_curr=LANG_english)
+    # sprate = 600 → sprat0 = 250 + (350>>1) = 425.
+    # temp2 = 425 - 425 = 0 — clamped to 1.
+    init_timing(state, settar, sprate_ref=[600], lang_curr=LANG_english)
     # sprat1 = muldv(FRAC_ONE, 1, 220) = 16384 // 220 = 74
     assert settar.sprat1 == 74

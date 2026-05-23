@@ -29,7 +29,8 @@ def test_muldv_intermediate_widens_to_s32() -> None:
 def test_muldv_with_frac_one_pattern() -> None:
     """Used as ``muldv(FRAC_ONE, temp2, temp3)`` in init_timing."""
     frac_one = 16384
-    # init_timing pattern: temp2 = 400 - sprat0, temp3 = 220
+    # init_timing pattern: temp2 = 425 - sprat0, temp3 = 220
+    # (non-HLSYN branch; the libtts_us.so build path -- issue #155)
     assert muldv(frac_one, 200, 220) == 14894
 
 
