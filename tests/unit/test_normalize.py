@@ -30,6 +30,32 @@ def test_try_date_rejects_invalid_dates() -> None:
     assert try_date("notadate") is None
 
 
+def test_try_date_rejects_two_component_mm_dd() -> None:
+    """Two-component ``MM/DD`` (no year) is NOT a date in C — matches fraction.
+
+    C's ``ls_proc_is_date`` (``l_us_pr1.c`` lines 826+) only matches
+    ``D-MMM[-YY[YY]]`` (alphabetic month abbreviation, dash separator).
+    A two-component slash-separated token like ``12/25`` falls through
+    to ``ls_proc_is_frac`` (``l_us_pr1.c`` lines 991+) which accepts
+    1-2 digit numerator over 1-3 digit denominator, producing
+    ``"twelve twenty-fifths"`` not ``"December 25th"``.
+
+    Python's ``try_date`` mirrors this by requiring three components
+    (with a year). Adding ``MM/DD`` date detection would *diverge*
+    from C oracle behavior. See issue #145 and the
+    ``docs/c_audit/kernel_textnorm.md`` "Tracked divergences" section.
+    """
+    # All of these read as fractions in C, not dates.
+    assert try_date("12/25") is None
+    assert try_date("01/01") is None
+    assert try_date("7/8") is None
+    assert try_date("13/45") is None
+    assert try_date("1/2") is None
+    # Two-component dash forms also rejected (C requires alpha month).
+    assert try_date("12-25") is None
+    assert try_date("01-01") is None
+
+
 def test_try_phone_recognises_us_format() -> None:
     out = try_phone("555-1212")
     assert out == ["FIVE", "FIVE", "FIVE", "ONE", "TWO", "ONE", "TWO"]

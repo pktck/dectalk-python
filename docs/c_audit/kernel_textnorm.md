@@ -186,6 +186,39 @@ Summary: 9 of 51 cases match. 42 of 51 (~82%) diverge, of which:
   every 4-digit number reads as cardinal "two thousand twenty
   four", never "twenty twenty four").
 
+## Tracked divergences (C-faithful — do NOT "fix")
+
+These are behaviors the Python side already mirrors faithfully from
+C source, even though they may look intuitively wrong. Issues to "fix"
+these get closed as no-ops; documenting here so future audits don't
+re-open them.
+
+1. **`MM/DD` two-component slash dates are fractions, not dates** (issue #145).
+
+   `12/25` reads as "twelve twenty-fifths", `1/2` as "one half", etc.
+   The C `ls_proc_is_date` (`l_us_pr1.c` lines 826+) only matches
+   `D-MMM[-YY[YY]]` patterns — alphabetic month abbreviation with
+   dash separator. There is no `MM/DD` date pattern anywhere in
+   `l_us_pr1.c`. Slash-separated two-component tokens fall through
+   to `ls_proc_is_frac` (`l_us_pr1.c` lines 991+), which accepts
+   1-2 digit numerator over 1-3 digit denominator (capped at 100
+   for the 3-digit case) and emits the ordinal-denominator form.
+   `01/01` is rejected by the fraction check (leading-zero numerator)
+   and falls through to plain digit-by-digit reading with the slash
+   spoken as "slash".
+
+   Python's `dectalk.lts.date_recognizer.ls_proc_is_date` and
+   `ls_proc_is_frac` mirror this exactly (see
+   `tests/unit/test_lts_date_recognizer.py`). The kernel-side
+   `dectalk.kernel.normalize.try_date` also requires three
+   components (month/day/year) before treating a slash token as a
+   date — adding `MM/DD` detection would *introduce* a divergence,
+   not remove one.
+
+   The original audit row above (`12/25` in the per-prompt table)
+   isn't listed because Python's tokenizer and C agree: both say
+   "twelve twenty-fifths".
+
 ## Specific bugs in the current Python kernel
 
 1. **`text.py:99-101` over-aggressive leading-punct strip**
