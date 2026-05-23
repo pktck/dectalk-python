@@ -232,8 +232,13 @@ def test_amp_param_uses_tarcur_plus_ftran_div_by8() -> None:
     assert p_dph_t.parstochip[OUT_A2] == 43
 
 
-def test_amp_double_burst_knock_down_at_tspesh_plus_1() -> None:
-    """Parallel-amp double-burst rule: ``-= 10`` when ``tcum == tspesh + 1`` and value >= 10."""
+def test_amp_double_burst_noop_on_hlsyn_build() -> None:
+    """Parallel-amp double-burst rule is FAKE_HLSYN-only -- the HLSYN
+    production build (libtts_us.so, our target) compiles it out at
+    ``ph_draw.c`` lines 508-524. The Python ``_apply_amp_special_double_burst``
+    is consequently a no-op, so the parallel amplitude survives the
+    ``tcum == tspesh + 1`` window unchanged.
+    """
     handle, p_dph_t, _ = _build_handle()
     p_dph_t.tcum = 6
     p = p_dph_t.param[A2]
@@ -244,9 +249,8 @@ def test_amp_double_burst_knock_down_at_tspesh_plus_1() -> None:
     p.tspesh = 5
     p.pspesh = 0  # Inside-tspesh override (won't fire because tcum > tspesh now).
     phdraw(handle)
-    # tcum (6) > tspesh (5): we land in the else; double-burst at tspesh+1 == 6 fires.
-    # value before knock-down = 25; after -= 10 = 15.
-    assert p_dph_t.parstochip[OUT_A2] == 15
+    # No double-burst: value stays at 25 (the amplitude-loop output).
+    assert p_dph_t.parstochip[OUT_A2] == 25
 
 
 def test_av_glottal_stop_reduction() -> None:
@@ -281,41 +285,47 @@ def test_av_glottal_stop_reduction_skipped_below_threshold() -> None:
 # ----- Tilt computation ----------------------------------------------------
 
 
-def test_tilt_default_male_path() -> None:
-    """Male voice: ``temptilt = frac4mul(f0 - 900, f0_dep_tilt)``, clamped, plus offset."""
+def test_tilt_zeroed_on_hlsyn_build() -> None:
+    """On the HLSYN production build, ``OUT_TLT`` is forced to 0.
+
+    The entire spectral-tilt computation (``ph_draw.c`` lines 617-742,
+    including the breathy-voice modifier and breathyah/breathytilt
+    state tracking) is gated behind
+    ``#if (defined FAKE_HLSYN || !(defined HLSYN))``; the HLSYN
+    branch is just ``pDph_t->parstochip[OUT_TLT] = 0`` with the C
+    source comment "it doesn't really do anything in hlsyn".
+    """
     handle, p_dph_t, _ = _build_handle()
     p_dph_t.malfem = MALE
-    p_dph_t.f0 = 900  # frac4mul(0, *) = 0 -> 8 - 0 = 8.
-    p_dph_t.f0_dep_tilt = 0
+    p_dph_t.f0 = 1500  # Would yield non-zero temptilt under FAKE_HLSYN.
+    p_dph_t.f0_dep_tilt = 73
     p_dph_t.spdeftltoff = 5
     p_dph_t.spdeflaxprcnt = 0
     p_dph_t.breathysw = 0
     phdraw(handle)
-    # tilt = 8 + (5 - 3) = 10; clamped to [0, 31] -> 10.
-    assert p_dph_t.parstochip[OUT_TLT] == 10
+    assert p_dph_t.parstochip[OUT_TLT] == 0
 
 
-def test_tilt_clamped_to_31() -> None:
-    """Output tilt is clamped at ``_TILT_MAX = 31`` regardless of inputs."""
+def test_tilt_zero_regardless_of_spdeftltoff() -> None:
+    """``spdeftltoff`` (was a tilt offset in the FAKE_HLSYN formula)
+    has no effect on OUT_TLT in the HLSYN build, which simply writes 0.
+    """
     handle, p_dph_t, _ = _build_handle()
-    p_dph_t.spdeftltoff = 1000  # Would overshoot massively.
-    phdraw(handle)
-    assert p_dph_t.parstochip[OUT_TLT] == 31
-
-
-def test_tilt_clamped_at_zero() -> None:
-    """Negative pre-clamp tilt is floor-clamped to 0."""
-    handle, p_dph_t, _ = _build_handle()
-    p_dph_t.spdeftltoff = -1000  # Massively negative -> sub-zero.
+    p_dph_t.spdeftltoff = 1000
     phdraw(handle)
     assert p_dph_t.parstochip[OUT_TLT] == 0
 
 
-def test_breathy_voice_increments_breathy_state() -> None:
-    """When ``breathysw==1`` and AV high, ``breathyah`` and ``breathytilt`` step up."""
+def test_breathy_state_untouched_on_hlsyn_build() -> None:
+    """``breathyah`` and ``breathytilt`` are FAKE_HLSYN-only state
+    (mutated only by the gated ``_compute_tilt`` body). On the HLSYN
+    build phdraw leaves them at whatever the caller set, since the
+    tilt block that read / wrote them is compiled out.
+    """
     handle, p_dph_t, p_dphsettar = _build_handle()
+    p_dphsettar.breathyah = 10
+    p_dphsettar.breathytilt = 5
     p_dph_t.breathysw = 1
-    # Force OUT_AV > 40 (the breathy gate).
     p = p_dph_t.param[AV]
     p.tarcur = 50
     p.ftran = 0
@@ -324,19 +334,9 @@ def test_breathy_voice_increments_breathy_state() -> None:
     p.tspesh = 0
     p_dph_t.avglstop = 0
     phdraw(handle)
-    assert p_dphsettar.breathyah == 2  # incremented by 2 per frame.
-    assert p_dphsettar.breathytilt == 1
-
-
-def test_breathy_state_zeroed_when_off() -> None:
-    """``breathysw == 0`` zeros the breathy accumulators each frame."""
-    handle, p_dph_t, p_dphsettar = _build_handle()
-    p_dphsettar.breathyah = 10
-    p_dphsettar.breathytilt = 5
-    p_dph_t.breathysw = 0
-    phdraw(handle)
-    assert p_dphsettar.breathyah == 0
-    assert p_dphsettar.breathytilt == 0
+    # Untouched -- phdraw does not enter the FAKE_HLSYN tilt block.
+    assert p_dphsettar.breathyah == 10
+    assert p_dphsettar.breathytilt == 5
 
 
 # ----- Formant scaling -----------------------------------------------------
