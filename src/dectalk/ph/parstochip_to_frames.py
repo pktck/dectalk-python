@@ -68,6 +68,7 @@ from dectalk.ph.param_indices import (
     OUT_UE,
 )
 from dectalk.ph.parameter_tables import lineartilt
+from dectalk.ph.spdef_chip import SpdChip
 
 # Pre-pht0draw fallback: a 122 Hz adult-male F0 so voicing is audible
 # while the PH module's F0 contour engine isn't running per-frame.
@@ -82,6 +83,14 @@ _INT16_WRAP: Final[int] = 0x10000
 # Resting positions for fields parstochip doesn't carry. These match
 # the LLFrame defaults so a freshly-constructed adapter output frame
 # is identical to ``LLFrame()`` except for the PH-driven cells.
+#
+# ``_DEFAULT_F4`` / ``_DEFAULT_B4`` / ``_DEFAULT_F5`` / ``_DEFAULT_B5``
+# carry the generic Klatt-1980 reference values; callers that have a
+# :class:`~dectalk.ph.spdef_chip.SpdChip` (e.g. ``default_us_paul_spd()``
+# in the live pipeline) should pass it in so the per-voice resonator-4
+# and resonator-5 cascade poles (``r4cc/r4cb/r5cc/r5cb``) override
+# these defaults — Paul's values are F4=3400, B4=260, F5=4300, B5=280
+# vs the generic 3500/200/4500/250 here. See VTM divergence audit §3.
 _DEFAULT_OQ: Final[int] = 50
 _DEFAULT_SQ: Final[int] = 200
 _DEFAULT_F4: Final[int] = 3500
@@ -109,7 +118,10 @@ def _clamp(value: int, lo: int, hi: int) -> int:
     return value
 
 
-def parstochip_to_llframe(parstochip: list[int]) -> LLFrame:
+def parstochip_to_llframe(
+    parstochip: list[int],
+    spd_chip: SpdChip | None = None,
+) -> LLFrame:
     """Build one :class:`LLFrame` from a populated parstochip array.
 
     Maps each ``OUT_*`` cell to the corresponding LLFrame field.
@@ -122,6 +134,10 @@ def parstochip_to_llframe(parstochip: list[int]) -> LLFrame:
             constants from :mod:`dectalk.ph.param_indices`. Must be
             at least ``OUT_TLT + 1 = 9`` entries; phdraw allocates
             64 cells in practice.
+        spd_chip: Optional speaker-definition chip block. When
+            supplied, ``r4cc/r4cb/r5cc/r5cb`` override the generic
+            Klatt-1980 F4/B4/F5/B5 defaults so the emitted frame
+            reflects the active voice (see VTM divergence audit §3).
 
     Returns:
         :class:`LLFrame` with PH-driven cells populated and the
@@ -141,6 +157,11 @@ def parstochip_to_llframe(parstochip: list[int]) -> LLFrame:
     tilt_idx = _clamp(parstochip[OUT_TLT], 0, len(lineartilt) - 1)
     tl = lineartilt[tilt_idx]
 
+    f4 = spd_chip.r4cc if spd_chip is not None else _DEFAULT_F4
+    b4 = spd_chip.r4cb if spd_chip is not None else _DEFAULT_B4
+    f5 = spd_chip.r5cc if spd_chip is not None else _DEFAULT_F5
+    b5 = spd_chip.r5cb if spd_chip is not None else _DEFAULT_B5
+
     return LLFrame(
         # Range matches ph_drwt02.c:242-243 (LOWEST_F0..HIGHEST_F0,
         # deciHz = Hz x 10, so 50.0..512.1 Hz).
@@ -156,10 +177,10 @@ def parstochip_to_llframe(parstochip: list[int]) -> LLFrame:
         B2=_clamp(parstochip[OUT_B2], 40, 1000),
         F3=_clamp(parstochip[OUT_F3], 1300, 4500),
         B3=_clamp(parstochip[OUT_B3], 40, 1000),
-        F4=_DEFAULT_F4,
-        B4=_DEFAULT_B4,
-        F5=_DEFAULT_F5,
-        B5=_DEFAULT_B5,
+        F4=f4,
+        B4=b4,
+        F5=f5,
+        B5=b5,
         F6=_DEFAULT_F6,
         B6=_DEFAULT_B6,
         FNZ=parstochip[OUT_FZ] if parstochip[OUT_FZ] > 0 else 270,
@@ -178,6 +199,7 @@ def parstochip_to_llframe(parstochip: list[int]) -> LLFrame:
 def parstochip_to_llframe_delayed(
     parstochip: list[int],
     previous_parstochip: list[int] | None,
+    spd_chip: SpdChip | None = None,
 ) -> LLFrame:
     """One-frame-delayed LLFrame, mirroring ``send_pars()``'s delaybuf.
 
@@ -199,6 +221,12 @@ def parstochip_to_llframe_delayed(
             source's ``initpardelay==0`` first-call path that
             outputs the unused delaypars seed with TLT=T0=AV=0
             and never spcwrite's it).
+        spd_chip: Optional speaker-definition chip block. When
+            supplied, ``r4cc/r4cb/r5cc/r5cb`` override the generic
+            Klatt-1980 F4/B4/F5/B5 defaults so the emitted frame
+            reflects the active voice (see VTM divergence audit §3).
+            For US-Paul this swaps the 3500/200/4500/250 defaults
+            for the voice-table values 3400/260/4300/280.
 
     Returns:
         :class:`LLFrame` populated with the skewed mix.
@@ -212,6 +240,16 @@ def parstochip_to_llframe_delayed(
     f0 = parstochip[OUT_T0] if parstochip[OUT_T0] > 0 else _DEFAULT_F0_DECIHZ
     tilt_idx = _clamp(parstochip[OUT_TLT], 0, len(lineartilt) - 1)
     tl = lineartilt[tilt_idx]
+
+    # Resonator-4 / resonator-5 cascade poles come from the active voice's
+    # SpdChip when supplied; otherwise fall back to Klatt-1980 reference
+    # values. See VTM divergence audit §3 for why threading the SpdChip
+    # through this path matters (the prior hard-coded constants drifted
+    # the higher-formant spectrum away from Paul's voice table).
+    f4 = spd_chip.r4cc if spd_chip is not None else _DEFAULT_F4
+    b4 = spd_chip.r4cb if spd_chip is not None else _DEFAULT_B4
+    f5 = spd_chip.r5cc if spd_chip is not None else _DEFAULT_F5
+    b5 = spd_chip.r5cb if spd_chip is not None else _DEFAULT_B5
 
     return LLFrame(
         # Real-time slots from the current parstochip.
@@ -237,10 +275,10 @@ def parstochip_to_llframe_delayed(
         # Synth-neutral fixed defaults.
         OQ=_DEFAULT_OQ,
         SQ=_DEFAULT_SQ,
-        F4=_DEFAULT_F4,
-        B4=_DEFAULT_B4,
-        F5=_DEFAULT_F5,
-        B5=_DEFAULT_B5,
+        F4=f4,
+        B4=b4,
+        F5=f5,
+        B5=b5,
         F6=_DEFAULT_F6,
         B6=_DEFAULT_B6,
     )
