@@ -461,23 +461,21 @@ def _amp_param_trajectory(p_dph_t: DphT, p: Parameter) -> int:
     return value
 
 
-def _apply_amp_special_double_burst(p_dph_t: DphT, param_idx: int, p: Parameter, value: int) -> int:
-    """Faithful port of ph_draw.c lines 506-524: double-burst for /k,g,ch,jh/.
+def _apply_amp_special_double_burst(p_dph_t: DphT, param_idx: int, p: Parameter, value: int) -> int:  # noqa: ARG001 -- signature kept for caller symmetry
+    """No-op on the libtts_us.so HLSYN build.
 
-    When the per-parameter ``tspesh`` window has just expired (one
-    frame after the burst onset), parallel amplitudes above 10 dB are
-    knocked back by 10 dB to create the secondary release burst that
-    distinguishes the velar/affricate stops from their plain plosive
-    counterparts. The GRP_KSX (German /ks/) special case is skipped
-    here; it's gated behind ``#ifdef GERMAN_not`` in the C source.
+    The C source's double-burst rule (``ph_draw.c`` lines 508-524) for
+    /k,g,ch,jh/ is gated behind
+    ``#if (defined FAKE_HLSYN || !(defined HLSYN))``, so the HLSYN
+    production build (our target) compiles it out. The HLSyn vocal-tract
+    model in ``hlframe.c`` (un-ported; Phase E) handles the secondary-
+    release acoustics directly from the area trajectory.
+
+    Signature is kept (taking ``value`` and returning it unchanged) so
+    the caller's invocation pattern matches the C source line-by-line
+    rather than diverging into an inline branch.
     """
-    # Indices above AP (i.e. A2..A6 and AB) are the parallel amplitudes
-    # the rule targets. AV / AP / TILT are excluded.
-    if param_idx <= AP:
-        return value
-    if p.tspesh <= 0 or p_dph_t.tcum != p.tspesh + 1 or value < 10:
-        return value
-    return value - 10
+    return value
 
 
 def _compute_tilt(p_dph_t: DphT, p_dphsettar: DphSettarSt) -> int:
@@ -2136,24 +2134,14 @@ def _phdraw_per_frame_hlsyn_state_machine(  # noqa: PLR0912,PLR0915 — mirrors 
         else:
             ps[OUT_PLACE] = 42
 
-    # C lines ~4211-4240: FAKE_HLSYN fricative gain (OUT_GF)
-    tmp_gf = 0
-    if p_dph_t.area_l != 0 and p_dph_t.area_b != 0 and p_dph_t.area_tb != 0:
-        if 99 < p_dph_t.area_l <= 400:
-            tmp_gf = 5500 // p_dph_t.area_l
-        if 99 < p_dph_t.area_b <= 400:
-            v = 5500 // p_dph_t.area_b
-            tmp_gf = max(tmp_gf, v)
-        if 99 < p_dph_t.area_tb <= 400:
-            v = 5500 // p_dph_t.area_tb
-            tmp_gf = max(tmp_gf, v)
-    glot_total = p_dph_t.area_g + p_dph_t.delta_area_gst - p_dph_t.delta_area_gstop
-    if glot_total < 1200:
-        tmp_gf -= 15
-    if tmp_gf == 0:
-        ps[OUT_GF] -= ps[OUT_GF] >> 2
-    else:
-        ps[OUT_GF] = tmp_gf
+    # C lines 4211-4239: FAKE_HLSYN fricative-gain (OUT_GF) recomputation
+    # SKIPPED on the libtts_us.so HLSYN build target: this block is
+    # wrapped in ``#ifdef FAKE_HLSYN`` (mutually exclusive with the
+    # active HLSYN build), so the production binary does NOT
+    # recompute OUT_GF here. The frame-loop's earlier OUT_GF write
+    # (driven by the HLSyn area model) is the final value. See
+    # docs/PORTING.md (Phase E) for the HLSyn-area fricative-gain
+    # path that replaces this.
 
     # C lines ~4242-4262: pressure_gest for PRESSBOUND allofeats
     if allofeats[nphone] & PRESSBOUND:
@@ -2426,8 +2414,17 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
     if p_dph_t.parstochip[OUT_AV] > 6:
         p_dph_t.parstochip[OUT_AV] -= p_dph_t.avglstop
 
-    # ----- C lines 622-742: source spectral tilt -----
-    p_dph_t.parstochip[OUT_TLT] = _compute_tilt(p_dph_t, p_dphsettar)
+    # ----- C lines 617-746: source spectral tilt -----
+    # The entire spectral-tilt computation (C lines 617-742, including
+    # the breathy-voice modifier and breathyah/breathytilt state
+    # tracking) is gated behind
+    # ``#if (defined FAKE_HLSYN || !(defined HLSYN))``; the HLSYN
+    # production build (our target) hits the ``#else`` branch at C
+    # lines 743-746 which simply zeroes OUT_TLT ("it doesn't really
+    # do anything in hlsyn" -- per the comment in the C source). The
+    # HLSyn vocal-tract model in ``hlframe.c`` (Phase E) handles tilt
+    # shaping directly from area / glottis state instead.
+    p_dph_t.parstochip[OUT_TLT] = 0
 
     # ----- C lines 750-757: formant scaling -----
     _apply_formant_scaling(p_dph_t)

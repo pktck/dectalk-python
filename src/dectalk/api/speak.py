@@ -538,12 +538,15 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # zero out every Rule 3/4/6 final-fall target — visible in traces as
     # ``tar=0`` for every Rule 6 event (issue #122 / F0 contour follow-up).
     p_dph_t.assertiveness = 100 * 41  # AS=100 for Paul (Q12-style multiplier)
-    # Speaker-tuning scalars consulted by ``phdraw``'s per-frame tilt /
+    # Speaker-tuning scalars consulted by ``phdraw``'s per-frame
     # bandwidth computations. C's ``ph_vset.c`` (lines 607-630) loads
     # these from ``curspdef[]`` once per voice change; without the seeds
-    # ``_compute_tilt`` falls through to its zero-input branch (TLT=5
-    # clamp) and the breathy-voice B1 modifier ``frac4mul(B1, 0)`` zeros
-    # OUT_B1 on every frame (issue #148 / frame-parity audit §2). Paul's
+    # the breathy-voice B1 modifier ``frac4mul(B1, 0)`` zeros OUT_B1 on
+    # every frame (issue #148 / frame-parity audit §2). ``f0_dep_tilt``
+    # is held over from the FAKE_HLSYN tilt formula -- on the HLSYN
+    # production build (our target) OUT_TLT is forced to 0 in phdraw
+    # (the ``#else`` branch at ph_draw.c lines 743-746) so the seed has
+    # no effect on tilt, but kept for parity with the C state. Paul's
     # ``paul_8`` SPDEF row in ``p_us_vdf1.c`` lines 130/150 supplies:
     #
     # - ``FT = 73`` → ``f0_dep_tilt = 73`` (Q12-style multiplier on the
