@@ -139,7 +139,13 @@ So `b"hxaxll' ow. w ' rrlld . "` reads "hello [pause] world
 | `MIT` | `` ` ehm ayt ' iy`` | `MIT` | yes | acronym in dict |
 | `a.m.` | `) aem ` (about 5 chars) | `A.M` | no | R45 (`a.m.` → spelled) fires in C; Python keeps the dotted form |
 | `p.m.` | `b''` (empty in isolation) | `P.M` | no | same |
-| `i.e.` / `e.g.` / `etc.` / `vs.` (each alone) | `b''` (empty) | `I.E` / `E.G` / `ETC` / `VS` | no | `abbrp_words` (and the contraction lexicon) handles these in C; in isolation the oracle returns an empty phoneme stream because the abbreviation becomes a clause-empty token |
+| `i.e.` (alone) | `dh\` ihs   ihz ` (= "this is") | `' ih.` | no | `abbrp_words` expands to "this is". **Earlier audit revision incorrectly reported `b''` here — that was C-library cross-call state contamination; with a fresh `CAPI()` per call the C oracle expands cleanly. See issue #146.** |
+| `e.g.` (alone) | `^ ( f rr  ixg z ' aem p el` (= "for example") | `' ehg .` | no | same — `abbrp_words` expands to "for example" |
+| `etc.` (alone) | `ixt s ' eht rrax` (= "et cetera") | `' eht k .` | no | same — abbr lookup expands to "et cetera" |
+| `vs.` (alone) | `v rrs ixs` (= "versus") | `v z .` | no | same — abbr lookup expands to "versus" |
+| `Inc.` (alone) | `ihn k ' owr p rreyt ixd` (= "incorporated") | `' ihnxk .` | no | same — abbr lookup expands to "incorporated" |
+| `a.m.` (alone) | `) aem` (= "AM") | `' aem .` | no | abbr lookup spells "A M"; Python emits the merged form `aem` it sees in the lexicon |
+| `p.m.` (alone) | `p ' iy  ' ehm` (= "P M") | `p m .` | no | same |
 | `Mr. Smith vs. Jones.` | `m ihs t rr  s m ' ihth  v rrs ixs   jh' own z .` | `MR SMITH VS JONES` | no | C emits "mister … versus … jones"; Python emits raw |
 | `AT&T` | `' ey  t ' iy  ' aen d   t ' iy.` | `AT&T` | no | `abbrp_words` rewrites `AT&T` → `A.T. & T.`; Python emits the raw token (the `&` is preserved because it's alnum-ish under `isalnum`) |
 | `AC/DC` | `' aek   d ' iy  s ' iy` | `AC/DC` | no | LTS treats `/` as a separator and reads the letters; Python emits the raw token (slashes not split) |
@@ -244,12 +250,33 @@ These divergences were not tabulated in the prior doc:
    This is the one case where **Python does the right thing
    and C doesn't** — but parity tests should mark such
    prompts as expected-divergent rather than failing on them.
-8. **C abbreviation lookup returns an empty phoneme stream
-   for isolated abbreviations** (`Dr.`, `i.e.`, `Inc.`,
-   `etc.` alone). This is a C-side quirk: the abbreviation
-   expansion runs after clause segmentation, and a
-   single-token clause whose only content is a known abbrv
-   collapses to nothing in the phoneme dump.
+8. **C abbreviation lookup expands cleanly for isolated
+   abbreviations** (`Dr.` → "drive", `i.e.` → "this is",
+   `Inc.` → "incorporated", `etc.` → "et cetera",
+   `vs.` → "versus", `e.g.` → "for example",
+   `Mr.` → "mister", `Mrs.` → "missus", `Ms.` → "miz",
+   `St.` → "street", `Mt.` → "mount", `a.m.` → "AM",
+   `p.m.` → "P M"). An earlier revision of this audit
+   incorrectly reported `b''` for these inputs — that
+   reading was C-library cross-call state contamination
+   from the bulk-oracle harness in
+   `tests/parity/test_python_phonemes_vs_c_parity.py`
+   (which reuses a single `CAPI()` handle for many calls
+   and cycles it only every 1000 prompts). With a fresh
+   `CAPI()` per call the C oracle expands every isolated
+   abbreviation deterministically; verified via
+   `tests/unit/test_kernel_isolated_abbrev_pinning.py`
+   (issue #146).
+
+   **Policy decision (issue #146):** bug-for-bug parity
+   is the goal. The fix is to port the `abbrp_words`
+   / `ls_task_Dr_St_process` dictionaries into Python
+   (tracked alongside the broader text-norm port via
+   `par_match_rule` / `par_process_input` in
+   `docs/TASKS.md`). Until that port lands, Python's
+   current spelled-out / period-leaking output is the
+   pinned behaviour — see the test module above for
+   the per-input expected forms on both sides.
 
 ## Summary
 
