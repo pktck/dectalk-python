@@ -50,7 +50,7 @@ def _read(path: Path) -> str:
 def test_vtm_c_includes_vtm1_when_VTM1_defined() -> None:  # noqa: N802
     """vtm.c routes through vtm1.c when VTM1 is defined."""
     text = _read(_VTM_C)
-    assert re.search(r'#\s*if\s+defined\s*\(\s*VTM1\s*\)', text), (
+    assert re.search(r"#\s*if\s+defined\s*\(\s*VTM1\s*\)", text), (
         "vtm.c should branch on VTM1 to include vtm1.c"
     )
     assert re.search(r'#\s*include\s+"vtm1\.c"', text), (
@@ -61,7 +61,7 @@ def test_vtm_c_includes_vtm1_when_VTM1_defined() -> None:  # noqa: N802
 def test_dectalkf_klsyn_defines_VTM1() -> None:  # noqa: N802
     """The active build defines VTM1 (not VTM2 / FP_VTM)."""
     text = _read(_DECTALKF_KLSYN_H)
-    assert re.search(r'^\s*#\s*define\s+VTM1\b', text, re.MULTILINE), (
+    assert re.search(r"^\s*#\s*define\s+VTM1\b", text, re.MULTILINE), (
         "VTM1 must be #defined in dectalkf_klsyn.h for the active build"
     )
 
@@ -106,9 +106,7 @@ def test_active_build_excludes_new_noise_new_tilt_etc() -> None:
         r"#ifdef\s+EPSON_ARM7\s*\n\s*#define\s+HLSYN\s*\n\s*#endif",
         text,
     )
-    assert hlsyn_block is not None, (
-        "Expected HLSYN to be EPSON_ARM7-guarded in dectalkf_klsyn.h"
-    )
+    assert hlsyn_block is not None, "Expected HLSYN to be EPSON_ARM7-guarded in dectalkf_klsyn.h"
     # LOWCOMPUTE / FP_VTM are similarly conditionally defined; check
     # they're NOT unconditionally on (the relevant defines are commented).
     assert re.search(r"^\s*//\s*#define\s+LOWCOMPUTE\b", text, re.MULTILINE), (
@@ -120,14 +118,10 @@ def test_vtm_makefile_excludes_HLSYN() -> None:  # noqa: N802
     """The vtm/Makefile DEFINES line does not enable HLSYN."""
     text = _read(_VTM_MAKEFILE)
     # The relevant line starts with `DEFINES=` (or `DEFINES +=`).
-    define_lines = [
-        line for line in text.splitlines() if re.match(r"\s*DEFINES\s*[+]?=", line)
-    ]
+    define_lines = [line for line in text.splitlines() if re.match(r"\s*DEFINES\s*[+]?=", line)]
     assert define_lines, "Could not find DEFINES line in vtm/Makefile"
     for line in define_lines:
-        assert "HLSYN" not in line, (
-            f"vtm/Makefile DEFINES line should not include HLSYN: {line!r}"
-        )
+        assert "HLSYN" not in line, f"vtm/Makefile DEFINES line should not include HLSYN: {line!r}"
         assert "NEW_VTM" not in line, (
             f"vtm/Makefile DEFINES line should not include NEW_VTM: {line!r}"
         )
@@ -138,20 +132,14 @@ def test_read_speaker_definition_seeds_ranmul_20077() -> None:
     text = _read(_VTM1_C)
     # The C source's `ranmul = 20077;` lives inside the
     # `#ifndef CHANGES_AFTER_V43` branch of read_speaker_definition.
-    assert re.search(r"\branmul\s*=\s*20077\s*;", text), (
-        "Expected `ranmul = 20077;` in vtm1.c"
-    )
-    assert re.search(r"\branadd\s*=\s*12345\s*;", text), (
-        "Expected `ranadd = 12345;` in vtm1.c"
-    )
+    assert re.search(r"\branmul\s*=\s*20077\s*;", text), "Expected `ranmul = 20077;` in vtm1.c"
+    assert re.search(r"\branadd\s*=\s*12345\s*;", text), "Expected `ranadd = 12345;` in vtm1.c"
 
 
 def test_read_speaker_definition_seeds_noisec_1499() -> None:
     """``noisec = 1499;`` appears in the active sample-rate branches."""
     text = _read(_VTM1_C)
-    assert re.search(r"\bnoisec\s*=\s*1499\s*;", text), (
-        "Expected `noisec = 1499;` in vtm1.c"
-    )
+    assert re.search(r"\bnoisec\s*=\s*1499\s*;", text), "Expected `noisec = 1499;` in vtm1.c"
 
 
 def test_set_sample_rate_71_samples_per_frame_at_11khz() -> None:
@@ -181,64 +169,46 @@ def test_glottal_loop_4x_oversampled() -> None:
 def test_rampdown_step_is_4() -> None:
     """The C source's `rampdown += 4` (vtm1.c line 1320)."""
     text = _read(_VTM1_C)
-    assert re.search(
-        r"pVtm_t->rampdown\s*\+=\s*4\s*;", text
-    ), "Expected `pVtm_t->rampdown += 4;` in vtm1.c"
+    assert re.search(r"pVtm_t->rampdown\s*\+=\s*4\s*;", text), (
+        "Expected `pVtm_t->rampdown += 4;` in vtm1.c"
+    )
 
 
 def test_r6pb_r6pc_seed_values() -> None:
     """read_speaker_definition seeds r6pb / r6pc at -5702 / -1995."""
     text = _read(_VTM1_C)
     # The C source sets these at the bottom of read_speaker_definition.
-    assert re.search(
-        r"pVtm_t->r6pb\s*=\s*-\s*5702\s*;", text
-    ), "Expected `pVtm_t->r6pb = -5702;` in vtm1.c"
-    assert re.search(
-        r"pVtm_t->r6pc\s*=\s*-\s*1995\s*;", text
-    ), "Expected `pVtm_t->r6pc = -1995;` in vtm1.c"
+    assert re.search(r"pVtm_t->r6pb\s*=\s*-\s*5702\s*;", text), (
+        "Expected `pVtm_t->r6pb = -5702;` in vtm1.c"
+    )
+    assert re.search(r"pVtm_t->r6pc\s*=\s*-\s*1995\s*;", text), (
+        "Expected `pVtm_t->r6pc = -1995;` in vtm1.c"
+    )
 
 
 def test_amptable_index_offsets() -> None:
     """The amptable lookups in speech_waveform_generator use specific offsets."""
     text = _read(_VTM1_C)
     # Lines 498-504: APlin = amptable[APinDB + 10], r2pg = amptable[A2inDB + 13], ...
-    assert re.search(
-        r"APlin\s*=\s*amptable\s*\[\s*APinDB\s*\+\s*10\s*\]", text
-    )
-    assert re.search(
-        r"r2pg\s*=\s*amptable\s*\[\s*A2inDB\s*\+\s*13\s*\]", text
-    )
-    assert re.search(
-        r"r3pg\s*=\s*amptable\s*\[\s*A3inDB\s*\+\s*10\s*\]", text
-    )
-    assert re.search(
-        r"r4pa\s*=\s*amptable\s*\[\s*A4inDB\s*\+\s*7\s*\]", text
-    )
-    assert re.search(
-        r"r5pa\s*=\s*amptable\s*\[\s*A5inDB\s*\+\s*6\s*\]", text
-    )
-    assert re.search(
-        r"r6pa\s*=\s*amptable\s*\[\s*A6inDB\s*\+\s*5\s*\]", text
-    )
-    assert re.search(
-        r"ABlin\s*=\s*amptable\s*\[\s*ABinDB\s*\+\s*5\s*\]", text
-    )
+    assert re.search(r"APlin\s*=\s*amptable\s*\[\s*APinDB\s*\+\s*10\s*\]", text)
+    assert re.search(r"r2pg\s*=\s*amptable\s*\[\s*A2inDB\s*\+\s*13\s*\]", text)
+    assert re.search(r"r3pg\s*=\s*amptable\s*\[\s*A3inDB\s*\+\s*10\s*\]", text)
+    assert re.search(r"r4pa\s*=\s*amptable\s*\[\s*A4inDB\s*\+\s*7\s*\]", text)
+    assert re.search(r"r5pa\s*=\s*amptable\s*\[\s*A5inDB\s*\+\s*6\s*\]", text)
+    assert re.search(r"r6pa\s*=\s*amptable\s*\[\s*A6inDB\s*\+\s*5\s*\]", text)
+    assert re.search(r"ABlin\s*=\s*amptable\s*\[\s*ABinDB\s*\+\s*5\s*\]", text)
 
 
 def test_tilt_offset_minus_12() -> None:
     """TILTDB is offset by -12 from OUT_TLT (line 496 of vtm1.c)."""
     text = _read(_VTM1_C)
-    assert re.search(
-        r"TILTDB\s*=\s*variabpars\s*\[\s*OUT_TLT\s*\]\s*-\s*12\s*;", text
-    )
+    assert re.search(r"TILTDB\s*=\s*variabpars\s*\[\s*OUT_TLT\s*\]\s*-\s*12\s*;", text)
 
 
 def test_aturb1_shift_left_2() -> None:
     """aturb1 = Aturb << 2 in the per-period branch (!CHANGES_AFTER_V43)."""
     text = _read(_VTM1_C)
-    assert re.search(
-        r"pVtm_t->aturb1\s*=\s*pVtm_t->Aturb\s*<<\s*2\s*;", text
-    )
+    assert re.search(r"pVtm_t->aturb1\s*=\s*pVtm_t->Aturb\s*<<\s*2\s*;", text)
 
 
 def test_nopen_clamp_40_to_263() -> None:
