@@ -1377,3 +1377,389 @@ verbatim in the body of follow-up Proposals #1-#3 when filed.
 
 Authored-by: Claude:claude-opus-4-7
 
+## Update 2026-05-23 v3 (post-#197 / #195 / #196 / #194 + ~40 merged PRs)
+
+Re-run of the 15-prompt parity diagnostic on dev head `920cada` after
+the post-v2 PR wave: form-class disambiguation (#197), Spdefs voice
+threading (#195), vtm1 wiring (#196), compound markers (#194), per-
+frame OUT_T0 test (#180), per-stage parity tests (#183), expanded
+corpus +58 prompts (#182), IX/AX/AH schwa distinction (#185), partial
+leading-frame bleed (#190), GEN_SIL prepend removal (#184), LTS
+palatalisation / Latinate stress / OUGH / initial-cluster
+(#178/179/175/181), LTS vowel mispredictions (#188), non-US
+special_coartic (#186), VTM dump hooks (#191), ARPABET schwa /
+syllabic-R refinement (#192), FAKE_HLSYN audit + 3 phdraw bug fixes
+(#187), abbreviation policy (#174), F4/B4/F5/B5 SpdChip threading
+(#177), lexicon re-source w/ form-class (#189).
+
+The headline finding from v2 ("flat-monotone F0") is **closed** — the
+per-frame `OUT_T0` std on `hello world` has grown from **5 Hz (v2)**
+to **149 Hz (v3)**, even slightly above C's 83 Hz dynamic range. The
+F0 intonation engine is now alive: 7-9 events per prompt
+(vs 2-5 in v2), including Rule 1 STEP hat-rise events at 80 Hz
+and Rule 3/4 GLIDE hat-falls. Proposals G + H from the F0 follow-up
+have effectively landed.
+
+The dominant remaining gap has shifted to **per-allophone duration
+over-scaling** (Proposal #1 from v2 — still open), now compounded by
+two new regressions: a shrunk leading-silence prefix and an enlarged
+trailing-silence pad.
+
+### Method
+
+Same as v2. `DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1` against
+the C oracle. For each prompt: sample-count delta, first-differing
+sample index, lead/content/trail envelope, L2/sample, peak-abs error.
+Monkey-patched `us_phtiming` (allodurs capture), `phinton` (F0
+event capture), and `pht0draw` (per-frame `parstochip[OUT_T0]`).
+
+### Per-prompt divergence (full pipeline, 2026-05-23 v3, post-#197)
+
+| # | Prompt | C samp | Py samp | Δ samp | Δ ms | first_diff | L2/s | max_abs_err |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| 0 | `hello world` | 13845 | 22880 | +9035 | +820 | 2 | 6940 | 40128 |
+| 1 | `the quick brown fox` | 19809 | 30470 | +10661 | +967 | 3 | 5833 | 37996 |
+| 2 | `she sells sea shells` | 20093 | 33990 | +13897 | +1260 | 213 | 5261 | 29564 |
+| 3 | `one two three four five` | 22933 | 35750 | +12817 | +1163 | 2 | 6753 | 35837 |
+| 4 | `supercalifragilisticexpialidocious` | 31169 | 49610 | +18441 | +1673 | 213 | 2993 | 16914 |
+| 5 | `[:rate 250] testing one two three` | 14697 | 21230 | +6533 | +593 | 710 | 5024 | 24119 |
+| 6 | `DECtalk version 6.2.0` | 32660 | 24750 | -7910 | -717 | 57 | 4908 | 27102 |
+| 7 | `this is a test, with a comma, and a period.` | 34932 | 55990 | +21058 | +1910 | 3 | 4058 | 27264 |
+| 8 | `the answer is 42` | 21300 | 34100 | +12800 | +1161 | 3 | 5078 | 29288 |
+| 9 | `3 point 14` | 18602 | 29370 | +10768 | +977 | 213 | 5939 | 34916 |
+| 10 | `one hundred and one dalmatians` | 24140 | 40920 | +16780 | +1522 | 2 | 3931 | 26445 |
+| 11 | `1234567890` | 74905 | 109670 | +34765 | +3153 | 2 | 5162 | 34538 |
+| 12 | `hello! how are you?` | 25702 | 25740 | +38 | +3 | 2 | 6084 | 39035 |
+| 13 | `wait... what just happened?` | 26909 | 37730 | +10821 | +981 | 2 | 4467 | 33852 |
+| 14 | `yes; no; maybe.` | 21442 | 29920 | +8478 | +769 | 1 | 5783 | 28304 |
+
+**Headline numbers.**
+
+- 0/15 prompts match bit-exactly (unchanged from v2 — the goal of
+  `test_binary_wav_parity.py` is still not met).
+- Sign mostly over-running (14/15); `DECtalk version 6.2.0` is the
+  one under-runner (-7910 samp, an under-running of front-end
+  abbreviation/number expansion). `hello! how are you?` is +38
+  samp ≈ within 3 ms — by coincidence the Py over-run cancels the
+  trailing pad.
+- Mean |Δsamp| = **12 987 samples (~1178 ms)**, down from v2's
+  **16 668 (~1512 ms)** — a **~22 % improvement** at the sample-
+  count level even though no prompt matches yet.
+- L2/sample of 3000-7000 vs C-rms of 2200-5400 — the per-sample
+  noise still dominates the signal magnitude (i.e. waveform shape
+  diverges, not just timing).
+- `first_diff_idx` is now mostly **1-3 samples** (was always
+  ≥213 in v2). The C reference still emits 213 leading-zero
+  samples; the Python output emits voiced signal at sample 2. This
+  is a **new regression** vs v2 — the leading-silence prefix has
+  been over-trimmed (see §"Leading silence regression" below).
+
+### Lead / content / trail decomposition (v3)
+
+| # | Prompt | Δ samp | Δ lead | Δ content | Δ trail | C trail | Py trail |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 0 | `hello world` | +9035 | -211 | +6495 | +2751 | 3972 | 6723 |
+| 1 | `the quick brown fox` | +10661 | -210 | +3342 | +7529 | 4302 | 11831 |
+| 2 | `she sells sea shells` | +13897 | +1219 | +5764 | +6914 | 3860 | 10774 |
+| 3 | `one two three four five` | +12817 | -346 | +9412 | +3751 | 3960 | 7711 |
+| 4 | `supercalifragilisticexpialidocious` | +18441 | +1327 | +11644 | +5470 | 4302 | 9772 |
+| 5 | `[:rate 250] testing one two three` | +6533 | +390 | +5765 | +378 | 2492 | 2870 |
+| 6 | `DECtalk version 6.2.0` | -7910 | -795 | -10105 | +2990 | 3880 | 6870 |
+| 7 | `this is a test, with a comma, and a period.` | +21058 | -210 | +16916 | +4352 | 3894 | 8246 |
+| 8 | `the answer is 42` | +12800 | -210 | +10160 | +2850 | 3964 | 6814 |
+| 9 | `3 point 14` | +10768 | +511 | +7224 | +3033 | 3902 | 6935 |
+| 10 | `one hundred and one dalmatians` | +16780 | -346 | +10252 | +6874 | 3915 | 10789 |
+| 11 | `1234567890` | +34765 | -346 | +32479 | +2632 | 3985 | 6617 |
+| 12 | `hello! how are you?` | +38 | -211 | -4267 | +4516 | 3959 | 8475 |
+| 13 | `wait... what just happened?` | +10821 | -324 | +6767 | +4378 | 3981 | 8359 |
+| 14 | `yes; no; maybe.` | +8478 | -328 | +4669 | +4137 | 4002 | 8139 |
+
+**Aggregate contribution** (sum of |Δ| across 15 prompts):
+
+- Σ|Δlead|    = 6 984 samples (3.6 %) — much smaller share than v2's 23 868 (9.0 %)
+- Σ|Δcontent| = 145 261 samples (74.6 %) — up from v2's 61.6 % share
+- Σ|Δtrail|   = 62 555 samples (32.1 %) — slightly down from v2's 29.3 %
+
+Sign-summed: ΣΔlead = **-90** (was +23 868 in v2; sign **flipped**),
+ΣΔcontent = +116 517 (was +140 790), ΣΔtrail = +62 555 (was
++77 464).
+
+### Per-allophone duration scaling (the dominant remaining gap)
+
+Captured via monkey-patch on `us_phtiming` exit:
+
+| Prompt | C samp | Py Σdurs×110 | ratio (Py/C) | last allodur | Py-trail-pad samp |
+|---|---:|---:|---:|---:|---:|
+| `hello world` | 13 845 | 22 330 | 1.61× | 72 | 7 920 |
+| `the quick brown fox` | 19 809 | 30 580 | 1.54× | 72 | 7 920 |
+| `she sells sea shells` | 20 093 | 34 100 | 1.70× | 72 | 7 920 |
+| `one two three four five` | 22 933 | 35 860 | 1.56× | 72 | 7 920 |
+| `supercalifragilisticexpialidocious` | 31 169 | 49 720 | 1.60× | 72 | 7 920 |
+| `[:rate 250] testing one two three` | 14 697 | 21 340 | 1.45× | **39** | 4 290 |
+| `DECtalk version 6.2.0` | 32 660 | 24 860 | 0.76× | 72 | 7 920 |
+| `this is a test...` | 34 932 | 54 780 | 1.57× | 72 | 7 920 |
+| `the answer is 42` | 21 300 | 34 210 | 1.61× | 72 | 7 920 |
+| `3 point 14` | 18 602 | 29 480 | 1.58× | 72 | 7 920 |
+| `one hundred and one dalmatians` | 24 140 | 41 030 | 1.70× | 72 | 7 920 |
+| `1234567890` | 74 905 | 109 780 | 1.47× | 72 | 7 920 |
+| `hello! how are you?` | 25 702 | 25 850 | 1.01× | 72 | 7 920 |
+| `wait... what just happened?` | 26 909 | 36 520 | 1.36× | 72 | 7 920 |
+| `yes; no; maybe.` | 21 442 | 30 030 | 1.40× | 72 | 7 920 |
+
+**Default-rate ratio range: 1.36-1.70×** (down from v2's 1.52-1.89×
+— some narrowing). Content-only ratio (excluding the 72-frame
+trailing pad, against C's ~36-frame trail removed too) sits at
+**1.43-1.64×** on the canonical prompts. Outliers `DECtalk version
+6.2.0` (0.76×) and `hello! how are you?` (1.01×) signal front-end
+expansion mismatches, not duration scaling.
+
+The trailing pad has changed: was **84 frames** in v2 → now
+**72 frames** (-12 frames). C reference: ~36 frames. So the trail
+overshoot shrank ~13 % but is still ~2× C.
+
+**`[:rate 250]` regressed.** In v2 the last allodur was 22 frames
+(matched C). In v3 it is **39 frames** (no longer matches). Some
+PR in the post-v2 wave changed how trailing-pad scaling interacts
+with sprate. This is small in absolute samples but is the
+single regression in the trailing-pad story.
+
+### F0 contour — closed
+
+Per-frame `OUT_T0` measured by monkey-patching `pht0draw`:
+
+| Prompt | nframes | mean Hz×10 | std Hz×10 | min | max |
+|---|---:|---:|---:|---:|---:|
+| `hello world`         | 209 | 790 | **149** | 592 | 1008 |
+| `the quick brown fox` | 278 | 786 | **143** | 564 |  977 |
+
+v2 audit recorded `std=5` for both prompts — the contour was a flat
+line at f0minimum. v3 std=143-149 (i.e. 14-15 Hz of real F0
+modulation around 79 Hz baseline) is in line with — actually slightly
+above — C oracle's autocorrelation-estimated 60-83 Hz dynamic range.
+The `phinton` rule-firing trace for `hello world` shows 7 events:
+1 IMPULSE (Rule 2 stress), 2 STEP (Rule 1 hat-rise / Rule 4
+hat-fall STEP), 1 type-5 (probably GLOTTAL or new Rule 5), and 3
+trailing STEP/F0_RESET. For `the quick brown fox`: 9 events with
+4 STEPs at 73/47/43/-61 Hz targets. The flat-monotone v2 finding is
+closed.
+
+`allofeats` for `hello world` now shows `FHAT_BEGINS` (`0x1`) and
+`FHAT_ENDS` (`0x100` for FPERNEXT, `0x900` for the boundary mix) at
+the right allophones; the v2 "no FHAT bits" diagnostic confirms
+Issue G has landed.
+
+### Leading silence regression (new in v3)
+
+Captured first non-zero sample index per prompt:
+
+| Prompt | C lead (zeros) | Py lead (zeros) | Δ |
+|---|---:|---:|---:|
+| `hello world` | 213 | 2 | -211 |
+| `the quick brown fox` | 213 | 3 | -210 |
+| `she sells sea shells` | 213 | 1432 | +1219 (clause-leading still pads) |
+| `one two three four five` | 348 | 2 | -346 |
+| `1234567890` | 348 | 2 | -346 |
+
+`hello world` first samples now: `[0, 0, 1, 3, 7, 13, 22, 35, 51, 70, 92, 117, ...]`
+(immediate ramp-in from zero), while C oracle stays at zero through
+sample 212 then opens with the same ramp shape. Issue #157
+(leading-frame bleed PR #190) over-trimmed the leading-silence pad
+to the point where the C oracle's 213-sample (≈19 ms) leading
+silence is no longer matched. Most prompts now have **~213 fewer
+leading samples than C**.
+
+This is small per-prompt (~211 samples ≈ 19 ms) but consistent
+across 12/15 prompts and was correctly handled by v2.
+
+### Phinton + F0 events (verification that intonation works)
+
+Captured `phinton`-exit state for `hello world`:
+
+```
+nallotot=10
+allophons (hex): ['0x1e1c', '0x1e11', '0x1e1b', '0x1e0b', '0x1e18',
+                  '0x1e0f', '0x1e1e', '0x1e30', '0x1e11', '0x1e00']
+allofeats (hex): ['0x4', '0x8', '0x1', '0x279', '0x5', '0x501',
+                  '0x100', '0x100', '0x900', '0x100']
+number_words=3
+nf0tot=7
+  event[0]: IMPULSE  tar= 18  tim=29  len= 5    (Rule 2 stress impulse)
+  event[1]: STEP     tar= 80  tim=23  len=30    (Rule 1 HAT-RISE — fires!)
+  event[2]: STEP     tar= 50  tim=26  len=29    (Rule 1 second hat)
+  event[3]: type5    tar=-293 tim=18  len=38    (GLOTTAL / Rule 5 — type 5 not in original table)
+  event[4]: STEP     tar= -8  tim=13  len=20
+  event[5]: STEP     tar= -8  tim=13  len=20
+  event[6]: STEP     tar= -8  tim= 9  len=20
+```
+
+The `tar=80` Rule 1 STEP is exactly the hat-rise plateau the v2
+audit identified as missing — it now fires. (Note: `nallotot=10` here
+includes the dummy schwa `phinton` inserts at the trailing GEN_SIL;
+the `us_phtiming` pre-phinton snapshot showed `nallotot=9`.)
+
+### Top 3 next-action items (ranked by sample-distance contribution)
+
+#### #1 — Per-allophone duration scaling: the **1.43-1.64×** content over-run
+
+**Where**: `src/dectalk/ph/us_phtiming.py` + `src/dectalk/ph/init_timing.py`
+(unchanged from v2's Proposal #1).
+
+**Symptom**: Per-allophone durations at default rate sit at
+**1.43-1.64×** the C reference on every prompt. Σ|Δcontent| =
+**145 261 samples (74.6 %)** of the v3 gap. The 1.64× / 1.70×
+worst-case prompts have no obvious distinguishing feature — the
+scaling factor is roughly constant within ±10 % across 13 of 15
+prompts (the two outliers being abbreviation-rich `DECtalk version
+6.2.0` and `hello! how are you?`).
+
+The trailing-pad of **72 frames** (vs C's ~36) is the same
+~2× scaling error in concentrated form: with `dpause = nfperiod(94)
++ perpause(0) + asperation(-22) = 72`, then `mlsh1(72, sprat1)` at
+default rate gives 72 (no shrink). Why 72 not 84 (v2): some
+post-v2 PR (#192 ARPABET schwa-refinement? #189 lexicon re-source?)
+changed the asperation default from -10 to -22, shaving 12 frames
+off the pad but not addressing the underlying scaling.
+
+**Investigation path** (unchanged from v2 Proposal #1):
+1. Patch the C source under `tests/parity/c_patches/` to printf
+   `sprat0`, `sprat1`, `sprat2` after `init_timing` in
+   `p_us_tim.c` (line 140 region).
+2. Compare with Python's `init_timing` output at default sprate=180.
+3. The mismatch should point at either a wrong `sprate→sprat1`
+   formula or a missing Q12-to-Q11 divide.
+
+**Expected parity recovery**: ~110 K samples (40-50 % of the total
+gap). Highest-yield single fix available. Acceptance criteria from
+v2 still apply.
+
+**Issue label sketch**: `area/ph`, `size/medium`.
+
+#### #2 — `DECtalk version 6.2.0` front-end under-run (and `hello!` over-fit)
+
+**Where**: front-end abbreviation / numeric-expansion path
+(`src/dectalk/cmd/` or `src/dectalk/dic/`).
+
+**Symptom**: `DECtalk version 6.2.0` is the only prompt where Python
+*under*-runs (Δsamp = -7910, Δcontent = -10 105) and the ratio
+inverts to **0.76×**. The C oracle's 296-frame output contains
+about 12 spoken "words" (DEC, talk, version, six, point, two,
+point, zero) plus liaisons; Python's 11-allophone phoneme stream
+suggests fewer words being expanded. `hello! how are you?` content
+ratio is 1.01× (essentially equal to C) only because the front-end
+emits a *similar* phoneme count for this short prompt — but the
+phones themselves are wrong, yielding the L2/sample = 6084 (highest
+in the corpus).
+
+**Why**: PR #174 (abbreviation policy) and #189 (lexicon re-source)
+changed how multi-component tokens like "DECtalk" are split. Likely
+the "DECtalk" abbreviation is now being spelled as a single lexicon
+entry instead of as D-E-C-talk letter-spell. Similarly the "6.2.0"
+version-string parser may be reading "six twenty" rather than "six
+point two point zero".
+
+**Investigation path**:
+1. Capture C-oracle ARPABET stream for the two prompts (patch
+   `p_lts.c` printf, or read from the `phalloph2` dump hooks added
+   by #191).
+2. Diff against the Python ARPABET stream from
+   `_render_clause_full`.
+3. The fix is likely a one-line lexicon override or an
+   abbreviation-detection-rule tweak.
+
+**Expected parity recovery**: ~10-20 K samples on the two outlier
+prompts. Won't move the corpus mean much, but closes the only
+under-running prompt and isolates Proposal #1's effect (which is
+masked by the under-runner pulling Σ|Δ| downward).
+
+**Issue label sketch**: `area/cmd`, `area/dic`, `size/small`.
+
+#### #3 — Leading-silence regression: PR #190 over-trimmed the prefix
+
+**Where**: `src/dectalk/api/speak.py` first-frame-consumed logic
+(introduced by #190, lines 800-825).
+
+**Symptom**: C oracle emits **213-348 zero samples** before the
+first voiced sample. Python now emits **1-3 zero samples**, then
+ramps directly into the voiced signal. Affects 12 of 15 prompts,
+each costing ~211-346 samples (-19 to -32 ms). Total contribution:
+~3 700 samples × 12 prompts ≈ -4 100 samples (small in absolute
+terms — Σ|Δlead| is 6 984 samples = 3.6 %).
+
+**Why**: PR #190 (leading-frame bleed partial fix) consumes the
+first synthesizer frame on every clause to model `ph_claus.c`'s
+`delaypars[]` initialization. But the C oracle keeps **two** silent
+Klatt frames (213 samples = ~1.93 frames) before the first
+non-zero output — likely the `init_phclause` ending-silence (#74)
+plus the `delaypars` first frame combined. Python's `init_phclause`
+pad either fires later or has been consumed by #190.
+
+**Investigation path**:
+1. C-oracle trace: patch `ph_claus.c::send_pars` to printf its
+   frame index on each call to `spcwrite`, and compare to Python's
+   per-frame trace.
+2. The fix is likely to preserve **one** leading silent frame
+   (not zero) — either by NOT consuming the first frame on the
+   first clause, or by adding an explicit 1-2-frame silent prefix
+   before the per-frame loop.
+
+**Expected parity recovery**: ~4 100 samples in lead (Σ|Δlead|
+drops toward ~600 ≈ ±42 samples residual). Per-prompt
+`first_diff` moves back from sample 2 toward sample 213+ — meaning
+the leading-zero bytes match byte-for-byte again, which is a
+regression-test floor for #1 and #2.
+
+**Issue label sketch**: `area/ph`, `size/small`. Cleanest of the
+three; smallest yield but most likely to land quickly.
+
+### Other notable changes since v2
+
+- **F0 contour: closed.** v2's Proposals G + H were the dominant
+  qualitative complaint; they have effectively landed (whether via
+  the named issues or via the cumulative effect of #195 / #186 /
+  #192). OUT_T0 std on `hello world` grew from 5 → 149 Hz.
+- **Trailing pad shrunk 84 → 72 frames** (~13 %). Still ~2× C's
+  ~36 frames. The shrink correlates with #192 (ARPABET schwa /
+  syllabic-R refinement) or #185 (IX/AX/AH schwa distinction)
+  changing `asperation` defaults — investigate which PR.
+- **`[:rate 250]` trailing pad regressed** (22 frames in v2 →
+  39 frames in v3). The previously-matching prompt no longer
+  matches C. Small absolute regression but worth noting because it
+  argues the underlying duration-scaling formula is *not* sprate-
+  invariant the way v2 inferred.
+- **Mean |Δsamp| improved 22 %** (16 668 → 12 987). Most prompts
+  shrank by 2-7 K samples. `1234567890` improved 4 K samples
+  (39 055 → 34 765), still the worst-case prompt.
+- **`hello world` improved 31 %** (12 995 → 9 035 samp). It would
+  improve another ~50 % if Proposal #1 lands; ~6 % more from
+  Proposal #3.
+- **`approximate path` parity vs full pipeline**: not re-measured;
+  v2 had approximate path closer to C than the full pipeline. Worth
+  re-measuring in v4 once Proposal #1 lands — the full pipeline
+  should regain the parity-test lead.
+
+### Reproducer
+
+```bash
+export AGENT_SLUG=audit-2026-05-23-v3
+eval "$(scripts/agent_oracle_env.sh)"
+scripts/setup_c_oracle.sh
+
+# 15-prompt sample-count + envelope diagnostic:
+DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/parity_diag_v3.py
+
+# Allodurs trace (per-prompt frame counts):
+DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/trace_allodurs_v3.py
+
+# Per-frame OUT_T0 + phinton-event capture:
+DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
+    uv run python /tmp/f0_trace_v3.py
+```
+
+Scripts live in `/tmp/` to keep this audit a doc-only PR; their
+content is embedded in the body of follow-up issues if any of
+Proposals #1-#3 above are filed for dispatch.
+
+Authored-by: Claude:claude-opus-4-7
+
