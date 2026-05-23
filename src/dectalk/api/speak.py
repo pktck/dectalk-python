@@ -538,6 +538,32 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # zero out every Rule 3/4/6 final-fall target — visible in traces as
     # ``tar=0`` for every Rule 6 event (issue #122 / F0 contour follow-up).
     p_dph_t.assertiveness = 100 * 41  # AS=100 for Paul (Q12-style multiplier)
+    # Speaker-tuning scalars consulted by ``phdraw``'s per-frame tilt /
+    # bandwidth computations. C's ``ph_vset.c`` (lines 607-630) loads
+    # these from ``curspdef[]`` once per voice change; without the seeds
+    # ``_compute_tilt`` falls through to its zero-input branch (TLT=5
+    # clamp) and the breathy-voice B1 modifier ``frac4mul(B1, 0)`` zeros
+    # OUT_B1 on every frame (issue #148 / frame-parity audit §2). Paul's
+    # ``paul_8`` SPDEF row in ``p_us_vdf1.c`` lines 130/150 supplies:
+    #
+    # - ``FT = 73`` → ``f0_dep_tilt = 73`` (Q12-style multiplier on the
+    #   ``(f0 - 900)`` MALE / ``(1400 - f0)`` FEMALE tilt-vs-f0 slope in
+    #   ``ph_draw.c`` lines 640-651).
+    # - ``BR = 0`` → ``spdefb1off = (0*0)>>1 + 4096 = 4096`` (Q12 unity;
+    #   ``ph_draw.c`` line 417 multiplies parstochip[OUT_B1] by this so
+    #   any non-unity value scales the first-formant bandwidth — at 4096
+    #   it's a passthrough, at 0 it zeros B1).
+    p_dph_t.f0_dep_tilt = 73  # FT for Paul (p_us_vdf1.c line 150)
+    p_dph_t.spdefb1off = 4096  # BR=0 for Paul → (0*0)>>1 + 4096 (ph_vset.c line 629)
+    # Seed F0 to the speaker's f0minimum so the very first ``pht0draw``
+    # frame's ``f0prime = f0 + f0s`` reflects the voice's baseline rather
+    # than the calloc'd zero (which scales below LOWEST_F0 = 500 deciHz
+    # and gets clamped, leaving every frame-0 T0 stuck at the synth
+    # safety floor). Mirrors the soft-init ``pDph_t->f0 = f0basestart``
+    # assignment in ``ph_drwt01.c`` line 440 — the HLSYN ph_drwt02 path
+    # drops that line but expects the field to be primed by the speaker
+    # activation chain (un-ported here; see issue #148).
+    p_dph_t.f0 = p_dph_t.f0minimum
     settar = DphSettarSt()
     settar.initsw = 1  # Skip the very-first-call getbegtar seeding loop.
     p_dph_t.pSTphsettar = settar
