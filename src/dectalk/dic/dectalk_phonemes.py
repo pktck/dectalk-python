@@ -38,8 +38,21 @@ US_MAP: Final[dict[str, tuple[str, ...]]] = {
     "u": ("UW",),  # boot
     "R": ("ER",),  # bird (r-coloured)
     "Y": ("Y", "UW"),  # 'YU' sound — palatal glide + UW (e.g. "use" = Y UW Z)
-    "x": ("AH",),  # schwa (we render as AH; the prosody pass shortens unstressed)
-    "X": ("AH",),  # alternate schwa form
+    # Schwa quality. The C oracle (usa_phon.tab usa_ascky[]) distinguishes
+    # three reduced/centralised vowels:
+    #   ``^`` -> US_AH (stressed wedge, "but")          — handled above.
+    #   ``x`` -> US_AX (unstressed mid-central schwa)   — sofa, banana.
+    #   ``|`` -> US_IX (unstressed high-front schwa)    — roses, hospital.
+    # Before issue #133 all three were collapsed to ARPABET AH, losing
+    # the IX/AX/AH alternation on every multisyllabic word. The
+    # mapping below mirrors the C source's usa_ascky_rev[] for ASCII
+    # bytes 'x' (120 -> US_AX) and '|' (124 -> US_IX). Uppercase ``X``
+    # has NULL_ASCKY in the C table (no DECtalk lexicon uses it); we
+    # retain it as an alias for ``x`` so any callers that previously
+    # relied on the (incorrect) ``X -> AH`` mapping still resolve to
+    # the schwa family rather than crash.
+    "x": ("AX",),  # schwa (US_AX, ascky byte 'x')
+    "X": ("AX",),  # alias for x — kept for backward compatibility
     "c": ("AO",),  # bought, caught, dog
     # ---- Consonants ----
     "p": ("P",),
@@ -69,7 +82,10 @@ US_MAP: Final[dict[str, tuple[str, ...]]] = {
     "N": ("N",),  # syllabic N — we approximate as N
     "L": ("L",),  # syllabic L — we approximate as L
     # ---- Other phonemes ----
-    "|": ("AH",),  # schwa marker; e.g. 'em -> AH M, asterisk -> ... AH S K
+    # ``|`` is US_IX in the C table (usa_ascky[18]). It is the
+    # high-front-centralised schwa heard in "roses", "hospital", "civil".
+    # Previously collapsed to AH; restored as IX per issue #133.
+    "|": ("IX",),  # high schwa marker (US_IX)
     # ---- Markers we silently skip (don't emit a phoneme) ----
     " ": (),  # word break in multi-word entries (we already split on ',')
     "*": (),  # letter-separator in initialisms
@@ -119,7 +135,7 @@ def decode(dectalk_phonemic: str) -> list[str]:
 
 
 _VOWELS: Final[frozenset[str]] = frozenset(
-    {"AA", "AE", "AH", "AO", "AX", "EH", "ER", "IH", "IY", "UH", "UW",
+    {"AA", "AE", "AH", "AO", "AX", "EH", "ER", "IH", "IX", "IY", "UH", "UW",
      "AY", "AW", "EY", "OW", "OY"}
 )  # fmt: skip
 

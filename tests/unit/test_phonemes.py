@@ -22,6 +22,7 @@ def test_inventory_covers_canonical_arpabet() -> None:
         "UH",
         "UW",
         "AX",
+        "IX",
         # Diphthongs
         "AY",
         "AW",
@@ -103,3 +104,31 @@ def test_kind_classification() -> None:
     assert get_phoneme("L").kind is PhonemeKind.LIQUID
     assert get_phoneme("W").kind is PhonemeKind.GLIDE
     assert get_phoneme("SIL").kind is PhonemeKind.SILENCE
+
+
+def test_ix_distinct_from_ah_and_ax() -> None:
+    """Issue #133: the three schwa-quality vowels are distinct entries.
+
+    ``IX`` (high-front centralised schwa, "roses") must be a different
+    :class:`Phoneme` instance from ``AH`` (stressed wedge, "but") and
+    from ``AX`` (mid-central schwa, "sofa"). The C source
+    (``src/dapi/src/include/l_us_ph.h``) uses three distinct enum
+    values for these (US_AH=9, US_AX=17, US_IX=18); collapsing any
+    two on the Python side loses the schwa-quality alternation on
+    every multisyllabic word.
+    """
+    ah = get_phoneme("AH")
+    ax = get_phoneme("AX")
+    ix = get_phoneme("IX")
+    # Three distinct objects.
+    assert ah is not ax
+    assert ah is not ix
+    assert ax is not ix
+    # Stress-stripping must not collapse them either.
+    assert get_phoneme("IX0") is ix
+    assert get_phoneme("IX1") is ix
+    assert get_phoneme("IX2") is ix
+    # All three remain classified as vowels and remain voiced.
+    for p in (ah, ax, ix):
+        assert p.kind is PhonemeKind.VOWEL
+        assert p.voiced is True

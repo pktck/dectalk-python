@@ -166,7 +166,7 @@ _RULES: Final[tuple[_Rule, ...]] = _VOWEL_RULES + _CONSONANT_RULES
 
 
 _VOWEL_PHONEMES: Final[frozenset[str]] = frozenset(
-    {"AA", "AE", "AH", "AO", "AX", "EH", "ER", "IH", "IY", "UH", "UW",
+    {"AA", "AE", "AH", "AO", "AX", "EH", "ER", "IH", "IX", "IY", "UH", "UW",
      "AY", "AW", "EY", "OW", "OY"}
 )  # fmt: skip
 
