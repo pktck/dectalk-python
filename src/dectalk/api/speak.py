@@ -539,7 +539,17 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # ``tar=0`` for every Rule 6 event (issue #122 / F0 contour follow-up).
     p_dph_t.assertiveness = 100 * 41  # AS=100 for Paul (Q12-style multiplier)
     settar = DphSettarSt()
-    settar.initsw = 1  # Skip the very-first-call getbegtar seeding loop.
+    # initsw stays at the default 0 so the very-first-call
+    # ``getbegtar(phTTS, 0)`` seeding loop in ``init_variables`` fires
+    # (ph_setar.c lines 1782-1791). The C source uses initsw as a
+    # "very first init since engine startup" gate -- it must run once
+    # per process to seed ``param[F1..TILT].tarend`` from the first
+    # phone's begin-target. Pre-seeding initsw=1 (the previous Python
+    # behaviour) skipped that seeding, leaving tarend at the
+    # uninitialised zero values when ``us_back_smooth_rules`` evaluates
+    # its "onset" condition on the leading GEN_SIL frame. Letting
+    # initsw=0 makes the Python state match what a freshly-started
+    # C engine would have on its first ``phsettar`` call (issue #157).
     p_dph_t.pSTphsettar = settar
     handle = TtsHandle()
     handle.p_ph_thread_data = p_dph_t
@@ -689,6 +699,16 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # LLFrame come from one frame ago, while AV / TL / T0 come from
     # the current frame.
     previous_parstochip: list[int] | None = None
+    # ``ph_claus.c::send_pars`` (lines 706-781) implements the one-
+    # frame delay by allocating ``delaypars[]`` on its first call and
+    # ONLY initialising it (TLT=T0=AV=0) — it does NOT spcwrite that
+    # first frame. The synthesizer only receives the delayed buffer
+    # on the SECOND call onwards. The Python loop therefore must
+    # also discard the first iteration's frame: it represents the
+    # synth-side delay-buffer fill, not an emitted PCM frame
+    # (issue #157 leading-frame bleed -- removes 1 LLSynth-frame of
+    # leading silence per prompt, ~110 samples at 11025 Hz).
+    first_frame_consumed = False
     # ``phinton`` may insert a dummy schwa (ph_inton2.c lines 1685-1725)
     # which increments ``p_dph_t.nallotot``. Read it from state inside
     # the loop so the per-frame driver walks the FINAL allophone array
@@ -722,7 +742,13 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             phsettar(handle)
         pht0draw(handle)
         phdraw(handle)
-        frames.append(parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip))
+        if first_frame_consumed:
+            frames.append(parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip))
+        else:
+            # First iteration: matches C's send_pars initpardelay==0
+            # branch, which only seeds delaypars and skips the
+            # spcwrite. The synthesizer never sees this frame.
+            first_frame_consumed = True
         previous_parstochip = list(p_dph_t.parstochip)
 
     # 7. Pump the collected Klatt frames through ll_synthesize for
