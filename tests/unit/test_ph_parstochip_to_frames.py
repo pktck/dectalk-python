@@ -414,9 +414,7 @@ def test_parstochip_to_llframe_delayed_paul_values_differ_from_klatt_defaults() 
     Klatt defaults.
     """
     spd = default_us_paul_spd()
-    no_spd_frame = parstochip_to_llframe_delayed(
-        _empty_parstochip(), previous_parstochip=None
-    )
+    no_spd_frame = parstochip_to_llframe_delayed(_empty_parstochip(), previous_parstochip=None)
     paul_frame = parstochip_to_llframe_delayed(
         _empty_parstochip(), previous_parstochip=None, spd_chip=spd
     )
