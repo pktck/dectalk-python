@@ -128,6 +128,17 @@ class KsdT:
     # ``src/dapi/src/cmd/cmd_init.c`` line 92:
     # ``pKsd_t->pitch_delta = 35;``
     pitch_delta: int = 0
+    # Volume attenuation index in [0, 140] (volatile int in C — declared
+    # in ``include/kernel.h`` line 717 as ``int vol_att``). The C kernel
+    # initialises it to ``100`` (``ttsapi.c`` lines 2050 / 6609) and the
+    # ``[:volume set sp N]`` / ``[:vol set sp N]`` directive routes
+    # through ``cm_copt.c`` line 1657 to mutate it. ``vtm3.c`` line 514
+    # copies it into ``pKsd_t->vol_att``, clamps to ``[0, 141]`` and
+    # uses ``int_volume_table[vol_att]`` as the Q15 post-scale on every
+    # synthesised sample (line 1642: ``out = frac1mul(out, vol_att)``).
+    # In Python, ``_pump_frames_to_samples`` reads this field to apply
+    # the same post-scale (per ``docs/vtm-divergence-audit.md`` §5).
+    vol_att: int = 100
 
 
 __all__ = ["KsdT"]

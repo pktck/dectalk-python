@@ -64,6 +64,15 @@ _DEFAULT_WPM: int = 180
 _INT16_SAMPLE_WIDTH: int = 2
 _MONO_CHANNELS: int = 1
 
+# Default ``pKsd_t->vol_att`` value the C kernel sets at every full
+# reset (``ttsapi.c`` lines 2050 / 6609: ``pKsd_t->vol_att = 100;``).
+# ``int_volume_table[100] = 32767`` is Q15 unity within 1 LSB, so the
+# default-volume post-scale in :func:`_pump_frames_to_samples` is a
+# no-op. The constant lets the post-scale branch skip the (allocation +
+# multiply + clip) work entirely when the caller hasn't changed
+# volume — keeping the hot path zero-cost.
+_DEFAULT_VOL_ATT_INDEX: int = 100
+
 # Lazily-constructed CAPI singleton; created on first audio call so
 # imports of this module don't require the C library to be present.
 # ``_capi_unavailable`` is set to True after a failed attempt so we
@@ -159,6 +168,7 @@ def _speak_via_capi(
 def _pump_frames_to_samples(  # pyright: ignore[reportUnusedFunction]
     frames: list[object],
     preset: VoicePreset | None,
+    vol_att: int = 100,
 ) -> NDArray[np.int16]:
     """Pump a Klatt frame sequence through ``ll_synthesize`` to int16 PCM.
 
@@ -167,12 +177,28 @@ def _pump_frames_to_samples(  # pyright: ignore[reportUnusedFunction]
     target; ``ll_synthesize`` consumes ``synth.spkr.UI`` samples per
     frame and writes int16 PCM to the output buffer.
 
+    After synthesis, applies the per-clause ``vol_att`` post-scale
+    matching ``vtm3.c`` line 1642 (``out = frac1mul(out, vol_att)``,
+    a Q15 multiply with ``vol_att = int_volume_table[pKsd_t->vol_att]``).
+    This is the post-synthesis hook the ``[:volume N]`` / ``[:vol set
+    sp N]`` directives ultimately drive (per
+    ``docs/vtm-divergence-audit.md`` §5). With the C kernel's default
+    ``pKsd_t->vol_att = 100`` (``cm_copt.c`` line 2050,
+    ``ttsapi.c`` line 6609) and ``int_volume_table[100] = 32767``
+    the multiplier is ~Q15 unity (within 1 LSB), so the default-volume
+    output is unchanged.
+
     Args:
         frames: Sequence of :class:`~dectalk.hlsyn.llsyn.LLFrame` (typed
             as ``object`` here to keep the import lazy; runtime type is
             checked by ``ll_synthesize``).
         preset: Voice preset for speaker selection; ``None`` uses the
             default neutral voice.
+        vol_att: ``pKsd_t->vol_att`` index in ``[0, 140]`` (clamped to
+            range per ``vtm3.c`` lines 515-518). Indexed into
+            :data:`~dectalk.vtm.volume_table.int_volume_table` to get
+            the Q15 post-scale. Defaults to ``100`` (the C kernel's
+            initial value, unity-gain Q15).
 
     Returns:
         1-D int16 array, ``len(frames) * synth.spkr.UI`` samples long.
@@ -180,6 +206,7 @@ def _pump_frames_to_samples(  # pyright: ignore[reportUnusedFunction]
     from dectalk.hlsyn.llsyn import LLFrame, LLSynth  # noqa: PLC0415
     from dectalk.hlsyn.synthesize import ll_synthesize  # noqa: PLC0415
     from dectalk.hlsyn.vowels import default_speaker  # noqa: PLC0415
+    from dectalk.vtm.volume_table import int_volume_table  # noqa: PLC0415
 
     if not frames:
         return np.zeros(0, dtype=np.int16)
@@ -193,6 +220,30 @@ def _pump_frames_to_samples(  # pyright: ignore[reportUnusedFunction]
         # callers (ph_draw) don't need to import it themselves.
         ll_frame = frame if isinstance(frame, LLFrame) else LLFrame(**vars(frame))  # type: ignore[arg-type]
         ll_synthesize(synth, ll_frame, out[fi * samples_per_frame : (fi + 1) * samples_per_frame])
+
+    # Per-clause vol_att post-scale (vtm3.c line 1642, applied to every
+    # synthesised sample). Clamp to the table range (vtm3.c lines 515-518:
+    # ``if (vol_att > 141) vol_att = 141; if (vol_att <= 0) vol_att = 0;``)
+    # — note the table has 141 entries (indices 0..140), so we cap at 140.
+    # ``int_volume_table[100]`` is the no-op default (~Q15 unity); skip
+    # the multiply in that case to keep the default-volume path zero-
+    # cost. ``100`` is the C kernel's default ``pKsd_t->vol_att`` value
+    # (``ttsapi.c`` lines 2050 / 6609) — see the module-level
+    # :data:`_DEFAULT_VOL_ATT_INDEX` constant below.
+    vol_att_clamped = max(0, min(vol_att, len(int_volume_table) - 1))
+    vol_mul = int_volume_table[vol_att_clamped]
+    if vol_att_clamped != _DEFAULT_VOL_ATT_INDEX:
+        # Q15 multiply: ``(out * vol_mul) >> 15``. Compute in int32 to avoid
+        # overflow (worst case |out|=32768 * vol_mul=131071 ~= 2^32 fits in
+        # int64 but we use int32 to mirror the C ``S32`` cast in frac1mul).
+        scaled = (out.astype(np.int32) * vol_mul) >> 15
+        # The C path clamps to [-16384, 16383] then ``<< 1`` (vtm3.c lines
+        # 1643-1647). The hlsyn synth already emits the full int16 range
+        # (no ``<< 1`` expansion needed because ``ll_synthesize``'s output
+        # is end-stage), so the equivalent clamp is to the full int16
+        # range after the scale.
+        np.clip(scaled, -32768, 32767, out=scaled)
+        out[:] = scaled.astype(np.int16)
     return out
 
 
@@ -675,8 +726,10 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
         previous_parstochip = list(p_dph_t.parstochip)
 
     # 7. Pump the collected Klatt frames through ll_synthesize for
-    # int16 PCM output.
-    return _pump_frames_to_samples(frames, voice_preset)
+    # int16 PCM output. Apply the per-clause vol_att post-scale that
+    # mirrors vtm3.c line 1642 (per docs/vtm-divergence-audit.md §5;
+    # source value lives on KsdT, default 100 = ~unity Q15 gain).
+    return _pump_frames_to_samples(frames, voice_preset, p_ksd_t.vol_att)
 
 
 def _speak_via_python(
