@@ -744,6 +744,12 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     p_dph_t.nphone = -1
     p_dph_t.durfon = 0
     frames: list[object] = []
+    # Also accumulate raw parstochip snapshots so the alternative vtm1
+    # synth path (issue #158) can pump them through
+    # ``speech_waveform_generator`` without re-running the PH stage.
+    # Only used when ``DECTALK_USE_VTM1=1`` is set; the conversion
+    # itself is cheap (list copy), so we always populate.
+    parstochip_frames: list[list[int]] = []
     # Cap the loop to keep buggy state from running away during the
     # multi-month port. 8000 frames is ~51 s of audio -- well past
     # any reasonable clause.
@@ -801,6 +807,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             frames.append(
                 parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip, _us_paul_spd)
             )
+            parstochip_frames.append(list(p_dph_t.parstochip))
         else:
             # First iteration: matches C's send_pars initpardelay==0
             # branch, which only seeds delaypars and skips the
@@ -808,10 +815,17 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             first_frame_consumed = True
         previous_parstochip = list(p_dph_t.parstochip)
 
-    # 7. Pump the collected Klatt frames through ll_synthesize for
-    # int16 PCM output. Apply the per-clause vol_att post-scale that
-    # mirrors vtm3.c line 1642 (per docs/vtm-divergence-audit.md §5;
-    # source value lives on KsdT, default 100 = ~unity Q15 gain).
+    # 7. Pump the collected Klatt frames through the synthesizer for
+    # int16 PCM output. By default this routes through the hlsyn
+    # SenSyn 2.2 cascade-parallel synth (the existing
+    # bit-accurate path). When ``DECTALK_USE_VTM1=1`` is set, frames
+    # are pumped through the alternative ``speech_waveform_generator``
+    # (vtm1.c) path -- the same synthesiser the shipped
+    # ``libtts_us.so`` uses (issue #158).
+    if os.environ.get("DECTALK_USE_VTM1") == "1":
+        from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
+
+        return pump_frames_via_vtm1(list(parstochip_frames), voice_preset)
     return _pump_frames_to_samples(frames, voice_preset, p_ksd_t.vol_att)
 
 
