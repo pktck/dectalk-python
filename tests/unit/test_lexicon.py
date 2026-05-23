@@ -60,3 +60,86 @@ def test_lookup_helper_is_case_insensitive() -> None:
     assert lookup("HELLO") is not None
     assert lookup("HeLLo") is not None
     assert lookup("xyzzy_not_a_word") is None
+
+
+def test_parse_preserves_form_class_homographs() -> None:
+    """Lines with ``WORD|FC`` suffixes split into per-form-class keys.
+
+    Mirrors the ``record,P,...`` / ``record,S,...`` noun/verb minimal
+    pair shipped in Dic_us_2002.txt. The bare ``WORD`` key resolves
+    to the most-preferred form-class (here ``P``, since there's no
+    ``N`` row).
+    """
+    text = "RECORD|P R EH1 K ER0 D\nRECORD|S R AH0 K OW1 R D\n"
+    lex = _parse_lexicon_text(text)
+    assert lex["RECORD|P"] == ["R", "EH1", "K", "ER0", "D"]
+    assert lex["RECORD|S"] == ["R", "AH0", "K", "OW1", "R", "D"]
+    # Bare key defaults to the P (primary / noun) reading when no N
+    # entry exists, matching the DECtalk source's preferred default.
+    assert lex["RECORD"] == ["R", "EH1", "K", "ER0", "D"]
+
+
+def test_parse_n_entry_wins_bare_key_over_p_s() -> None:
+    """When an ``N`` row coexists with ``P``/``S`` rows, ``N`` wins the bare key."""
+    text = (
+        "WORD|P P R IH1 M\n"
+        "WORD W ER1 D\n"  # the N (default) row
+        "WORD|S S EH0 K\n"
+    )
+    lex = _parse_lexicon_text(text)
+    assert lex["WORD"] == ["W", "ER1", "D"]
+    assert lex["WORD|P"] == ["P", "R", "IH1", "M"]
+    assert lex["WORD|S"] == ["S", "EH0", "K"]
+
+
+def test_bundled_lexicon_carries_form_class_minimal_pairs() -> None:
+    """Re-sourced ``Dic_us_2002.txt`` ships noun/verb minimal pairs.
+
+    Acceptance criterion §2/§4 of issue #128: the bundled artifact
+    preserves the source's form-class column so the noun vs verb
+    readings of ``record`` (and similar minimal pairs) are
+    distinguishable in the loaded lexicon.
+    """
+    lex = load_builtin_lexicon()
+    # The 2002 source carries ``record,P`` (noun, primary stress) and
+    # ``record,S`` (verb, secondary stress) as separate entries.
+    assert "RECORD|P" in lex, "noun reading of 'record' missing from bundled lexicon"
+    assert "RECORD|S" in lex, "verb reading of 'record' missing from bundled lexicon"
+    assert lex["RECORD|P"] != lex["RECORD|S"], (
+        "noun/verb readings should differ — form-class column was dropped during build"
+    )
+
+
+def test_lookup_form_class_selects_homograph() -> None:
+    """``lookup(word, form_class='S')`` returns the verb reading.
+
+    ``form_class='P'`` returns the noun reading. With no
+    ``form_class`` argument the default (bare key) is returned —
+    which for words present only in P/S form will be the P reading
+    (per the preference order ``N > P > S``).
+    """
+    noun = lookup("record", form_class="P")
+    verb = lookup("record", form_class="S")
+    assert noun is not None
+    assert verb is not None
+    assert noun != verb
+    # Default returns the noun (P) reading because no N entry exists
+    # for 'record' in Dic_us_2002.txt.
+    default = lookup("record")
+    assert default == noun
+
+
+def test_lookup_rejects_invalid_form_class() -> None:
+    with pytest.raises(ValueError, match="form_class"):
+        lookup("hello", form_class="X")
+
+
+def test_lookup_form_class_returns_none_when_specific_absent() -> None:
+    """Asking for a specific FC that isn't present returns ``None``.
+
+    No silent fall-through to a different FC reading.
+    """
+    # 'hello' only has the default (N) reading.
+    assert lookup("hello") is not None
+    assert lookup("hello", form_class="P") is None
+    assert lookup("hello", form_class="S") is None
