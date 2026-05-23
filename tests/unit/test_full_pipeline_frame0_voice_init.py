@@ -20,6 +20,15 @@ The fix in :func:`dectalk.api.speak._render_clause_full` seeds:
 
 These assertions lock in the voice-derived first frame so future changes
 to the per-frame driver can't silently regress.
+
+Note: after issue #139 dropped the spurious leading ``GEN_SIL`` prepend
+in ``us_phalloph2``, frame 0 now captures the smoother's initial state
+(F1 ~ 142 Hz) before ``phsettar`` has loaded the first allophone's
+target. The B1 / TLT / T0 frame-0 asserts below remain meaningful
+because those values flow from the voice-tuning seeds (which run before
+the per-frame loop) rather than from the allophone-target chain. The F1
+assertion shifted to an early-but-not-first frame (5) where the smoother
+has already begun tugging F1 toward the HX target.
 """
 
 from __future__ import annotations
@@ -30,8 +39,8 @@ import pytest
 from dectalk.ph.param_indices import OUT_B1, OUT_F1, OUT_T0, OUT_TLT
 
 
-def _capture_frame0(text: str, monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    """Run ``_render_clause_full`` and return the first emitted ``parstochip``."""
+def _capture_frames(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[int]]:
+    """Run ``_render_clause_full`` and return all emitted ``parstochip`` snapshots."""
     monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
     monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
 
@@ -61,7 +70,12 @@ def _capture_frame0(text: str, monkeypatch: pytest.MonkeyPatch) -> list[int]:
     assert isinstance(samples, np.ndarray)
     assert samples.size > 0, f"{text!r} produced no audio"
     assert snapshots, f"{text!r} emitted no frames"
-    return snapshots[0]
+    return snapshots
+
+
+def _capture_frame0(text: str, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Run ``_render_clause_full`` and return the first emitted ``parstochip``."""
+    return _capture_frames(text, monkeypatch)[0]
 
 
 def test_frame0_b1_is_voice_derived(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -126,29 +140,50 @@ def test_frame0_t0_is_above_safety_floor(monkeypatch: pytest.MonkeyPatch) -> Non
     assert frame0[OUT_T0] <= 5121, f"frame 0 OUT_T0 = {frame0[OUT_T0]} above HIGHEST_F0 clamp"
 
 
-def test_frame0_f1_is_voice_derived(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Frame 0 ``parstochip[OUT_F1]`` reflects the first allophone's target.
+def test_early_f1_is_voice_derived(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An early frame's ``parstochip[OUT_F1]`` reflects the first allophone's target.
 
     For ``hello world`` the first allophone is HX (whose F1 target is
     around 730 Hz per the C oracle and ``p_us_tar.c``). The per-frame
-    smoothing tugs the emitted value toward HX's ``tarcur`` rather
-    than leaving it at any PARAMETER-struct default.
+    smoothing tugs the emitted F1 toward HX's ``tarcur`` rather than
+    leaving it at any PARAMETER-struct default.
+
+    Note: post-issue #139 (leading GEN_SIL prepend removed in
+    ``us_phalloph2``), frame 0 captures the smoother's *initial state*
+    (F1 ~ 142 Hz) before ``phsettar`` has loaded HX's target. Pre-#139
+    the leading GEN_SIL gave the smoother ~15 SIL frames to settle, so
+    frame 0 already reflected HX. Now we look at frame 5 — by then the
+    target has been loaded and the smoother has begun tugging F1
+    upward toward HX (~459 Hz for ``hello world``).
     """
-    frame0 = _capture_frame0("hello world", monkeypatch)
+    frames = _capture_frames("hello world", monkeypatch)
+    # We need at least a handful of frames to observe the smoothing
+    # ramp. ``hello world`` produces ~217 frames, so any reasonable
+    # smoke run will have many more than 6.
+    assert len(frames) >= 6, f"expected >= 6 frames, got {len(frames)}"
+    frame5 = frames[5]
     # F1 floor from `parstochip_to_frames._clamp` is 100; an unset
     # PARAMETER default would have left it near the bottom of the
     # range (audit refresh recorded 459 for `hi` and 596 for
     # `hello world`). The post-fix value should still sit in the
     # 100..1300 Hz physical range.
-    assert 100 <= frame0[OUT_F1] <= 1300, (
-        f"frame 0 OUT_F1 = {frame0[OUT_F1]} outside legal [100, 1300] Hz range"
+    assert 100 <= frame5[OUT_F1] <= 1300, (
+        f"frame 5 OUT_F1 = {frame5[OUT_F1]} outside legal [100, 1300] Hz range"
     )
     # The first allophone is HX; its F1 target is ~730 Hz and the
-    # per-frame smoothing keeps frame 0 within a few hundred Hz of
-    # that target. A value below ~300 would indicate the PH driver
+    # per-frame smoothing pulls F1 from the initial state (~142 Hz)
+    # toward that target. By frame 5 the value should clearly be on
+    # its way up. A value below ~300 would indicate the PH driver
     # isn't running ``phsettar`` for nphone=0 before the first emit.
-    assert frame0[OUT_F1] >= 300, (
-        f"frame 0 OUT_F1 = {frame0[OUT_F1]} is suspiciously low — first "
+    assert frame5[OUT_F1] >= 300, (
+        f"frame 5 OUT_F1 = {frame5[OUT_F1]} is suspiciously low — first "
         "allophone's F1 target (~730 Hz for HX) does not appear to have "
         "been loaded"
+    )
+    # Sanity-check the trajectory: frame 5 should be strictly higher
+    # than frame 0 (F1 ramping toward HX target). If they're equal the
+    # smoother isn't being driven.
+    assert frame5[OUT_F1] > frames[0][OUT_F1], (
+        f"F1 not increasing across early frames: frame 0 = {frames[0][OUT_F1]}, "
+        f"frame 5 = {frame5[OUT_F1]}"
     )
