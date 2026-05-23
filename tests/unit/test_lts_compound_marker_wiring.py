@@ -21,9 +21,7 @@ def test_marker_sidecar_loads_with_entries() -> None:
     # Well-known closed compounds with ``*`` MBOUND markers.
     for word in ("BREAKFAST", "PIPELINE", "DATABASE", "AIRPLANE", "BIRTHDAY"):
         assert word in lex, f"{word!r} missing from marker lexicon"
-        assert "__PUNCT__*" in lex[word], (
-            f"{word!r} marker entry missing __PUNCT__*: {lex[word]}"
-        )
+        assert "__PUNCT__*" in lex[word], f"{word!r} marker entry missing __PUNCT__*: {lex[word]}"
 
 
 def test_vpstart_sidecar_loads_with_entries() -> None:
