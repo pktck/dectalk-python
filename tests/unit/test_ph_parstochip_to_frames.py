@@ -31,6 +31,8 @@ from dectalk.ph.parstochip_to_frames import (
     parstochip_to_llframe_delayed,
     parstochip_to_llframe_via_hl,
 )
+from dectalk.ph.spdef_chip import SpdChip
+from dectalk.vtm.spd_chip import default_us_paul_spd
 
 
 def _empty_parstochip() -> list[int]:
@@ -99,7 +101,12 @@ def test_formant_clamped_to_safe_synthesizer_range() -> None:
 
 
 def test_higher_formants_get_synth_neutral_defaults() -> None:
-    """F4..F6 and B4..B6 fall back to LLFrame's neutral resting values."""
+    """F4..F6 and B4..B6 fall back to LLFrame's neutral resting values.
+
+    Without a :class:`~dectalk.vtm.spd_chip.SpdChip` the adapter emits
+    the generic Klatt-1980 reference values; see the §3-themed tests
+    below for the SpdChip-threaded behaviour.
+    """
     frame = parstochip_to_llframe(_empty_parstochip())
     assert frame.F4 == 3500
     assert frame.B4 == 200
@@ -330,3 +337,122 @@ def test_via_hl_ap_independent_of_out_ap_aspiration_db() -> None:
     # Both frames should produce identical AV; OUT_AP must not be wired
     # into ``HLFrame.ap`` any more.
     assert f_quiet.AV == f_loud.AV
+
+
+# -- SpdChip F4/B4/F5/B5 threading (VTM divergence audit §3) -----------------
+#
+# ``parstochip_to_llframe`` and ``parstochip_to_llframe_delayed`` historically
+# emitted the generic Klatt-1980 reference values (F4=3500/B4=200/F5=4500/
+# B5=250) for the cascade-4 / cascade-5 resonator poles even when the live
+# pipeline already had Paul's voice-specific defaults loaded in a
+# :class:`~dectalk.vtm.spd_chip.SpdChip`. Issue #159 wires the SpdChip
+# through these adapters so the emitted ``LLFrame`` reflects the active
+# voice. For US-Paul the values become F4=3400, B4=260, F5=4300, B5=280
+# (from ``p_us_vdf1.c`` ``paul_8[SPDEF]``).
+
+
+def test_parstochip_to_llframe_uses_spd_chip_for_f4_b4_f5_b5() -> None:
+    """When a SpdChip is supplied, F4/B4/F5/B5 come from r4cc/r4cb/r5cc/r5cb."""
+    spd = default_us_paul_spd()
+    frame = parstochip_to_llframe(_empty_parstochip(), spd_chip=spd)
+    # Paul's voice-table values (p_us_vdf1.c paul_8[SPDEF]).
+    assert frame.F4 == spd.r4cc == 3400
+    assert frame.B4 == spd.r4cb == 260
+    assert frame.F5 == spd.r5cc == 4300
+    assert frame.B5 == spd.r5cb == 280
+
+
+def test_parstochip_to_llframe_paul_values_differ_from_klatt_1980_defaults() -> None:
+    """Paul's SpdChip F4/B4/F5/B5 are distinct from the generic Klatt defaults.
+
+    Regression guard for the §3 VTM audit fix: when the SpdChip is wired
+    through, the emitted higher-formant cells must NOT match the
+    Klatt-1980 reference values that the no-SpdChip fallback would emit.
+    """
+    spd = default_us_paul_spd()
+    no_spd_frame = parstochip_to_llframe(_empty_parstochip())
+    paul_frame = parstochip_to_llframe(_empty_parstochip(), spd_chip=spd)
+    # Klatt-1980 reference defaults emitted by the fallback path.
+    assert no_spd_frame.F4 == 3500
+    assert no_spd_frame.B4 == 200
+    assert no_spd_frame.F5 == 4500
+    assert no_spd_frame.B5 == 250
+    # Paul's voice-table values must NOT match the Klatt-1980 defaults.
+    assert paul_frame.F4 != no_spd_frame.F4
+    assert paul_frame.B4 != no_spd_frame.B4
+    assert paul_frame.F5 != no_spd_frame.F5
+    assert paul_frame.B5 != no_spd_frame.B5
+
+
+def test_parstochip_to_llframe_no_spd_chip_preserves_klatt_defaults() -> None:
+    """Backwards-compat: no-SpdChip call still emits the Klatt-1980 defaults."""
+    frame = parstochip_to_llframe(_empty_parstochip())
+    assert frame.F4 == 3500
+    assert frame.B4 == 200
+    assert frame.F5 == 4500
+    assert frame.B5 == 250
+
+
+def test_parstochip_to_llframe_delayed_uses_spd_chip_for_f4_b4_f5_b5() -> None:
+    """Delayed adapter threads SpdChip F4/B4/F5/B5 through to the emitted frame."""
+    spd = default_us_paul_spd()
+    frame = parstochip_to_llframe_delayed(
+        _empty_parstochip(), previous_parstochip=None, spd_chip=spd
+    )
+    assert frame.F4 == spd.r4cc == 3400
+    assert frame.B4 == spd.r4cb == 260
+    assert frame.F5 == spd.r5cc == 4300
+    assert frame.B5 == spd.r5cb == 280
+
+
+def test_parstochip_to_llframe_delayed_paul_values_differ_from_klatt_defaults() -> None:
+    """Delayed adapter: Paul SpdChip values are distinct from Klatt-1980 defaults.
+
+    Primary regression guard for issue #159: the legacy delayed adapter
+    (the path the full pipeline actually uses) must emit SpdChip-derived
+    higher-formant poles when a SpdChip is supplied, not the generic
+    Klatt defaults.
+    """
+    spd = default_us_paul_spd()
+    no_spd_frame = parstochip_to_llframe_delayed(
+        _empty_parstochip(), previous_parstochip=None
+    )
+    paul_frame = parstochip_to_llframe_delayed(
+        _empty_parstochip(), previous_parstochip=None, spd_chip=spd
+    )
+    # Klatt-1980 reference defaults via the fallback path.
+    assert no_spd_frame.F4 == 3500
+    assert no_spd_frame.B4 == 200
+    assert no_spd_frame.F5 == 4500
+    assert no_spd_frame.B5 == 250
+    # Paul's voice-table values must NOT equal the Klatt-1980 defaults.
+    assert paul_frame.F4 != no_spd_frame.F4
+    assert paul_frame.B4 != no_spd_frame.B4
+    assert paul_frame.F5 != no_spd_frame.F5
+    assert paul_frame.B5 != no_spd_frame.B5
+
+
+def test_parstochip_to_llframe_delayed_no_spd_chip_preserves_klatt_defaults() -> None:
+    """Backwards-compat: delayed adapter with no SpdChip emits Klatt defaults."""
+    frame = parstochip_to_llframe_delayed(_empty_parstochip(), previous_parstochip=None)
+    assert frame.F4 == 3500
+    assert frame.B4 == 200
+    assert frame.F5 == 4500
+    assert frame.B5 == 250
+
+
+def test_parstochip_to_llframe_delayed_arbitrary_spd_chip_overrides_defaults() -> None:
+    """A non-Paul SpdChip threads its own resonator-4/5 values through cleanly.
+
+    Constructs a synthetic SpdChip with deliberately distinctive r4/r5
+    values to confirm the adapter forwards whatever is supplied, rather
+    than special-casing Paul or silently dropping the override.
+    """
+    custom = SpdChip(r4cc=3700, r4cb=210, r5cc=4600, r5cb=320)
+    frame = parstochip_to_llframe_delayed(
+        _empty_parstochip(), previous_parstochip=None, spd_chip=custom
+    )
+    assert frame.F4 == 3700
+    assert frame.B4 == 210
+    assert frame.F5 == 4600
+    assert frame.B5 == 320
