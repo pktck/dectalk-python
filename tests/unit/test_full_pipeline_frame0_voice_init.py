@@ -36,7 +36,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from dectalk.hlsyn.llsyn import LLFrame
 from dectalk.ph.param_indices import OUT_B1, OUT_F1, OUT_T0, OUT_TLT
+from dectalk.ph.spdef_chip import SpdChip
 
 
 def _capture_frames(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[int]]:
@@ -50,9 +52,13 @@ def _capture_frames(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[int
     snapshots: list[list[int]] = []
     real = ptf.parstochip_to_llframe_delayed
 
-    def _capture(parstochip: list[int], previous: list[int] | None):  # type: ignore[no-untyped-def]
+    def _capture(
+        parstochip: list[int],
+        previous: list[int] | None,
+        spd_chip: SpdChip | None = None,
+    ) -> LLFrame:
         snapshots.append(list(parstochip))
-        return real(parstochip, previous)
+        return real(parstochip, previous, spd_chip)
 
     monkeypatch.setattr(ptf, "parstochip_to_llframe_delayed", _capture)
     import dectalk.api.speak as speak_mod  # noqa: PLC0415

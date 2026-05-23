@@ -206,7 +206,7 @@ def test_ough_lexical_variants(word: str, expected: list[str]) -> None:
         # -ICAL: primary on the last stem vowel (stem before -ICAL).
         ("classical", ["K", "L", "AE1", "S", "S", "IH0", "K", "AE0", "L"]),
         # -ION / -IONAL: primary on the last stem vowel before -ION.
-        ("tradition", ["T", "R", "AE1", "D", "IH0", "T", "IH0", "AA0", "N"]),
+        ("tradition", ["T", "R", "AE1", "D", "IH0", "SH", "AH0", "N"]),
         ("national", ["N", "AE1", "T", "IH0", "AA0", "N", "AE0", "L"]),
     ],
 )
