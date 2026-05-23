@@ -636,7 +636,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # or a consonant. We approximate that by ORing the marker onto the
     # allophone at ``nallotot-2`` (the last entry before the trailing
     # SIL sentinel at ``nallotot-1``).
-    if nallotot >= 2:  # noqa: PLR2004 — leading + trailing SIL sentinels
+    if nallotot >= 2:  # noqa: PLR2004 — at least 1 real phone + trailing SIL sentinel
         p_dph_t.allofeats[nallotot - 2] &= ~FBOUNDARY
         p_dph_t.allofeats[nallotot - 2] |= FPERNEXT | FSENTENDS
 

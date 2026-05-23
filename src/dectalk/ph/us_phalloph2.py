@@ -187,14 +187,21 @@ def _arpabet_words_to_symbols(
         :func:`all_phsort`.
     """
     symbols: list[int] = []
-    # Leading GEN_SIL phoneme: ``ph_task.c`` lines 437-439 seed
-    # ``symbols[0] = GEN_SIL`` before the LTS layer appends words.
-    # ``phsort``'s output_pass walks this in the FSYLL/FNON-FSYLL
-    # branch and emits a leading silence phone via
-    # :func:`make_phone`, which downstream ``us_phalloph`` re-emits
-    # as ``allophons[0] = GEN_SIL``. Without this, the clause is
-    # missing its leading 213-sample silence prefix.
-    symbols.append((PFUSA << 8) | int(USPhoneme.SIL))
+    # NOTE: No leading GEN_SIL phoneme is emitted (issue #139, per Klatt
+    # frame audit refresh PR #137 finding G). The C kernel's
+    # ``ph_task.c`` lines 437-439 seed ``symbols[0] = GEN_SIL`` at TASK
+    # INIT — a one-time bootstrap before the first clause — and the
+    # ``us_phtiming`` Rule N machinery collapses that leading silence to
+    # a near-zero duration (the C binary's very first emitted frame for
+    # ``hi`` is ``US_HX``, not ``SIL``). The Python port previously
+    # mimicked the C bootstrap state by emitting ``symbols[0] = SIL``
+    # on every clause, which translated through ``make_phone`` →
+    # ``us_phalloph`` into ``allophons[0] = GEN_SIL`` with the default
+    # ~15-frame duration from ``us_phtiming``'s minimum-duration clamp.
+    # Those 15 leading-SIL frames carried wrong defaults (no
+    # speaker-derived bandwidths, T0=500, etc.) that bled into the
+    # audio output. Dropping the prepend lets the first real phone
+    # claim frame 0 — matching the C binary's frame-0 contents.
     # Leading WBOUND: ``all_phsort`` defensively inserts this when
     # absent (C lines 493-495), but emitting it ourselves keeps the
     # cleanup pass quiet.
