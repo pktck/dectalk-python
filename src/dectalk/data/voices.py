@@ -49,9 +49,15 @@ class VoicePreset:
 
 
 def _adult_male_speaker() -> Speaker:
+    # ``UI=71`` matches the C reference's ``uiNumberOfSamplesPerFrame``
+    # for 11.025 kHz (see ``vtm/set_sample_rate.py`` and the audit in
+    # issue #152): the VTM's ``speech_waveform_generator`` consumes
+    # frames of 71 samples (~6.4 ms), and PH ``allodurs[]`` are
+    # calibrated in those 6.4 ms units. The pre-#152 value of 110
+    # samples (~10 ms) stretched synthesis by ~55%.
     return Speaker(
         DU=0,
-        UI=110,
+        UI=71,
         SR=11025,
         NF=5,
         SS=SOURCE_NATURAL,

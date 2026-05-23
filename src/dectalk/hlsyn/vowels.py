@@ -27,7 +27,20 @@ def default_speaker(sr_hz: int = 11025) -> Speaker:
     Returns:
         A :class:`Speaker` with sensible defaults.
     """
-    samples_per_frame = round(sr_hz * 0.01)  # ~10 ms frames
+    # Frame size in samples matches the C reference's
+    # ``uiNumberOfSamplesPerFrame`` table (see
+    # ``vtm/set_sample_rate.py``): 71 at 11.025 kHz and 51 at 8 kHz,
+    # both ~6.4 ms. PH ``allodurs[]`` are calibrated in those units,
+    # so using ``round(sr_hz * 0.01)`` (~10 ms) stretched synthesis by
+    # ~55% (see issue #152).
+    if sr_hz == 11025:
+        samples_per_frame = 71
+    elif sr_hz == 8000:
+        samples_per_frame = 51
+    else:
+        # Fall back to ~6.4 ms for other rates; the C reference only
+        # defines 11.025 kHz and 8 kHz.
+        samples_per_frame = round(sr_hz * 0.00644)
     return Speaker(
         DU=0,
         UI=samples_per_frame,
