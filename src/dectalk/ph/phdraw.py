@@ -100,7 +100,6 @@ from dectalk.ph.numeric_constants import (
     F2,
     F3,
     FZ,
-    MALE,
     TILT,
 )
 from dectalk.ph.param_indices import (
@@ -228,11 +227,6 @@ _OUTP_MAP: dict[int, int] = {
 # pattern documented in docs/PORTING.md ("Pointer arithmetic patterns").
 _FORMANT_PARAMS: tuple[int, ...] = (F1, F2, F3, FZ, B1, B2, B3)
 _AMP_PARAMS: tuple[int, ...] = (AV, AP, A2, A3, A4, A5, A6, AB, TILT)
-
-# Maximum source-tilt clamp from ph_draw.c lines 734-741. The hardware
-# spectral-tilt parameter saturates at 31 dB; the Python port mirrors
-# the C clamp so downstream synthesisers see the same numerical range.
-_TILT_MAX: int = 31
 
 # ---- Per-frame HLSyn state machine constants (ph_draw.c lines 2350-4300) ---
 
@@ -475,56 +469,6 @@ def _apply_amp_special_double_burst(p_dph_t: DphT, param_idx: int, p: Parameter,
     rather than diverging into an inline branch.
     """
     return value
-
-
-def _compute_tilt(p_dph_t: DphT, p_dphsettar: DphSettarSt) -> int:
-    """Source spectral-tilt computation (ph_draw.c lines 622-742).
-
-    Mirrors the V43+ tilt formula used for both MALE and FEMALE voices,
-    applies the GRP_IH special bump (skipped here because GRP_IH is a
-    German allophone not relevant on the US path -- the equality check
-    against the US allophone codes is always false), then layers on
-    the breathy-voice corrections from lines 686-731.
-    """
-    # Lines 640-651: f0-dependent tilt component.
-    if p_dph_t.malfem == MALE:
-        temptilt = frac4mul(p_dph_t.f0 - 900, p_dph_t.f0_dep_tilt)
-    else:
-        temptilt = frac4mul(1400 - p_dph_t.f0, p_dph_t.f0_dep_tilt)
-
-    # Lines 653-654: V43-and-after constant offset.
-    temptilt = 8 - temptilt
-
-    temptilt = max(temptilt, 0)
-
-    # Lines 668-672: GRP_IH (German allophone) bump -- never fires on
-    # the US path because GRP_IH lives in the German font block.
-    # Translated verbatim for completeness; the comparison is always
-    # False here.
-
-    tilt_value = temptilt
-    # Line 679: spdef tilt offset (V43+ uses ``- 3``).
-    tilt_value += p_dph_t.spdeftltoff - 3
-
-    # Lines 686-725: breathy-voice modifier.
-    if p_dph_t.breathysw == 1 and p_dph_t.parstochip[OUT_AV] > 40:
-        # Asp increase 32 dB / 100 ms (lines 692-694).
-        if p_dphsettar.breathyah < 27:
-            p_dphsettar.breathyah += 2
-
-        # Tilt decrease 16 dB / 100 ms (lines 714-717).
-        if p_dphsettar.breathytilt < 16:
-            p_dphsettar.breathytilt += 1
-        tilt_value += frac4mul(p_dph_t.spdeflaxprcnt, p_dphsettar.breathytilt)
-    else:
-        # Lines 726-731: zero or initialize all breathiness variables.
-        p_dphsettar.breathyah = 0
-        p_dphsettar.breathytilt = 0
-
-    # Lines 733-742: clamp to [0, 31].
-    tilt_value = min(tilt_value, _TILT_MAX)
-    tilt_value = max(tilt_value, 0)
-    return tilt_value
 
 
 def _apply_formant_scaling(p_dph_t: DphT) -> None:
