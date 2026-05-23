@@ -641,14 +641,21 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
         p_dph_t.allofeats[nallotot - 2] |= FPERNEXT | FSENTENDS
 
     # 4a-ter. Per-clause pause-length defaults from ``phclause()``
-    # lines 247-255 of ``ph_claus.c`` (English / HLSYN branch). These
-    # are consulted by ``us_phtiming``'s Rule 1 when computing the
+    # lines 247-255 of ``ph_claus.c`` (English branch). These are
+    # consulted by ``us_phtiming``'s Rule 1 when computing the
     # GEN_SIL ``dpause`` value (``nfperiod + perpause + asperation``
     # for sentence-end, ``nfcomma + compause + asperation`` for
     # comma-end). Without them the trailing SIL gets the default
     # 15-frame minimum and the Python output is ~360 ms shorter than
     # the C reference (issue #72 trailing-silence pad gap).
-    p_dph_t.nfperiod = 94
+    #
+    # The English ``nfperiod`` value is gated by
+    # ``#if defined(HLSYN) || defined(CHANGES_AFTER_V43)``:
+    # 94 with HLSYN, **75** without. The shipped Linux
+    # ``libtts_us.so`` builds with neither macro defined (see
+    # ``dectalkf_klsyn.h`` line 116-118: ``HLSYN`` is gated behind
+    # ``EPSON_ARM7``), so the active default is 75 (issue #155).
+    p_dph_t.nfperiod = 75
     p_dph_t.nfcomma = 16
 
     init_timing(
