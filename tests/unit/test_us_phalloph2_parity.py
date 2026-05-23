@@ -496,3 +496,164 @@ def test_c_source_all_phsort_period_emits_gen_sil_phone() -> None:
 
 
 _ = FSTRESS_1  # silence "imported-but-unused" if a flake removes a test
+
+
+# ----------------------------------------------------------------------------
+# Reduced-vowel & rhotacized-vowel encoder mapping (issue #156).
+# ----------------------------------------------------------------------------
+
+
+def test_arpabet_er_maps_to_dectalk_rr_not_er() -> None:
+    """CMU ``ER`` resolves to DECtalk ``RR`` (syllabic R), not ``ER``.
+
+    The DECtalk source US dictionary
+    (``${DECTALK_SRC}/src/dapi/src/dic/Dic_us.txt``) uses ``R`` (=
+    US_RR / syllabic R) for every "bird" / "world" / "her" / "for"
+    entry — it never uses ``K`` (= US_ER). The CMU ARPABET ``ER`` is
+    the same rhotacized vowel, so the encoder must map ARPABET ``ER``
+    to ``USPhoneme.RR`` (15), not to ``USPhoneme.ER`` (20).
+
+    Issue #156 / parity re-audit §2.
+    """
+    from dectalk.ph.us_phalloph2 import _resolve_arpabet_offset  # noqa: PLC0415
+
+    # All three stress levels (CMU emits ER0/ER1/ER2) collapse to RR.
+    for stress in ("", "0", "1", "2"):
+        offset = _resolve_arpabet_offset(f"ER{stress}")
+        assert offset == int(USPhoneme.RR), (
+            f"ER{stress!r} resolved to {offset}, expected USPhoneme.RR"
+            f"={int(USPhoneme.RR)} (not USPhoneme.ER={int(USPhoneme.ER)})"
+        )
+
+
+def test_arpabet_ah0_maps_to_dectalk_ax() -> None:
+    """CMU ``AH0`` (unstressed) resolves to DECtalk ``AX`` (schwa).
+
+    The source US dictionary writes the unstressed slot with ``x`` (=
+    USPhoneme.AX) — see e.g. ``hello`` = ``hxl'o`` (= HX-AX-LL-OW) or
+    ``about`` = ``xb`Wt`` (= AX-B-S2-AW-T). The CMU lexicon
+    represents the same vowel as ``AH0``; without the override the
+    bare-name lookup would emit ``USPhoneme.AH`` (the unreduced low
+    back vowel "uh" of "but"), which is the wrong allophone.
+
+    Stressed CMU ``AH1`` / ``AH2`` still map to ``USPhoneme.AH``.
+
+    Issue #156 / parity re-audit §2.
+    """
+    from dectalk.ph.us_phalloph2 import _resolve_arpabet_offset  # noqa: PLC0415
+
+    assert _resolve_arpabet_offset("AH0") == int(USPhoneme.AX), (
+        "AH0 must map to DECtalk AX (schwa), not AH"
+    )
+    # Stressed AH still uses unreduced AH.
+    assert _resolve_arpabet_offset("AH1") == int(USPhoneme.AH)
+    assert _resolve_arpabet_offset("AH2") == int(USPhoneme.AH)
+
+
+def test_arpabet_ih0_maps_to_dectalk_ix() -> None:
+    """CMU ``IH0`` (unstressed) resolves to DECtalk ``IX`` (schwa-front).
+
+    The source US dictionary writes the unstressed slot with ``|`` (=
+    USPhoneme.IX) — see e.g. ``abilene`` = ``'@b|lin`` (= S1-AE-B-IX-
+    LL-IY-N). Stressed CMU ``IH1`` / ``IH2`` still map to
+    ``USPhoneme.IH``.
+
+    Issue #156 / parity re-audit §2.
+    """
+    from dectalk.ph.us_phalloph2 import _resolve_arpabet_offset  # noqa: PLC0415
+
+    assert _resolve_arpabet_offset("IH0") == int(USPhoneme.IX), (
+        "IH0 must map to DECtalk IX (schwa-front), not IH"
+    )
+    assert _resolve_arpabet_offset("IH1") == int(USPhoneme.IH)
+    assert _resolve_arpabet_offset("IH2") == int(USPhoneme.IH)
+
+
+def test_world_emits_rr_not_er_in_allophons() -> None:
+    """``world`` runs as ``W RR LX D`` (post-vocalic L collapse), not ``W ER LX D``.
+
+    Pre-fix (issue #156): ``W ER1 L D`` -> ``W ER LX D`` (US_ER vowel).
+    Post-fix: ``W ER1 L D`` -> ``W RR LX D`` (US_RR syllabic R), matching
+    the C dictionary entry ``w'Rld``.
+    """
+    handle, p_dph_t = _build_handle()
+    phalloph2(handle, [["W", "ER1", "L", "D"]], is_sentence_final=True)
+    codes = [p_dph_t.allophons[i] & 0xFF for i in range(p_dph_t.nallotot)]
+    assert int(USPhoneme.RR) in codes, (
+        f"'world' allophons missing RR (syllabic R): {codes}; ER → RR mapping regressed"
+    )
+    assert int(USPhoneme.ER) not in codes, (
+        f"'world' allophons still contain ER (the wrong allophone): {codes}"
+    )
+
+
+def test_hello_emits_ax_not_ah_for_unstressed_schwa() -> None:
+    """``hello`` runs as ``HX AX LL OW`` (schwa), not ``HX AH LL OW``.
+
+    Pre-fix: ``HH AH0 L OW1`` -> ``HX AH LL OW`` (low-back vowel).
+    Post-fix: ``HH AH0 L OW1`` -> ``HX AX LL OW`` (schwa), matching
+    the C dictionary entry ``hxl'o`` (= HX-AX-LL-OW).
+    """
+    handle, p_dph_t = _build_handle()
+    phalloph2(handle, [["HH", "AH0", "L", "OW1"]], is_sentence_final=True)
+    codes = [p_dph_t.allophons[i] & 0xFF for i in range(p_dph_t.nallotot)]
+    assert int(USPhoneme.AX) in codes, (
+        f"'hello' allophons missing AX (schwa): {codes}; AH0 → AX mapping regressed"
+    )
+    assert int(USPhoneme.AH) not in codes, (
+        f"'hello' allophons still contain AH (unreduced vowel): {codes}"
+    )
+
+
+@pytest.mark.c_oracle
+def test_c_source_dic_us_hello_uses_schwa_x() -> None:
+    """The C source dictionary spells 'hello' with ``x`` (= US_AX), not ``^`` (= US_AH).
+
+    Pins the contract for the AH0 → AX encoder mapping. The C dict
+    entry is ``hxl'o`` — verify it contains the schwa character ``x``
+    and not the low-back ``^``.
+    """
+    src = _dectalk_src()
+    if src is None:
+        pytest.skip("DECTALK_SRC absent — skipping C-source parity test")
+    path = src / "src/dapi/src/dic/Dic_us.txt"
+    text = path.read_text(encoding="latin-1", errors="replace")
+    # Locate the 'hello' entry. The dictionary line format is
+    # ``hello,N,hxl'o,...``.
+    m = re.search(r"^hello,[^,]+,([^,]+),", text, re.MULTILINE)
+    assert m is not None, "C dictionary missing 'hello' entry"
+    phonetic = m.group(1)
+    assert "x" in phonetic, (
+        f"C 'hello' transcription {phonetic!r} missing schwa 'x' (US_AX); "
+        "AH0 → AX encoder mapping no longer matches"
+    )
+    assert "^" not in phonetic, (
+        f"C 'hello' transcription {phonetic!r} contains '^' (US_AH); "
+        "the encoder should not be using unreduced AH"
+    )
+
+
+@pytest.mark.c_oracle
+def test_c_source_dic_us_world_uses_syllabic_rr() -> None:
+    """The C source dictionary spells 'world' with ``R`` (= US_RR), not ``K`` (= US_ER).
+
+    Pins the contract for the ER → RR encoder mapping. The C dict
+    entry is ``w'Rld`` — verify uppercase ``R`` (= US_RR / syllabic
+    R) and not uppercase ``K`` (= US_ER) appears in the transcription.
+    """
+    src = _dectalk_src()
+    if src is None:
+        pytest.skip("DECTALK_SRC absent — skipping C-source parity test")
+    path = src / "src/dapi/src/dic/Dic_us.txt"
+    text = path.read_text(encoding="latin-1", errors="replace")
+    m = re.search(r"^world,[^,]+,([^,]+),", text, re.MULTILINE)
+    assert m is not None, "C dictionary missing 'world' entry"
+    phonetic = m.group(1)
+    assert "R" in phonetic, (
+        f"C 'world' transcription {phonetic!r} missing 'R' (US_RR / syllabic R); "
+        "ER → RR encoder mapping no longer matches"
+    )
+    assert "K" not in phonetic, (
+        f"C 'world' transcription {phonetic!r} contains 'K' (US_ER); "
+        "the encoder should not be using ER vowel"
+    )

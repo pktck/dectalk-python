@@ -64,8 +64,22 @@ def test_alias_is_robust_to_stress_suffix(arpabet: str, member: USPhoneme) -> No
 
 
 def test_alias_table_does_not_shadow_existing_members() -> None:
-    """No alias keys should match a USPhoneme name (they'd be redundant)."""
+    """No alias keys should match a USPhoneme name (they'd be redundant)
+    EXCEPT the deliberate overrides flagged below.
+
+    Overrides reflect cases where CMU ARPABET and the DECtalk FONIX
+    enum happen to share a name but mean different allophones:
+
+    * ``ER``: CMU ``ER`` is the rhotacized vowel of "bird", which the
+      DECtalk source US dictionary writes as ``R`` (= USPhoneme.RR /
+      syllabic R), **not** as ``K`` (= USPhoneme.ER). Without the
+      override the bare-name lookup would emit the wrong allophone.
+      Issue #156 / parity re-audit §2.
+    """
+    deliberate_overrides = {"ER"}
     for arpabet in _ARPABET_ALIAS:
+        if arpabet in deliberate_overrides:
+            continue
         assert arpabet not in USPhoneme.__members__, (
             f"alias key {arpabet!r} is already a USPhoneme name; remove it"
         )

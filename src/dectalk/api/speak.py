@@ -272,6 +272,16 @@ def _arpabet_to_us_allophone(name: str) -> int | None:  # pyright: ignore[report
     """
     from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
 
+    # Unstressed CMU vowels (``AH0`` / ``IH0``) map to DECtalk's
+    # explicit schwa allophones (AX / IX) — the C source US dictionary
+    # uses ``x`` / ``|`` for these slots rather than the unreduced
+    # ``^`` / ``I`` forms. Issue #156 / parity re-audit §2. Mirrored in
+    # ``dectalk.ph.us_phalloph2._ARPABET_UNSTRESSED_ALIAS_OFFSET``.
+    upper_name = name.upper()
+    _unstressed = {"AH0": USPhoneme.AX, "IH0": USPhoneme.IX}
+    if upper_name in _unstressed:
+        return (PFUSA << 8) | int(_unstressed[upper_name])
+
     bare = name.rstrip("0123456789").upper()
     member = _ARPABET_ALIAS.get(bare)
     if member is None:
@@ -312,6 +322,14 @@ def _build_arpabet_alias() -> dict[str, USPhoneme]:
         "HH": USPhoneme.HX,  # /h/ allophone
         "L": USPhoneme.LL,  # light L (DECtalk's default L allophone)
         "NG": USPhoneme.NX,  # 'sing'
+        # CMU ARPABET ``ER`` is the rhotacized vowel "bird"; the C
+        # source US dictionary represents it with ``R`` (= US_RR /
+        # syllabic R), never with ``K`` (= US_ER). The bare-name
+        # USPhoneme.ER fallback yields the wrong allophone for every
+        # "bird" / "world" / "her" / "for" / "father" entry.
+        # (issue #156 / parity re-audit §2). Mirrored in
+        # ``dectalk.ph.us_phalloph2._ARPABET_ALIAS_OFFSET``.
+        "ER": USPhoneme.RR,  # /ɝ/ "bird" → syllabic R
     }
 
 

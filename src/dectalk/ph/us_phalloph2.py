@@ -122,13 +122,53 @@ _ARPABET_ALIAS_OFFSET: dict[str, int] = {
     "HH": int(USPhoneme.HX),  # /h/ → DECtalk HX
     "L": int(USPhoneme.LL),  # /l/ → DECtalk LL (light L)
     "NG": int(USPhoneme.NX),  # /ŋ/ → DECtalk NX
+    # ARPABET ``ER`` (rhotacized vowel "bird") is **always** DECtalk
+    # ``RR`` (syllabic R) in the source US dictionary — every "bird"
+    # / "world" / "her" / "fir" entry in
+    # ``${DECTALK_SRC}/src/dapi/src/dic/Dic_us.txt`` uses ``R``
+    # (= US_RR), never ``K`` (= US_ER). Mapping to USPhoneme.ER instead
+    # leaves us with the wrong allophone whose duration / formant
+    # tables don't match the C reference, and downstream phsort treats
+    # the two as distinct phones for cluster / boundary purposes.
+    # Stress digits 0 / 1 / 2 are all collapsed to RR; the per-phone
+    # stress marker (S1 / S2) is still emitted from the digit (issue
+    # #156 / parity re-audit §2).
+    "ER": int(USPhoneme.RR),  # /ɝ/ "bird" → syllabic R
+}
+
+
+# Stress-sensitive aliases for CMU ARPABET vowels whose mapping changes
+# under stress digit ``0`` (unstressed). The C dictionary represents
+# these reduced-vowel slots with explicit schwa allophones (``x`` =
+# US_AX, ``|`` = US_IX) rather than the unreduced AH / IH forms; e.g.
+# ``hello`` is ``hxl'o`` (HX-AX-LL-OW) in
+# ``${DECTALK_SRC}/src/dapi/src/dic/Dic_us.txt``, not ``hHl'o``. Issue
+# #156 (parity re-audit §2).
+_ARPABET_UNSTRESSED_ALIAS_OFFSET: dict[str, int] = {
+    "AH0": int(USPhoneme.AX),  # CMU unstressed AH → DECtalk schwa AX
+    "IH0": int(USPhoneme.IX),  # CMU unstressed IH → DECtalk schwa-front IX
 }
 
 
 def _resolve_arpabet_offset(name: str) -> int | None:
-    """Resolve an ARPABET symbol to its US allophone offset, with alias fallback."""
+    """Resolve an ARPABET symbol to its US allophone offset, with alias fallback.
+
+    Resolution order:
+
+    1. Exact (stress-digit-included) match in the unstressed-vowel
+       alias table — maps CMU ``AH0`` / ``IH0`` to their DECtalk
+       reduced-vowel counterparts (AX / IX) per the source US
+       dictionary's ``x`` / ``|`` characters.
+    2. Bare-name alias (``HH`` → ``HX``, ``L`` → ``LL``, ``NG`` →
+       ``NX``, ``ER`` → ``RR``).
+    3. Bare-name lookup in the :class:`~dectalk.include.phoneme_codes.USPhoneme`
+       enum.
+    """
     if not name:
         return None
+    upper_name = name.upper()
+    if upper_name in _ARPABET_UNSTRESSED_ALIAS_OFFSET:
+        return _ARPABET_UNSTRESSED_ALIAS_OFFSET[upper_name]
     bare = name.rstrip("0123456789").upper()
     if bare in _ARPABET_ALIAS_OFFSET:
         return _ARPABET_ALIAS_OFFSET[bare]
