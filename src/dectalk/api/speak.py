@@ -798,9 +798,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
         phdraw(handle)
         if first_frame_consumed:
             frames.append(
-                parstochip_to_llframe_delayed(
-                    p_dph_t.parstochip, previous_parstochip, _us_paul_spd
-                )
+                parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip, _us_paul_spd)
             )
         else:
             # First iteration: matches C's send_pars initpardelay==0
