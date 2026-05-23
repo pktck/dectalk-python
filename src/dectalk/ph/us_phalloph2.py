@@ -227,21 +227,27 @@ def _arpabet_words_to_symbols(
         :func:`all_phsort`.
     """
     symbols: list[int] = []
-    # NOTE: No leading GEN_SIL phoneme is emitted (issue #139, per Klatt
-    # frame audit refresh PR #137 finding G). The C kernel's
-    # ``ph_task.c`` lines 437-439 seed ``symbols[0] = GEN_SIL`` at TASK
-    # INIT — a one-time bootstrap before the first clause — and the
-    # ``us_phtiming`` Rule N machinery collapses that leading silence to
-    # a near-zero duration (the C binary's very first emitted frame for
-    # ``hi`` is ``US_HX``, not ``SIL``). The Python port previously
-    # mimicked the C bootstrap state by emitting ``symbols[0] = SIL``
-    # on every clause, which translated through ``make_phone`` →
-    # ``us_phalloph`` into ``allophons[0] = GEN_SIL`` with the default
-    # ~15-frame duration from ``us_phtiming``'s minimum-duration clamp.
-    # Those 15 leading-SIL frames carried wrong defaults (no
-    # speaker-derived bandwidths, T0=500, etc.) that bled into the
-    # audio output. Dropping the prepend lets the first real phone
-    # claim frame 0 — matching the C binary's frame-0 contents.
+    # Leading GEN_SIL phoneme: ``ph_task.c`` lines 437-439 seed
+    # ``symbols[0] = GEN_SIL`` before the LTS layer appends words.
+    # ``phsort``'s output_pass walks this in the FSYLL/FNON-FSYLL
+    # branch and emits a leading silence phone via :func:`make_phone`,
+    # which downstream ``us_phalloph`` re-emits as ``allophons[0] =
+    # GEN_SIL``. The C reference WAV for ``hello world`` has 213
+    # samples (~3 Klatt frames) of zeros before the first voiced
+    # sample; that prefix comes from this leading-SIL phone's
+    # duration. PR #137 / issue #139 attempted to drop this prepend
+    # on the theory that the C kernel only seeds ``symbols[0] =
+    # GEN_SIL`` at task init (once per process) and the per-clause
+    # flow should NOT re-emit it. In practice that drop collapsed
+    # the 213-sample prefix to 2 samples (first-nonzero index
+    # regression measured against the C oracle); the C binary
+    # clearly emits a leading-SIL phone per clause when invoked via
+    # ``say -a``. Restoring the prepend brings the prefix back into
+    # alignment with C (issue #200). The wrong-defaults observed in
+    # #137's audit (T0=500 etc.) are a separate per-allophone
+    # initialisation gap and don't justify dropping the SIL phone
+    # itself.
+    symbols.append((PFUSA << 8) | int(USPhoneme.SIL))
     # Leading WBOUND: ``all_phsort`` defensively inserts this when
     # absent (C lines 493-495), but emitting it ourselves keeps the
     # cleanup pass quiet.
