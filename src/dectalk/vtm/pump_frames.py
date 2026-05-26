@@ -114,15 +114,14 @@ def pump_frames_via_vtm1(
             ``OUT_TLT + 1`` (i.e. all the OUT_* slots vtm1 reads).
         preset: Voice preset, or ``None`` for Paul. Drives the
             speaker-definition lookup.
-        sample_rate: Output sample rate in Hz. Currently only 11025
-            is supported -- the other branches of vtm1.c::SetSampleRate
-            need wiring up.
+        sample_rate: Output sample rate in Hz. ``PC_SAMPLE_RATE``
+            (11025) drives the SAMPLE_RATE_INCREASE branch of
+            ``vtm1.c::SetSampleRate``; ``MULAW_SAMPLE_RATE`` (8000)
+            drives the SAMPLE_RATE_DECREASE branch; other values fall
+            back to NO_SAMPLE_RATE_CHANGE.
 
     Returns:
         1-D int16 array of synthesised PCM samples.
-
-    Raises:
-        NotImplementedError: ``sample_rate != 11025``.
     """
     if not frames:
         return np.zeros(0, dtype=np.int16)
