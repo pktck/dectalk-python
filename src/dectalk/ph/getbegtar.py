@@ -16,10 +16,17 @@ FORM_FREQ``.
         if (temp < -1) {
             temp = pDph_t->p_diph[-temp];
             if (pDphsettar->par_type IS_FORM_FREQ) {
+                tmp = get_phone(pDph_t, nfone);  /* dead store */
                 tmp = nfone & PFONT;
                 if (tmp == PFUSA << PSFONT)
                     temp += us_special_coartic(pDph_t, nfone, 0);
-                /* ... gr_/la_/sp_/fr_ branches ... */
+                else if (tmp == PFGR << PSFONT)
+                    temp += gr_special_coartic(pDph_t, nfone, 0);
+                else if (tmp == PFLA << PSFONT)
+                    temp += la_special_coartic(pDph_t, nfone, 0);
+                else if (tmp == PFSP << PSFONT)
+                    temp += sp_special_coartic(pDph_t, nfone, 0);
+                /* PFFR branch is commented out in the C source. */
             }
         }
         return temp;
@@ -31,19 +38,20 @@ from __future__ import annotations
 from typing import cast
 
 from dectalk.include.cmd_codes import PFONT, PSFONT
-from dectalk.include.phoneme_codes import PFFR, PFGR, PFLA, PFSP, PFUK, PFUSA
+from dectalk.include.phoneme_codes import PFGR, PFLA, PFSP, PFUSA
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.gettar import gettar
+from dectalk.ph.gr_special_coartic import gr_special_coartic
+from dectalk.ph.la_special_coartic import la_special_coartic
+from dectalk.ph.sp_special_coartic import sp_special_coartic
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.us_special_coartic import us_special_coartic
 
 _FONT_USA: int = PFUSA << PSFONT
-_FONT_UK: int = PFUK << PSFONT
 _FONT_GR: int = PFGR << PSFONT
 _FONT_LA: int = PFLA << PSFONT
 _FONT_SP: int = PFSP << PSFONT
-_FONT_FR: int = PFFR << PSFONT
 
 # par_type == 3 maps to IS_FORM_FREQ in ph_defs.h.
 _PARTYPE_FORM_FREQ: int = 3
@@ -77,15 +85,14 @@ def getbegtar(phTTS: TtsHandle, nfone: int) -> int:  # noqa: N803
             tmp = nfone & PFONT
             if tmp == _FONT_USA:
                 temp += us_special_coartic(p_dph_t, nfone, 0)
-            elif tmp in (_FONT_GR, _FONT_LA, _FONT_SP):
-                raise NotImplementedError(
-                    f"getbegtar: special_coartic for font 0x{tmp:04x} "
-                    "(GR/LA/SP) not yet ported; only US is wired up."
-                )
-            elif tmp in (_FONT_UK, _FONT_FR):
-                # C source has no uk_/fr_special_coartic call (FR is
-                # commented out, UK has no branch at all). No-op.
-                pass
+            elif tmp == _FONT_GR:
+                temp += gr_special_coartic(p_dph_t, nfone, 0)
+            elif tmp == _FONT_LA:
+                temp += la_special_coartic(p_dph_t, nfone, 0)
+            elif tmp == _FONT_SP:
+                temp += sp_special_coartic(p_dph_t, nfone, 0)
+            # PFFR branch is commented out in the C source; PFUK has
+            # no branch at all. Both fall through as no-ops.
 
     return temp
 
