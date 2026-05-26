@@ -1763,3 +1763,109 @@ Proposals #1-#3 above are filed for dispatch.
 
 Authored-by: Claude:claude-opus-4-7
 
+---
+
+## Update 2026-05-26 — full-pipeline default-switch attempt (rolled back)
+
+PR #208 proposed making `_speak_via_python_full` the default
+`dectalk.to_wav` code path under `DECTALK_DISABLE_CAPI=1`, on the
+hypothesis (sourced from #205's agent diagnostic) that the full
+pipeline was "within 4 frames of C parity" after #205 + #203 + #202.
+
+**The switch was attempted on `claude/switch-to-full-pipeline-default`
+and rolled back.** Empirical measurement on dev HEAD (`7cc82e1`) shows
+the full pipeline is **worse than the approximate path on every
+sampled prompt**, not closer:
+
+| prompt | C samples | approximate | full pipeline |
+|---|---:|---:|---:|
+| `hello world`      | 13,845 | 14,973 (**+1,128**) | 22,110 (**+8,265**) |
+| `hi.`              |  9,727 |  9,913 (**+186**)   | 13,750 (**+4,023**) |
+| `test.`            | 10,721 | 10,353 (**−368**)   | 15,070 (**+4,349**) |
+| `one two three.`   | 14,271 | 15,413 (**+1,142**) | 20,020 (**+5,749**) |
+| `hello!`           | 11,431 | 11,783 (**+352**)   | 16,060 (**+4,629**) |
+
+### Likely root cause: samples-per-frame mismatch downstream of `us_phtiming`
+
+#205's allodurs improvement is real at the **frame-count** level —
+measured `hello world` allodurs on dev HEAD are
+`[1, 10, 11, 10, 28, 10, 32, 12, 10, 72]` summing to **196 frames**
+(vs the audit-v3 worst case of ~238 frames, a 17.6% improvement).
+
+However, those 196 frames are pumped through the Python hlsyn
+back-end at `UI = round(11025 * 0.01) = 110` samples/frame
+(`src/dectalk/hlsyn/vowels.py:30`, configured by the
+`default_speaker()` helper in
+`_render_clause_full → _pump_frames_to_samples`). `196 × 110 = 21,560`
+samples, plus boundary padding lands at 22,110 — **exactly what
+we observe**. To produce C's 13,845 samples on 196 frames you'd need
+~71 samples/frame, the standard DECtalk 6.4 ms update interval. The
+mismatch between the Python synth's 10 ms / 110-sample frames and
+the PH stage's 6.4 ms / ~71-sample frame-rate is the dominant
+remaining gap on the full-pipeline path.
+
+The C source's `Speaker.UI` field (`src/dapi/src/hlsyn/llsyn.h:33`)
+is the same one Python's `vowels.py` mirrors; the C value gets
+populated from the speaker-table read referenced in
+`src/dapi/src/hlsyn/inithl.c:275-281` (`speaker->UpdateInterval =
+5.0e-3f`), but the production `libtts_us.so` doesn't actually run
+through HLSYN — it uses the older `speech_waveform_generator` /
+`vtm1.c` path. That path's per-frame sample count is what would need
+to be mirrored, not HLSYN's. The right pointer for follow-up is
+`src/dapi/src/vtm/vtm1.c` (post-#196, the alternative synth that
+Python now has under `DECTALK_USE_VTM1=1`).
+
+### Why the approximate path is closer
+
+`_speak_via_python` synthesises whole phonemes through
+`dectalk.ph.sequencer.synthesize_phonemes`, which has its own
+internal per-phoneme duration model independent of allodurs. It does
+not multiply allodurs × `UI`, so the 1.55× samples-per-frame error
+doesn't apply. It also benefits from the leading/trailing pads added
+by #202 (which are calibrated to the approximate-path body envelope).
+The residual +1,128-sample gap on `hello world` is the previously
+audited mix of per-phoneme rounding overshoot (UI=110 multiples) and
+trailing-pad calibration drift — small and well-characterised.
+
+### What needs to land before the default switch is safe
+
+The full pipeline can become the default once *one* of the following
+is in place:
+
+1. **`UI = 71` in the PH-path speaker** — make
+   `_render_clause_full` build an `LLSynth` whose `Speaker.UI`
+   equals the C `NSAMP_FRAME`. This requires verifying the
+   downstream `ll_synthesize` resonator state behaves correctly at
+   71 samples/frame (it's currently tuned and tested at 110).
+2. **`DECTALK_USE_VTM1=1` as the default synth back-end** — the
+   `speech_waveform_generator` (vtm1.c) path landed in #196 and
+   uses the C-native frame size by construction. The Python frame
+   loop already accumulates `parstochip_frames` for this path.
+3. **Allodurs compensation** — scale Python allodurs by `71/110`
+   before pumping through the 110-sample synth. This is the cheapest
+   fix but doesn't fix the underlying frame-size mismatch and will
+   re-break if any downstream synth tuning lands.
+
+Option 2 is the right long-term answer; option 1 is the smallest
+local change that closes this gap. Either should be filed as a
+follow-up issue before another agent attempts the default-switch.
+
+### Files / measurements
+
+- Branch: `claude/switch-to-full-pipeline-default` (no code change
+  shipped; this addendum is the only artifact).
+- Source files inspected:
+  - `src/dectalk/api/speak.py:965` — `_FULL_PIPELINE_ENV` gating.
+  - `src/dectalk/hlsyn/vowels.py:30` — `samples_per_frame = round(sr_hz * 0.01)`.
+  - `src/dectalk/ph/us_phtiming.py` — post-#205 ruleset.
+- C source cross-reference:
+  - `${DECTALK_SRC}/src/dapi/src/hlsyn/llsyn.h:33` — `short UI` field.
+  - `${DECTALK_SRC}/src/dapi/src/hlsyn/inithl.c:275-281` —
+    `speaker->UpdateInterval = 5.0e-3f` (HLSYN path, not the
+    production one).
+  - `${DECTALK_SRC}/src/dapi/src/vtm/vtm1.c` — production
+    `speech_waveform_generator`, the relevant target for the
+    samples-per-frame fix.
+
+Authored-by: Claude:claude-opus-4-7
+
