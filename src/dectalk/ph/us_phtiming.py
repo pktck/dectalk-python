@@ -225,7 +225,6 @@ def us_phtiming(phTTS: TtsHandle) -> None:
     strucstresscur: int = 0
     dpause: int = 0
     arg1: int = 0
-    arg2: int = 0  # noqa: F841  # C-source-fidelity placeholder
 
     minsize: int = 0  # TYPING_MODE
 
