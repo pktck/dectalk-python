@@ -1,11 +1,20 @@
-"""``us_phtiming`` -- US-English per-allophone duration rules from p_us_tim.c.
+"""``us_phtiming`` -- US-English per-allophone duration rules from p_us_tim0.c.
 
-Translated from ``src/dapi/src/ph/p_us_tim.c`` line 107 (~1300 lines
-of C, ~1100 lines of which are active under ``ENGLISH_US`` /
-``TYPING_MODE`` -- the build flags for ``libtts_us.so``).
+Translated from ``src/dapi/src/ph/p_us_tim0.c`` line 90 (~1100 LOC of C,
+~970 active after preprocessor flags).
+
+The production ``libtts_us.so`` builds with ``OLD_INTONATION_AND_TIMING``
+defined (see ``src/dectalkf_klsyn.h:248``), which causes ``ph_time1.c``
+to ``#include "p_us_tim0.c"`` rather than ``p_us_tim.c``. The two
+files implement materially different duration-rule sets — ``p_us_tim.c``
+includes a part-of-speech multiplier (``F_NOUN`` / ``F_VERB``), Rules
+24/25/26 (RR retroflex floor, unvoiced-after-vowel lengthening,
+word-initial HX clamp), and a different stress-rhythm rebalance pass
+(using ``FSON1`` + non-nasal); ``p_us_tim0.c`` is the older, leaner
+rule set that this Python port targets.
 
 The function walks every allophone in the current clause and computes
-its frame duration (``pDph_t.allodurs[nphon]``) by applying 26 named
+its frame duration (``pDph_t.allodurs[nphon]``) by applying ~22 named
 duration rules. The rules layer multiplicative scaling factors
 (``prcnt``, in Q14 fixed-point with ``100% == 128``) onto a per-phone
 inherent / minimum-duration pair, plus additive increments
@@ -20,6 +29,7 @@ Inputs (mutated on ``p_dph_t``):
 - ``tcumdur``: zeroed at function entry (durations are recomputed).
 - ``asperation``: rescaled in the silence-pause branch.
 - ``longcumdur``: incremented by ``durxx * NSAMP_FRAME`` per phone.
+- ``pSTphsettar.numstresses``: incremented for each stressed allophone.
 
 Inputs (consumed):
 
@@ -39,27 +49,43 @@ The build that produces ``libtts_us.so`` defines:
 - ``LANGUAGE=ENGLISH`` (no specific language sub-flag in CFLAGS but
   the ``LANG_english`` runtime dispatch picks this path).
 - ``ENGLISH_US`` (US-English-specific behaviour).
-- ``ACNA`` (extra dictionary entries; irrelevant here).
+- ``OLD_INTONATION_AND_TIMING`` (selects p_us_tim0.c via ph_time1.c).
 - ``TYPING_MODE`` (enables the typing-mode fast-path; the function
   honours ``phTTS->bInTypingMode``).
 
-Not defined: ``TOMBUCHLER``, ``NEWTYPING_MODE``, ``FASTTALK``,
-``SLOWTALK``, ``EPSON_ARM7``, ``MSDOS``, ``ASKKEN``, ``NEVER_USED``,
-``needsrefining``, ``OUTFORNOW``, and all ``MSDBG*`` /
-``MSDEBUG`` / ``DEBUGPHT`` debug-print guards. Branches inside
-those guards are omitted from the Python port; comments preserve
-the rule number / intent.
-
-``HLSYN`` is the back-end synthesizer directory name, not a
-``#define``, so ``#ifdef HLSYN`` branches inside ``us_phtiming``
-proper are NOT compiled. (``init_timing``'s HLSYN branch is in
-``ph_timng.c``, which is a separate translation unit; that branch
-*is* picked up because the ``ph`` source's compilation flag set
-differs -- see init_timing.py's docstring for context.)
+Not defined: ``NEWTYPING_MODE``, ``CHANGES_FOR_V44``, ``MSDBG*``,
+``MSDEBUG``, ``DEBUGPHT``, ``SLOWTALK``, ``EABDEBUG``, ``SPANISH``,
+``ENGLISH_UK``. Branches inside those guards are omitted from the
+Python port; comments preserve the rule number / intent.
 
 ``NSAMP_FRAME`` is 71 in this build (10 kHz frame rate, 7.1 ms
-frames), so the ``if (NSAMP_FRAME == 128)`` branch at line 1255 is
+frames), so the ``if (NSAMP_FRAME == 128)`` branch at line 1030 is
 dead code and is omitted.
+
+C ``goto break3`` semantics
+---------------------------
+
+``p_us_tim0.c`` uses three ``goto break3`` sites and one fall-through:
+
+- ``goto break3`` from the user_durs branch (line 183): durxx is set
+  via ``mstofr(user_durs[n] + 4)``; the goto skips the entire rule
+  body **including** the speaking-rate scaling block and the
+  stress-rhythm rebalance pass.
+- ``goto break3`` from the silence branch (line 283): durxx is set
+  to ``dpause`` which has *already* been scaled by ``sprat1`` inside
+  the silence block; again the rate-scaling-of-durxx block is skipped
+  and so is the rhythm pass.
+- ``goto break3`` from the [s,th]+SH cluster shortcut (line 679):
+  durxx is set to ``NF15MS``; skips rate scaling and rhythm pass.
+- Fall-through past line 855: durxx is computed from ``prcnt *
+  (durinh - durmin) >> 7 + durmin``, then the rate-scaling block
+  runs, then the rhythm pass runs, and finally break3 writes
+  ``allodurs[nphon]`` and updates ``longcumdur``.
+
+This Python port preserves the asymmetry: the three goto sites
+``continue`` straight to the break3 epilogue (TYPING_MODE override +
+longcumdur+=), while the fall-through path executes the speaking-rate
+scaling and rhythm-pass between rule body and epilogue.
 """
 
 # ruff: noqa: N803, N806, PLR0912, PLR0915, PLR2004, PLR1714, PLR1730, PLR5501, SIM102, SIM108, SIM109 -- mirror C structure
@@ -71,20 +97,21 @@ from typing import Final, cast
 from dectalk.include.usp_codes import (
     USP_AX,
     USP_CH,
+    USP_D,
     USP_DF,
     USP_DX,
     USP_EN,
     USP_HX,
     USP_IX,
+    USP_IY,
     USP_LL,
     USP_LX,
-    USP_LY,
+    USP_N,
     USP_NX,
-    USP_Q,
-    USP_RR,
     USP_RX,
     USP_S,
     USP_SH,
+    USP_T,
     USP_TH,
     USP_W,
 )
@@ -92,15 +119,12 @@ from dectalk.kernel.ksd_t import KsdT
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import (
-    F_ADJ,
-    F_FUNC,
-    F_NOUN,
-    F_VERB,
     FBOUNDARY,
     FCBNEXT,
     FEMPHASIS,
     FFIRSTSYL,
     FHAT_ENDS,
+    FISBOUND,
     FMBNEXT,
     FMEDIALSYL,
     FMONOSYL,
@@ -114,7 +138,7 @@ from dectalk.ph.feature_bits import (
     FWBNEXT,
     FWINITC,
 )
-from dectalk.ph.frame_counts import NF15MS, NF20MS, NF25MS, NF30MS, NF40MS
+from dectalk.ph.frame_counts import NF7MS, NF15MS, NF20MS, NF25MS, NF30MS, NF40MS
 from dectalk.ph.inton_constants import SINGING
 from dectalk.ph.math_helpers import mlsh1
 from dectalk.ph.numeric_constants import FRAC_HALF, FRAC_ONE, NSAMP_FRAME
@@ -126,23 +150,22 @@ from dectalk.ph.phoneme_features import (
     FSON1,
     FSON2,
     FSONCON,
+    FSONOR,
     FSYLL,
     FVOICD,
     FVOWEL,
-    WORDFEAT,
 )
 from dectalk.ph.q14_percent_constants import (
+    N10PRCNT,
     N25PRCNT,
-    N40PRCNT,
+    N35PRCNT,
+    N50PRCNT,
     N60PRCNT,
     N70PRCNT,
-    N75PRCNT,
     N80PRCNT,
     N85PRCNT,
-    N90PRCNT,
-    N100PRCNT,
     N120PRCNT,
-    N130PRCNT,
+    N150PRCNT,
 )
 from dectalk.ph.task_helpers import mstofr
 from dectalk.ph.timing import inh_timing as _inh_timing
@@ -151,7 +174,7 @@ from dectalk.ph.timing import phone_feature
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.utterance_constants import GEN_SIL
 
-# Constants from ph_timng.c lines 125-129.
+# Constants from p_us_tim0.c (matches the ph_timng.c constants).
 BASE_ASP: Final[int] = 500
 MAX_ASP_COMMA: Final[int] = 8
 MIN_ASP_COMMA: Final[int] = -4
@@ -160,20 +183,12 @@ MIN_ASP_PERIOD: Final[int] = -10
 
 
 def _inh_dur_frames(phone: int) -> int:
-    """Return ``((inh_timing(phone) * 10) + 50) >> 6`` -- ms-to-frame.
-
-    Faithful translation of the C macro at p_us_tim.c lines 218.
-    ``inh_timing`` returns milliseconds; the conversion rounds to
-    the nearest frame at 64-sample frames.
-    """
+    """Return ``((inh_timing(phone) * 10) + 50) >> 6`` -- ms-to-frame."""
     return ((_inh_timing(phone) * 10) + 50) >> 6
 
 
 def _min_dur_frames(phone: int) -> int:
-    """Return ``((min_timing(phone) * 10) + 50) >> 6`` -- ms-to-frame.
-
-    Faithful translation of the C macro at p_us_tim.c lines 219.
-    """
+    """Return ``((min_timing(phone) * 10) + 50) >> 6`` -- ms-to-frame."""
     return ((_min_timing(phone) * 10) + 50) >> 6
 
 
@@ -181,33 +196,8 @@ def us_phtiming(phTTS: TtsHandle) -> None:
     """Compute per-allophone frame durations for the active US clause.
 
     Faithful line-by-line port of ``us_phtiming`` from
-    ``src/dapi/src/ph/p_us_tim.c`` line 107.
-
-    The function:
-
-    1. Calls :func:`~dectalk.ph.init_timing.init_timing` to seed the
-       per-clause speaking-rate factors (note: this Python port does
-       *not* call ``init_timing`` -- the orchestrator in
-       :mod:`dectalk.api.speak` calls ``init_timing`` *before*
-       ``us_phtiming``, so the C source's redundant call is dropped).
-    2. Walks every ``nphon`` in ``[0, nallotot)``.
-    3. Applies 26 named duration rules layering ``prcnt`` (Q14
-       multiplicative scaling) and ``deldur`` (additive frame count)
-       onto the per-phone ``durinh`` / ``durmin`` base.
-    4. Combines into ``durxx = (prcnt * (durinh - durmin)) / 128 +
-       durmin`` then scales by ``sprat2`` and adds ``deldur * sprat1``.
-    5. Stress-rhythm post-pass: for each stressed syllabic, redistribute
-       a portion of ``timeref - syldur`` across the preceding sonorants
-       to even out the stressed-timed rhythm.
-
-    Args:
-        phTTS: Two-pointer engine handle with populated ``DphT`` and
-            ``KsdT``. Reads ``allophons`` / ``allofeats`` /
-            ``user_durs`` from ``DphT``, plus ``sprate`` from ``KsdT``;
-            writes ``allodurs`` / ``tcumdur`` / ``longcumdur`` /
-            ``asperation``.
+    ``src/dapi/src/ph/p_us_tim0.c`` line 90.
     """
-    # The C source's local declarations (p_us_tim.c lines 108-138).
     psonsw: int = 0
     posvoc: int = 0
     pDph_t = cast(DphT, phTTS.p_ph_thread_data)
@@ -218,12 +208,12 @@ def us_phtiming(phTTS: TtsHandle) -> None:
     syldur: int = 0
     ncnt: int = 0
     endcnt: int = 0
-    sonocnt: int = 0
+    vowcnt: int = 0
     adjust: int = 0
     emphasissw: int = 0  # FALSE
     pholas: int = GEN_SIL
     struclas: int = 0
-    fealas: int = GEN_SIL
+    fealas: int = phone_feature(GEN_SIL)
     prcnt: int = 0
     durinh: int = 0
     durmin: int = 0
@@ -235,24 +225,16 @@ def us_phtiming(phTTS: TtsHandle) -> None:
     strucboucur: int = 0
     strucstresscur: int = 0
     dpause: int = 0
-    # arg1 / arg2 are used as scratch pairs into mlsh1 (the C
-    # ``phmath`` routines take args from shared scratch slots).
     arg1: int = 0
     arg2: int = 0
 
-    # TYPING_MODE: minsize is allocated per the `#ifdef TYPING_MODE`.
-    minsize: int = 0
+    minsize: int = 0  # TYPING_MODE
 
-    wordfeat: int = 0
-
-    # The C source calls init_timing(phTTS) here, but the Python
-    # orchestrator (api/speak.py) has already invoked init_timing
-    # before calling us_phtiming. Calling it again would double-zero
-    # longcumdur, which is harmless but unnecessary; we skip it.
-
+    # init_timing() is called by the orchestrator (api/speak.py) before
+    # us_phtiming, not here. Re-zero tcumdur per the C source (line 124).
     pDph_t.tcumdur = 0
 
-    # MAIN LOOP: walk each output phoneme.
+    # MAIN LOOP.
     for nphon in range(pDph_t.nallotot):
         if nphon > 0:
             pholas = pDph_t.allophons[nphon - 1]
@@ -271,605 +253,415 @@ def us_phtiming(phTTS: TtsHandle) -> None:
             pDphsettar.strucnex = pDph_t.allofeats[nphon + 1]
             pDphsettar.feanex = phone_feature(pDphsettar.phonex_timing)
 
-        wordfeat = pDph_t.allofeats[nphon] & WORDFEAT
+        # p_us_tim0.c lines 161-164: numstresses increment.
+        if struccur & FSTRESS:
+            pDphsettar.numstresses += 1
 
-        # ----- Duration rules -----
+        # `goto_break3` flag emulates the C goto: when set, skip the
+        # speaking-rate scaling and rhythm-pass and jump to the
+        # break3 epilogue.
+        goto_break3 = False
 
-        # Use user-specified duration if one exists. ``user_durs`` is
-        # a SAFETY-offset window into ``allodurs`` -- see init_phclause.
-        # However, in this port user_durs aliases pDph_t.allodurs at
-        # this point, so we just read pDph_t.allodurs[nphon] when no
-        # user override is present. Match the C: it checks
-        # pDph_t->user_durs[nphon] != 0, treating the SAFETY-window as
-        # the per-allophone array.
+        # User-specified duration short-circuit. (line 171-184)
         user_dur_val = 0
-        if pDph_t.user_durs is not None:
-            # user_durs is the SAFETY-offset window; allodurs is the
-            # base buffer. In init_phclause they alias so user_durs[i]
-            # reads allodurs[i + SAFETY] in C. The Python port aliases
-            # them to the same list and treats user_durs[nphon] as the
-            # caller-supplied override. Default 0 means "no override".
-            if nphon < len(pDph_t.user_durs):
-                user_dur_val = pDph_t.user_durs[nphon]
-
+        if pDph_t.user_durs is not None and nphon < len(pDph_t.user_durs):
+            user_dur_val = pDph_t.user_durs[nphon]
         if user_dur_val != 0:
             pDphsettar.durxx = mstofr(user_dur_val + 4)
+            goto_break3 = True
+
+        if not goto_break3:
+            # Convert inherent / minimum duration in msec to frames.
+            durinh = _inh_dur_frames(phocur)
+            durmin = _min_dur_frames(phocur)
+
             deldur = 0
-            # GOTO break3 in C -- jump to the end-of-loop block.
-            _finalize_phone(
-                pDph_t=pDph_t,
-                pDphsettar=pDphsettar,
-                pKsd_t=pKsd_t,
-                nphon=nphon,
-                phocur=phocur,
-                feacur=feacur,
-                feasyllabiccur=feasyllabiccur,
-                deldur=deldur,
-                strucstresscur=strucstresscur,
-            )
-            # Update the stress-rhythm tail state.
-            stcnt, endcnt, ncnt, syldur, sonocnt, adjust = _stress_rhythm_pass(
-                pDph_t=pDph_t,
-                pDphsettar=pDphsettar,
-                nphon=nphon,
-                phocur=phocur,
-                feacur=feacur,
-                feasyllabiccur=feasyllabiccur,
-                struccur=struccur,
-                strucstresscur=strucstresscur,
-                stcnt=stcnt,
-                endcnt=endcnt,
-                ncnt=ncnt,
-                syldur=syldur,
-                sonocnt=sonocnt,
-                adjust=adjust,
-            )
-            # TYPING_MODE override: see _typing_mode_override block.
-            _typing_mode_override(
-                phTTS=phTTS,
-                pDph_t=pDph_t,
-                nphon=nphon,
-                phocur=phocur,
-                feacur=feacur,
-                minsize_in=minsize,
-            )
-            pDph_t.longcumdur += pDphsettar.durxx * NSAMP_FRAME
-            continue
+            prcnt = 128
 
-        # Convert inherent and minimum duration in msec to frames.
-        durinh = _inh_dur_frames(phocur)
-        durmin = _min_dur_frames(phocur)
-
-        if wordfeat and nphon < pDph_t.nallotot - 3:
-            if wordfeat & F_NOUN:
-                wordfeat = N120PRCNT
-            elif wordfeat & F_ADJ:
-                wordfeat = N100PRCNT
-            elif wordfeat & F_VERB:
-                wordfeat = N70PRCNT
-            elif wordfeat & F_FUNC:
-                # already gets crushed so don't do much now
-                if pDph_t.nallotot > 7 and not (phone_feature(pDph_t.allophons[nphon]) & FOBST):
-                    wordfeat = N80PRCNT
-                else:
-                    wordfeat = N100PRCNT
-            else:
-                wordfeat = N100PRCNT
-        else:
-            wordfeat = N100PRCNT
-
-        # Additive increment.
-        deldur = 0
-        # Multiplicative constant (let 128 be 100%).
-        prcnt = 128
-
-        # Adjust word length by part of speech.
-        if wordfeat:
-            arg1 = wordfeat
-            arg2 = prcnt
-            prcnt = mlsh1(arg1, arg2)
-
-        # Rule 1: Pause durations depend on syntax.
-        if phocur == GEN_SIL:
-            if (pDphsettar.feanex & (FVOICD | FOBST)) or (pDphsettar.feanex & FPLOSV):
-                dpause = 14  # NF7MS-ish
-            else:
-                dpause = 15
-
-            pDph_t.asperation = (pDph_t.asperation - BASE_ASP) // 10
-
-            # Treatment of other than clause-initial pauses.
-            if nphon > 1:
-                # If this clause ends in a comma, use short pause.
-                if (struclas & FBOUNDARY) == FCBNEXT:
-                    # C bug at p_us_tim.c line 299: trailing semicolon
-                    # turns the `<` branch into an empty statement, so the
-                    # `pDph_t.asperation = MIN_ASP_COMMA` assignment fires
-                    # unconditionally. Preserve the buggy behaviour.
-                    if pDph_t.asperation > MAX_ASP_COMMA:
-                        pDph_t.asperation = MAX_ASP_COMMA
-                    pDph_t.asperation = MIN_ASP_COMMA
-                    dpause = pDph_t.nfcomma + pDph_t.compause + pDph_t.asperation
-                # End of clause has long pause if ends with "." "!" "?".
-                if (struclas & FBOUNDARY) & FSENTENDS:
-                    # Same trailing-semicolon C bug at p_us_tim.c line
-                    # 316 -- `<` branch is empty; the assignment below
-                    # always fires.
-                    if pDph_t.asperation > MAX_ASP_PERIOD:
-                        pDph_t.asperation = MAX_ASP_PERIOD
-                    pDph_t.asperation = MIN_ASP_PERIOD
-                    dpause = pDph_t.nfperiod + pDph_t.perpause + pDph_t.asperation
-            # Make sentence-initial pause long if new paragraph.
-            elif pDph_t.newparagsw != 0:
-                dpause = pDph_t.nfperiod
-
-            pDph_t.asperation = 0
-
-            # Effect of speaking rate greatest on pauses.
-            arg1 = dpause
-            arg2 = pDphsettar.sprat1
-            dpause = mlsh1(arg1, arg2)
-            # Minimum pause is 13 ms.
-            dpause = max(dpause, 2)
-
-            # Skip over remaining duration rules if input is SIL.
-            pDphsettar.durxx = dpause
-            durinh = pDphsettar.durxx  # for debugging print only
-            durmin = pDphsettar.durxx
-            # Fall through to "break3" finalize.
-            _finalize_phone(
-                pDph_t=pDph_t,
-                pDphsettar=pDphsettar,
-                pKsd_t=pKsd_t,
-                nphon=nphon,
-                phocur=phocur,
-                feacur=feacur,
-                feasyllabiccur=feasyllabiccur,
-                deldur=deldur,
-                strucstresscur=strucstresscur,
-            )
-            stcnt, endcnt, ncnt, syldur, sonocnt, adjust = _stress_rhythm_pass(
-                pDph_t=pDph_t,
-                pDphsettar=pDphsettar,
-                nphon=nphon,
-                phocur=phocur,
-                feacur=feacur,
-                feasyllabiccur=feasyllabiccur,
-                struccur=struccur,
-                strucstresscur=strucstresscur,
-                stcnt=stcnt,
-                endcnt=endcnt,
-                ncnt=ncnt,
-                syldur=syldur,
-                sonocnt=sonocnt,
-                adjust=adjust,
-            )
-            _typing_mode_override(
-                phTTS=phTTS,
-                pDph_t=pDph_t,
-                nphon=nphon,
-                phocur=phocur,
-                feacur=feacur,
-                minsize_in=minsize,
-            )
-            pDph_t.longcumdur += pDphsettar.durxx * NSAMP_FRAME
-            continue
-
-        # Rule 2: Lengthening of segments in clause-final rime.
-        if strucboucur >= FCBNEXT and pDph_t.number_words >= 4:
-            deldur = NF40MS
-            # Except for plosives.
-            if feacur & FPLOSV:
-                deldur = 0
-            # Except for sonor conson [rx, lx] followed by voiceless obst.
-            if (
-                (phocur == USP_RX or phocur == USP_LX)
-                and (pDphsettar.feanex & FOBST)
-                and not (pDphsettar.feanex & FVOICD)
-            ):
-                deldur = NF15MS
-            # More lengthening of a vowel if in a short phrase.
-            if pDph_t.nallotot < 10 and feasyllabiccur and strucstresscur:
-                deldur += NF30MS - (pDph_t.nallotot >> 1)
-            # Less lengthening if next seg is sonorant in same rime.
-            if pDphsettar.feanex & FSON1:
-                deldur -= NF20MS
-
-        # Rule 3: Shortening of non-phrase-final syllabics.
-        if feasyllabiccur:
-            if (strucboucur < FVPNEXT and pKsd_t.sprate > 160) or (strucboucur < FPPNEXT):
-                # Reduce percent by factor of 0.7.
-                arg1 = N70PRCNT
-                arg2 = prcnt
-                prcnt = mlsh1(arg1, arg2)
-
-        # Nasal-after-nasal lengthening (post-Rule-3 hand-rolled rule).
-        if (feacur & FNASAL) and (fealas & FNASAL) and phocur != pholas:
-            # need to lengthen second nasal for time to differentiate
-            deldur += NF30MS
-
-        # Lengthening of phrase-final postvocalic nasal.
-        if (feacur & FNASAL) and not strucstresscur and strucboucur >= FVPNEXT:
-            deldur = deldur + NF40MS
-
-        # Rule 4: Shorten syll segs in syll-init / medial positions, etc.
-        if feasyllabiccur:
-            if (struccur & FTYPESYL) == FMONOSYL:
-                arg1 = N85PRCNT
-                if not (strucstresscur & FSTRESS_1):
-                    # Secondary-stressed monosyllables shortened by 85%.
-                    arg1 = N75PRCNT
-                    if not strucstresscur:
-                        # Unstressed monosyllable shortened by 70%.
-                        arg1 = N70PRCNT
-                    arg2 = prcnt
-                    prcnt = mlsh1(arg1, arg2)
-            elif (struccur & FTYPESYL) != FMONOSYL and strucboucur < FWBNEXT:
-                # Initial vowel of each word is shorter by 0.7.
-                arg1 = N70PRCNT
-                if (struccur & FTYPESYL) > FFIRSTSYL:
-                    # Other nonfinal syllables shortened by 0.85.
-                    arg1 = N85PRCNT
-                arg2 = prcnt
-                prcnt = mlsh1(arg1, arg2)
-
-            # Rule 5: Shorten vowels in polysyllabic words.
-            if (struccur & FTYPESYL) != FMONOSYL:
-                # Multiply by 0.8.
-                arg1 = prcnt
-                arg2 = N80PRCNT
-                prcnt = mlsh1(arg1, arg2)
-
-        # Rule 6: Shortening of non-word-initial consonants.
-        if not feasyllabiccur and not (struccur & FWINITC):
-            if (feacur & FOBST) and not (feacur & FPLOSV) and (struccur & FBOUNDARY) >= FWBNEXT:
-                # Except that word-final fricatives are lengthened.
-                deldur += NF20MS
-            else:
-                # Multiply by 0.85.
-                arg1 = prcnt
-                arg2 = N85PRCNT
-                prcnt = mlsh1(arg1, arg2)
-
-        # Rule 7: Shortening of unstressed segs.
-        if not (strucstresscur & FSTRESS_1):
-            if durmin < durinh and not (feacur & FOBST):
-                # Non-stressed segs more compressible (except obstruents).
-                if not strucstresscur:
-                    durmin = durmin >> 1
-                else:
-                    durmin -= durmin >> 2  # 2-stress
-                # but not too short
-                if durmin < 3:
-                    durmin = 3
-            # Non-primary-stressed syllabic segments shorter.
-            if feasyllabiccur:
-                # Shorten word-medial syllable more.
-                if (struccur & FTYPESYL) == FMEDIALSYL:
-                    prcnt -= prcnt >> 2
-                else:
-                    # Multiply by 0.7.
-                    arg1 = prcnt
-                    arg2 = N70PRCNT
-                    prcnt = mlsh1(arg1, arg2)
-                # Special case: Schwa next to a flap or followed by HX.
-                if phocur == USP_AX or phocur == USP_IX:
-                    if (
-                        pholas == USP_DX
-                        or pDphsettar.phonex_timing == USP_DX
-                        or pDphsettar.phonex_timing == USP_HX
-                    ):
-                        deldur += NF15MS
-            else:
-                # Extra shortening of w,y,r,l.
-                if USP_W <= phocur <= USP_LL:
-                    prcnt = prcnt >> 1
-                else:
-                    # All other consonants -- multiply by 0.7.
-                    arg1 = prcnt
-                    arg2 = N70PRCNT
-                    prcnt = mlsh1(arg1, arg2)
-        else:
-            # Penultimate lengthening of stressed syllabic with hat-fall.
-            if feasyllabiccur:
-                if (struccur & FHAT_ENDS) and strucboucur < FVPNEXT and strucboucur > FMBNEXT:
-                    deldur = deldur + NF25MS
-
-        # Rule 8: Lengthen each seg of an emphasized syllable.
-        if (struccur & FWINITC) or (feasyllabiccur and strucstresscur != FEMPHASIS):
-            emphasissw = 0  # FALSE
-        if strucstresscur == FEMPHASIS:
-            emphasissw = 1  # TRUE
-        if emphasissw == 1:
-            deldur = deldur + NF20MS
-            if feasyllabiccur:
-                deldur = deldur + NF40MS
-
-        # Rule 9: Influence of final conson on vowels and postvoc sonor.
-        psonsw = 0
-        arg1 = FRAC_ONE
-        posvoc = GEN_SIL
-        if feasyllabiccur or (
-            USP_RX <= phocur <= USP_NX
-            and not (struccur & (FSTRESS | FWINITC))
-            and (pDphsettar.feanex & FOBST)
-        ):
-            # Determine whether next segment is postvocalic consonant.
-            if (not (pDphsettar.feanex & FSYLL)) and not (
-                pDphsettar.strucnex & (FSTRESS | FWINITC)
-            ):
-                posvoc = pDphsettar.phonex_timing
-                # See if postvocalic consonant is a sonorant
-                # or if postvoc sonor is followed by an obst cons.
+            # Rule 1: Pause durations depend on syntax.
+            if phocur == GEN_SIL:
                 if (
-                    nphon + 2 < pDph_t.nallotot
-                    and USP_RX <= posvoc <= USP_NX
-                    and (phone_feature(pDph_t.allophons[nphon + 2]) & FOBST)
-                    and not (pDph_t.allofeats[nphon + 2] & (FSTRESS | FWINITC))
+                    ((pDphsettar.feanex & FVOICD) and (pDphsettar.feanex & FOBST))
+                    or (pDphsettar.feanex & FPLOSV)
                 ):
-                    psonsw = 1
-                    posvoc = pDph_t.allophons[nphon + 2]
-                # If posvoc is now voiceless or obst or nasal, do something.
-                if posvoc != GEN_SIL:
-                    if not (phone_feature(posvoc) & FVOICD):
-                        deldur = deldur - (deldur >> 1)
-                        # Multiply by 0.8 if a voiceless fric.
-                        arg1 = N80PRCNT
-                        if (phone_feature(posvoc) & FPLOSV) or posvoc == USP_CH:
-                            # Multiply by 0.7 if voiceless plosive.
-                            arg1 = N70PRCNT
-                    else:
-                        # Postvocalic segment is voiced.
-                        if (phone_feature(posvoc) & FOBST) and phocur != USP_EN:
-                            arg1 = N120PRCNT
-                            # Voiced fricative -- add 25 ms to +syl.
-                            if (
-                                not (phone_feature(posvoc) & FPLOSV)
-                                and posvoc != USP_DX
-                                and (feacur & FSYLL)
-                            ):
-                                deldur = deldur + NF25MS
-                        elif phone_feature(posvoc) & FNASAL:
-                            # Nasal -- multiply by 0.85 (the rule comment says
-                            # 0.9, the code uses N90PRCNT which == N85PRCNT
-                            # by the documented 4.2CD typo).
-                            arg1 = N90PRCNT
-            # Attenuate effect if not phrase-final or +syl followed
-            # by sonor or if postvoc sonor next.
-            if strucboucur < FVPNEXT or psonsw == 1:
-                arg1 = FRAC_HALF + (arg1 >> 1)
-            arg2 = prcnt
-            prcnt = mlsh1(arg1, arg2)
+                    dpause = 1
+                else:
+                    dpause = 0
 
-        # Rule 10: Lengthen first vowel of a two-vowel sequence.
-        if feasyllabiccur:
-            if pDphsettar.feanex & FSYLL:
-                deldur = deldur + NF30MS
-            # Rule 11: Lengthen word-initial stressed vowel of polysyl word.
-            if (
-                (struccur & FTYPESYL) == FFIRSTSYL
-                and (struccur & FSTRESS_1)
-                and not (struclas & FWINITC)
-            ):
-                deldur += NF25MS
-            # Rule 12: Shorten vowels before postvocalic L.
-            if pDphsettar.phonex_timing == USP_LX or pDphsettar.phonex_timing == USP_LY:
-                # Reduce percent by factor of 0.7.
-                arg1 = N70PRCNT
-                arg2 = prcnt
-                prcnt = mlsh1(arg1, arg2)
-        # Rule 13: Shorten consonant clusters.
-        else:
-            if feacur & FCONSON:
-                if (pDphsettar.feanex & FCONSON) and strucboucur < FWBNEXT:
-                    # First consonant of a two-consonant sequence.
-                    # Default shortening is 70 percent, unless plosive-
-                    # plosive sequence.
-                    if not (pDphsettar.feanex & FPLOSV) or not (feacur & FPLOSV):
-                        arg1 = N70PRCNT
-                    # Lengthen nasal by 1.5 if next cons is word-init.
-                    if (feacur & FNASAL) and (pDphsettar.strucnex & FWINITC):
-                        # from 1.5 to 1.2
-                        arg1 = N120PRCNT
-                    else:
-                        # Also make min duration shorter for C's in cluster.
-                        durmin -= durmin >> 2
-                    # Shorten [S,TH] followed by a plosive or [SH].
-                    if phocur == USP_S or phocur == USP_TH:
-                        if pDphsettar.feanex & FPLOSV:
-                            # Multiply by 0.5.
-                            arg1 = FRAC_HALF
-                        if pDphsettar.phonex_timing == USP_SH:
-                            pDphsettar.durxx = NF15MS
-                            # goto break3
-                            _finalize_phone(
-                                pDph_t=pDph_t,
-                                pDphsettar=pDphsettar,
-                                pKsd_t=pKsd_t,
-                                nphon=nphon,
-                                phocur=phocur,
-                                feacur=feacur,
-                                feasyllabiccur=feasyllabiccur,
-                                deldur=deldur,
-                                strucstresscur=strucstresscur,
-                            )
-                            (
-                                stcnt,
-                                endcnt,
-                                ncnt,
-                                syldur,
-                                sonocnt,
-                                adjust,
-                            ) = _stress_rhythm_pass(
-                                pDph_t=pDph_t,
-                                pDphsettar=pDphsettar,
-                                nphon=nphon,
-                                phocur=phocur,
-                                feacur=feacur,
-                                feasyllabiccur=feasyllabiccur,
-                                struccur=struccur,
-                                strucstresscur=strucstresscur,
-                                stcnt=stcnt,
-                                endcnt=endcnt,
-                                ncnt=ncnt,
-                                syldur=syldur,
-                                sonocnt=sonocnt,
-                                adjust=adjust,
-                            )
-                            _typing_mode_override(
-                                phTTS=phTTS,
-                                pDph_t=pDph_t,
-                                nphon=nphon,
-                                phocur=phocur,
-                                feacur=feacur,
-                                minsize_in=minsize,
-                            )
-                            pDph_t.longcumdur += pDphsettar.durxx * NSAMP_FRAME
-                            continue
-                    arg2 = prcnt
-                    prcnt = mlsh1(arg1, arg2)
-                if (fealas & FCONSON) and (struclas & FBOUNDARY) < FVPNEXT:
-                    # Second consonant of a two-consonant sequence.
-                    # Multiply by 0.7.
-                    arg1 = N70PRCNT
-                    # Also make min duration shorter for C's in cluster.
-                    durmin -= durmin >> 2
-                    if feacur & FPLOSV:
-                        # Shorten plosive if preceded by [s].
-                        # Multiply by 0.6.
-                        if pholas == USP_S:
-                            arg1 = N60PRCNT
-                        # Shorten unstr plos if preceded by nasal.
-                        if fealas & FNASAL:
-                            # Multiply by 0.1.
-                            if not strucstresscur:
-                                arg1 = 1638
-                    arg2 = prcnt
-                    prcnt = mlsh1(arg1, arg2)
+                pDph_t.asperation = (pDph_t.asperation - BASE_ASP) // 10
 
-        # Rule 14: Increase sonor dur if preceding plosive is aspirated.
-        if feacur & FSON1:
-            if not (fealas & FVOICD) and (fealas & FPLOSV):
-                deldur = deldur + NF20MS
+                if nphon > 1:
+                    if (struclas & FBOUNDARY) == FCBNEXT:
+                        # C bug: trailing `;` makes the `<` branch empty;
+                        # the asperation = MIN_ASP_COMMA fires unconditionally.
+                        if pDph_t.asperation > MAX_ASP_COMMA:
+                            pDph_t.asperation = MAX_ASP_COMMA
+                        pDph_t.asperation = MIN_ASP_COMMA
+                        dpause = pDph_t.nfcomma + pDph_t.compause + pDph_t.asperation
+                    if (struclas & FBOUNDARY) & FSENTENDS:
+                        if pDph_t.asperation > MAX_ASP_PERIOD:
+                            pDph_t.asperation = MAX_ASP_PERIOD
+                        pDph_t.asperation = MIN_ASP_PERIOD
+                        dpause = pDph_t.nfperiod + pDph_t.perpause + pDph_t.asperation
+                elif pDph_t.newparagsw != 0:
+                    dpause = pDph_t.nfperiod
 
-        # Rule 15: Increase duration of phrase-initial vowels (after silence).
-        if feacur & FVOWEL:
-            if pholas == GEN_SIL:
-                deldur = deldur + NF20MS
+                pDph_t.asperation = 0
 
-        # Rule 16: Increase vowel dur if preceded by non-nasal sonor conson.
-        if feacur & FVOWEL:
-            if (fealas & FSON2) and not (fealas & FNASAL):
-                if deldur == 0:
+                dpause = mlsh1(dpause, pDphsettar.sprat1)
+                if dpause < NF7MS:
+                    dpause = NF7MS
+
+                pDphsettar.durxx = dpause
+                durinh = pDphsettar.durxx
+                durmin = pDphsettar.durxx
+                goto_break3 = True
+
+        if not goto_break3:
+            # Rule 2: Lengthening of segments in clause-final rime.
+            if strucboucur >= FCBNEXT:
+                deldur = NF40MS
+                if (feacur & FVOICD) and (feacur & FOBST):
                     deldur = NF20MS
+                if feacur & FPLOSV:
+                    deldur = 0
+                if (
+                    (phocur == USP_RX or phocur == USP_LX)
+                    and (pDphsettar.feanex & FOBST)
+                    and not (pDphsettar.feanex & FVOICD)
+                ):
+                    deldur = NF15MS
+                if pDph_t.nallotot < 10 and feasyllabiccur and strucstresscur:
+                    deldur += NF30MS - (pDph_t.nallotot >> 1)
+                if pDphsettar.feanex & FSON1:
+                    deldur -= NF20MS
 
-        # Rule 17: More lengthening of segments if in a short phrase.
-        if pDph_t.nallotot < 10 and durinh != durmin:
-            prcnt += 10
+            # Rule 3: Shortening of non-phrase-final syllabics.
+            if feasyllabiccur:
+                if (strucboucur < FVPNEXT and pKsd_t.sprate > 160) or (
+                    strucboucur < FPPNEXT
+                ):
+                    prcnt = mlsh1(N70PRCNT, prcnt)
 
-        # Rule (unnumbered): plosive obst + voiced next.
-        if (feacur & FPLOSV) and (feacur & FOBST):
-            arg1 = N80PRCNT
-            if nphon + 1 < pDph_t.nallotot and (
-                phone_feature(pDph_t.allophons[nphon + 1]) & FVOICD
+            # Rule 4: Shorten syllabic segs in syll-init / medial /
+            # unstressed monosyl positions.
+            if feasyllabiccur:
+                if (
+                    not (strucstresscur & FSTRESS_1)
+                    and (struccur & FTYPESYL) == FMONOSYL
+                ):
+                    arg1 = N85PRCNT
+                    if not strucstresscur:
+                        arg1 = N70PRCNT
+                    prcnt = mlsh1(arg1, prcnt)
+                elif (struccur & FTYPESYL) != FMONOSYL and strucboucur < FWBNEXT:
+                    # Initial vowel of each word shorter by .85.
+                    arg1 = N85PRCNT
+                    if (struccur & FTYPESYL) > FFIRSTSYL:
+                        arg1 = N85PRCNT
+                    prcnt = mlsh1(arg1, prcnt)
+
+                # Rule 5: Shorten vowels in polysyllabic words.
+                if (struccur & FTYPESYL) != FMONOSYL:
+                    prcnt = mlsh1(prcnt, N80PRCNT)
+
+            # Rule 6: Shortening of non-word-initial consonants.
+            if not feasyllabiccur and not (struccur & FWINITC):
+                if (
+                    (feacur & FOBST)
+                    and not (feacur & FPLOSV)
+                    and (struccur & FBOUNDARY) == FWBNEXT
+                ):
+                    deldur += NF20MS
+                else:
+                    prcnt = mlsh1(prcnt, N85PRCNT)
+
+            # Rule 7: Shortening of unstressed segs.
+            if not (strucstresscur & FSTRESS_1):
+                if durmin < durinh and not (feacur & FOBST):
+                    if not strucstresscur:
+                        durmin = durmin >> 1
+                    else:
+                        durmin -= durmin >> 2
+                if feasyllabiccur:
+                    if (struccur & FTYPESYL) == FMEDIALSYL:
+                        prcnt = prcnt >> 1
+                    else:
+                        prcnt = mlsh1(prcnt, N70PRCNT)
+                    if phocur == USP_AX or phocur == USP_IX:
+                        if (
+                            pholas == USP_DX
+                            or pDphsettar.phonex_timing == USP_DX
+                            or pDphsettar.phonex_timing == USP_HX
+                        ):
+                            deldur += NF25MS
+                else:
+                    if USP_W <= phocur <= USP_LL:
+                        prcnt = prcnt >> 1
+                    else:
+                        prcnt = mlsh1(prcnt, N70PRCNT)
+            else:
+                # Penultimate lengthening of stressed syllabic with hat-fall.
+                if feasyllabiccur:
+                    if (
+                        (struccur & FHAT_ENDS)
+                        and strucboucur < FVPNEXT
+                        and strucboucur > FMBNEXT
+                    ):
+                        deldur = deldur + NF25MS
+
+            # Rule 8: Lengthen each seg of an emphasized syllable.
+            if (struccur & FWINITC) or (
+                feasyllabiccur and strucstresscur != FEMPHASIS
             ):
-                arg1 = N70PRCNT
-            arg2 = prcnt
-            prcnt = mlsh1(arg1, arg2)
+                emphasissw = 0
+            if strucstresscur == FEMPHASIS:
+                emphasissw = 1
+            if emphasissw == 1:
+                deldur = deldur + NF20MS
+                if feasyllabiccur:
+                    deldur = deldur + NF40MS
 
-        # Rule 18: Shortening of prevocalic clustered semivowels.
-        if (feacur & FSONCON) and (fealas & FOBST):
-            arg1 = prcnt
-            arg2 = N70PRCNT
-            prcnt = mlsh1(arg1, arg2)
+            # Rule 9: Influence of final conson on vowels and postvoc sonor.
+            psonsw = 0
+            arg1 = FRAC_ONE
+            posvoc = GEN_SIL
+            if feasyllabiccur or (
+                USP_RX <= phocur <= USP_NX
+                and not (struccur & (FSTRESS | FWINITC))
+                and (pDphsettar.feanex & FOBST)
+            ):
+                if (not (pDphsettar.feanex & FSYLL)) and not (
+                    pDphsettar.strucnex & (FSTRESS | FWINITC)
+                ):
+                    posvoc = pDphsettar.phonex_timing
+                    if (
+                        nphon + 2 < pDph_t.nallotot
+                        and USP_RX <= posvoc <= USP_NX
+                        and (phone_feature(pDph_t.allophons[nphon + 2]) & FOBST)
+                        and not (pDph_t.allofeats[nphon + 2] & (FSTRESS | FWINITC))
+                    ):
+                        psonsw = 1
+                        posvoc = pDph_t.allophons[nphon + 2]
+                    if posvoc != GEN_SIL:
+                        if not (phone_feature(posvoc) & FVOICD):
+                            deldur = deldur - (deldur >> 1)
+                            arg1 = N80PRCNT
+                            if (phone_feature(posvoc) & FPLOSV) or posvoc == USP_CH:
+                                arg1 = N70PRCNT
+                        else:
+                            if (phone_feature(posvoc) & FOBST) and phocur != USP_EN:
+                                arg1 = N120PRCNT
+                                if (
+                                    not (phone_feature(posvoc) & FPLOSV)
+                                    and posvoc != USP_DX
+                                    and (feacur & FSYLL)
+                                ):
+                                    deldur = deldur + NF25MS
+                            elif phone_feature(posvoc) & FNASAL:
+                                arg1 = N85PRCNT
+                if strucboucur < FVPNEXT or psonsw == 1:
+                    arg1 = FRAC_HALF + (arg1 >> 1)
+                # [nt] postvocalic cluster shortcut.
+                if (
+                    phocur == USP_N
+                    and pDphsettar.phonex_timing == USP_T
+                    and not (pDphsettar.strucnex & (FWINITC | FSTRESS))
+                ):
+                    arg1 = N10PRCNT
+                    if (
+                        nphon + 2 < pDph_t.nallotot
+                        and (phone_feature(pDph_t.allophons[nphon + 2]) & FSYLL)
+                        and not (pDph_t.allofeats[nphon + 2] & FMEDIALSYL)
+                    ):
+                        pDph_t.allophons[nphon + 1] = USP_D
+                        arg1 = N70PRCNT
+                prcnt = mlsh1(arg1, prcnt)
 
-        # Rule 19: Shorten function word final TH as in "with".
-        if (
-            phocur == USP_TH
-            and (struccur & FTYPESYL) == FMONOSYL
-            and strucboucur >= FWBNEXT
-            and strucstresscur == FNOSTRESS
-        ):
-            arg1 = prcnt
-            arg2 = N60PRCNT
-            prcnt = mlsh1(arg1, arg2)
+            # Rule 10/11/12: Two-vowel lengthen / word-init stressed /
+            # pre-postvoc-L shortening.
+            if feasyllabiccur:
+                if pDphsettar.feanex & FSYLL:
+                    deldur = deldur + NF30MS
+                if (
+                    (struccur & FTYPESYL) == FFIRSTSYL
+                    and (struccur & FSTRESS_1)
+                    and not (struclas & FWINITC)
+                ):
+                    deldur += NF25MS
+                if pDphsettar.phonex_timing == USP_LX:
+                    deldur -= NF20MS
+            else:
+                # Rule 13: Shorten consonant clusters.
+                if feacur & FCONSON:
+                    if (pDphsettar.feanex & FCONSON) and strucboucur < FVPNEXT:
+                        arg1 = N70PRCNT
+                        if (feacur & FNASAL) and (pDphsettar.strucnex & FWINITC):
+                            arg1 = N150PRCNT
+                        else:
+                            durmin -= durmin >> 2
+                        if phocur == USP_S or phocur == USP_TH:
+                            if pDphsettar.feanex & FPLOSV:
+                                arg1 = FRAC_HALF
+                            if pDphsettar.phonex_timing == USP_SH:
+                                pDphsettar.durxx = NF15MS
+                                goto_break3 = True
+                        if not goto_break3:
+                            prcnt = mlsh1(arg1, prcnt)
+                    if (not goto_break3) and (fealas & FCONSON) and (
+                        struclas & FBOUNDARY
+                    ) < FVPNEXT:
+                        arg1 = N70PRCNT
+                        durmin -= durmin >> 2
+                        if feacur & FPLOSV:
+                            if pholas == USP_S:
+                                arg1 = N60PRCNT
+                            if fealas & FNASAL:
+                                if not strucstresscur:
+                                    arg1 = 1638
+                        prcnt = mlsh1(arg1, prcnt)
 
-        # Rule 21: Shorten stop following a stop and preceding a fricative
-        # within the same syllable.
-        if (
-            (feacur & FPLOSV)
-            and (fealas & FPLOSV)
-            and (pDphsettar.feanex & FOBST)
-            and strucboucur > FMBNEXT
-        ):
-            durmin = durmin >> 1
-            arg1 = prcnt
-            arg2 = N25PRCNT
-            prcnt = mlsh1(arg1, arg2)
+        if not goto_break3:
+            # Rule 14: Increase sonor dur if preceding plosive is aspirated.
+            if feacur & FSON1:
+                if not (fealas & FVOICD) and (fealas & FPLOSV):
+                    deldur = deldur + NF20MS
 
-        # Rule 23: Shorten vowel if phonex == df (writing vs riding).
-        if pDphsettar.phonex_timing == USP_DF:
-            if prcnt > 50:
-                arg1 = prcnt
-                arg2 = N40PRCNT
-                prcnt = mlsh1(arg1, arg2)
+            # Rule 15: Increase duration of phrase-initial vowels.
+            if (feacur & FVOWEL) and pholas == GEN_SIL:
+                deldur = deldur + NF20MS
 
-        # Rule 24: RR retroflex minimum-dur floor.
-        if phocur == USP_RR:
-            if durmin <= 13:
-                durmin = 13
+            # Rule 16: Increase vowel dur if preceded by non-nasal sonor.
+            if feacur & FVOWEL:
+                if (fealas & FSON2) and not (fealas & FNASAL):
+                    if deldur == 0:
+                        deldur = NF20MS
 
-        # Rule 25: Lengthen unvoiced cons after vowel (prev rule shortened vowel).
-        if (fealas & FVOICD) and not (feacur & FVOICD):
-            deldur = deldur + (deldur >> 1)
-            arg1 = N130PRCNT
-            arg2 = prcnt
-            prcnt = mlsh1(arg1, arg2)
+            # Rule 17: More lengthening of segments if in a short phrase.
+            if pDph_t.nallotot < 10 and durinh != durmin:
+                prcnt += 30
 
-        # Rule 26: Shorten word-initial HX.
-        if phocur == USP_HX and (struccur & FWINITC):
-            arg1 = N60PRCNT
-            arg2 = prcnt
-            prcnt = mlsh1(arg1, arg2)
+            # Rule 18 (#ifdef NEVER) omitted.
 
-        pDphsettar.strucstressprev = strucstresscur
+            # Rule 19: Shorten function word final TH ("with").
+            if (
+                phocur == USP_TH
+                and (struccur & FTYPESYL) == FMONOSYL
+                and strucboucur >= FWBNEXT
+                and strucstresscur == FNOSTRESS
+            ):
+                prcnt = mlsh1(prcnt, N60PRCNT)
 
-        # Finish up: set durxx from durinh, durmin, prcnt.
-        pDphsettar.durxx = (prcnt * (durinh - durmin)) >> 7  # DIV_BY128
-        pDphsettar.durxx += durmin
+            # Rule 20: Lengthen i in "the" / "he" / "me".
+            if (
+                phocur == USP_IY
+                and (struccur & FBOUNDARY) > FMBNEXT
+                and strucstresscur == FNOSTRESS
+                and (struccur & FTYPESYL) == FMONOSYL
+            ):
+                prcnt = mlsh1(prcnt, N150PRCNT)
 
-        # Rule for slow speaking: lengthen inserted glottal stop.
-        if phocur == USP_Q and pKsd_t.sprate < 75:
-            pDphsettar.durxx = 1 + (80 - pKsd_t.sprate)
+            # Rule 21: Shorten stop following stop preceding fricative same syl.
+            if (
+                (feacur & FPLOSV)
+                and (fealas & FPLOSV)
+                and (pDphsettar.feanex & FOBST)
+                and strucboucur > FMBNEXT
+            ):
+                durmin = durmin >> 1
+                prcnt = mlsh1(prcnt, N25PRCNT)
 
-        # break3 label target: speaking-rate scaling + clamps + writeback.
-        _finalize_phone(
-            pDph_t=pDph_t,
-            pDphsettar=pDphsettar,
-            pKsd_t=pKsd_t,
-            nphon=nphon,
-            phocur=phocur,
-            feacur=feacur,
-            feasyllabiccur=feasyllabiccur,
-            deldur=deldur,
-            strucstresscur=strucstresscur,
-        )
-        stcnt, endcnt, ncnt, syldur, sonocnt, adjust = _stress_rhythm_pass(
-            pDph_t=pDph_t,
-            pDphsettar=pDphsettar,
-            nphon=nphon,
-            phocur=phocur,
-            feacur=feacur,
-            feasyllabiccur=feasyllabiccur,
-            struccur=struccur,
-            strucstresscur=strucstresscur,
-            stcnt=stcnt,
-            endcnt=endcnt,
-            ncnt=ncnt,
-            syldur=syldur,
-            sonocnt=sonocnt,
-            adjust=adjust,
-        )
+            # Rule 23: Shorten vowel if phonex == DF (writing vs riding).
+            if pDphsettar.phonex_timing == USP_DF:
+                prcnt = mlsh1(prcnt, N35PRCNT)
+
+            # eab 3-94: feanex plosive + feacur consonant.
+            if (pDphsettar.feanex & FPLOSV) and (feacur & FCONSON):
+                durmin = durmin >> 1
+                prcnt = mlsh1(prcnt, N50PRCNT)
+
+            pDphsettar.strucstressprev = strucstresscur
+
+            # Set durxx = prcnt * (durinh - durmin) / 128 + durmin.
+            pDphsettar.durxx = (prcnt * (durinh - durmin)) >> 7
+            pDphsettar.durxx += durmin
+
+            # Speaking-rate scaling (lines 874-893).
+            if pDphsettar.sprat0 != 180 and pDphsettar.durxx != 0:
+                pDphsettar.durxx = mlsh1(pDphsettar.durxx, pDphsettar.sprat2) + 1
+                deldur = mlsh1(deldur, pDphsettar.sprat1)
+            pDphsettar.durxx = pDphsettar.durxx + deldur
+
+            # Clamp negative durxx.
+            if pDphsettar.durxx < 0:
+                pDphsettar.durxx = 1
+
+            pDph_t.allodurs[nphon] = pDphsettar.durxx
+            if pDph_t.allophons[nphon] != 0:
+                syldur += pDphsettar.durxx
+            if (feacur & FSONOR) and pDph_t.allophons[nphon] != 0:
+                vowcnt += 1
+
+            # Stress-rhythm rebalance: FISBOUND or penultimate.
+            # NOTE the C operator-precedence bug at line 912:
+            # `(((cond) == FISBOUND) && nphon != 0 || nphon == nallotot - 2)`
+            # parses as `((cond && nphon != 0) || nphon == nallotot - 2)`.
+            is_isbound = (struccur & FISBOUND) == FISBOUND
+            if (is_isbound and nphon != 0) or nphon == pDph_t.nallotot - 2:
+                timeref_minus = pDph_t.timeref - (syldur >> 1)
+                if vowcnt == 1:
+                    adjust = timeref_minus
+                elif vowcnt == 2:
+                    adjust = timeref_minus >> 1
+                elif vowcnt == 3:
+                    adjust = (timeref_minus >> 3) * 3
+                elif vowcnt == 4:
+                    adjust = timeref_minus >> 2
+                elif vowcnt == 5:
+                    adjust = timeref_minus >> 3
+                else:
+                    adjust = timeref_minus >> 4
+
+                # sprat0-based attenuation.
+                if pDphsettar.sprat0 <= 250:
+                    adjust = 0
+                elif pDphsettar.sprat0 >= 325:
+                    adjust = adjust >> 1
+                elif pDphsettar.sprat0 >= 250:
+                    adjust = adjust >> 2
+
+                user_dur_active = (
+                    pDph_t.user_durs is not None
+                    and nphon < len(pDph_t.user_durs)
+                    and pDph_t.user_durs[nphon] != 0
+                )
+                if user_dur_active or pDph_t.f0mode == SINGING:
+                    adjust = 0
+
+                # Redistribute adjust across phones with allophone code 1..7
+                # (the FSON1 sonorants in the original table).
+                endcnt = nphon
+                while stcnt - endcnt != 0:
+                    phon_e = pDph_t.allophons[endcnt]
+                    if 0 < phon_e <= 7:
+                        pDph_t.allodurs[endcnt] += adjust
+                        if pDph_t.allodurs[endcnt] <= 6:
+                            pDph_t.allodurs[endcnt] = 6
+                        ncnt += 1
+                    endcnt -= 1
+                    if endcnt < 0:
+                        break
+
+                ncnt = 0
+                stcnt = nphon
+                syldur = 0
+                vowcnt = 0
+
+        # break3 epilogue.
+        # NSAMP_FRAME == 128 branch is dead code (NSAMP_FRAME == 71).
+        if pDphsettar.durxx <= 0:
+            pDphsettar.durxx = 1
+        pDph_t.allodurs[nphon] = pDphsettar.durxx
 
         _typing_mode_override(
             phTTS=phTTS,
@@ -883,167 +675,6 @@ def us_phtiming(phTTS: TtsHandle) -> None:
         pDph_t.longcumdur += pDphsettar.durxx * NSAMP_FRAME
 
 
-def _finalize_phone(
-    *,
-    pDph_t: DphT,
-    pDphsettar: DphSettarSt,
-    pKsd_t: KsdT,
-    nphon: int,
-    phocur: int,
-    feacur: int,
-    feasyllabiccur: int,
-    deldur: int,
-    strucstresscur: int,
-) -> None:
-    """Apply speaking-rate scaling + clamps + writeback (``break3:`` target).
-
-    Faithful translation of p_us_tim.c lines 1019-1070 (the
-    ``break3:`` block reached by all three goto sites and by the
-    fall-through end of the per-phone rule body).
-    """
-    del strucstresscur  # used by C for the (omitted) FASTTALK path
-
-    # Effect of speaking rate.
-    if pDphsettar.sprat0 != 180 and pDphsettar.durxx != 0:
-        arg1 = pDphsettar.durxx
-        arg2 = pDphsettar.sprat2
-        pDphsettar.durxx = mlsh1(arg1, arg2) + 1  # Round upwards
-        # Effect of speaking rate on additive increment to dur.
-        arg1 = deldur
-        arg2 = pDphsettar.sprat1
-        deldur = mlsh1(arg1, arg2)
-    # Add in rule-governed additive increment to dur.
-    pDphsettar.durxx = pDphsettar.durxx + deldur
-
-    if pDphsettar.durxx < 0:
-        # eab oct 93 found dur could get set =0 compromise.
-        pDphsettar.durxx = 1
-
-    # Clamp aspiration-final HX cap.
-    if phocur == USP_HX:
-        if pDphsettar.durxx > 11:
-            pDphsettar.durxx = 11
-
-    pDph_t.allodurs[nphon] = pDphsettar.durxx
-    # Use kPKsd reference to silence unused-arg lint (parity for
-    # future sprate-dependent extensions).
-    _ = pKsd_t
-    _ = feasyllabiccur
-    _ = feacur
-
-
-def _stress_rhythm_pass(
-    *,
-    pDph_t: DphT,
-    pDphsettar: DphSettarSt,
-    nphon: int,
-    phocur: int,
-    feacur: int,
-    feasyllabiccur: int,
-    struccur: int,
-    strucstresscur: int,
-    stcnt: int,
-    endcnt: int,
-    ncnt: int,
-    syldur: int,
-    sonocnt: int,
-    adjust: int,
-) -> tuple[int, int, int, int, int, int]:
-    """Stressed-timed rhythm post-pass.
-
-    Faithful translation of p_us_tim.c lines 1063-1207 (the
-    non-TOMBUCHLER path: accumulate ``syldur`` / ``sonocnt`` per
-    stressed syllabic, then redistribute ``timeref - syldur`` across
-    the preceding sonorant frames).
-    """
-    if pDph_t.allophons[nphon] != GEN_SIL:
-        # Don't count silence.
-        # In English this is really not syldur but duration between
-        # stresses, as English is a stress-timed language.
-        syldur += pDphsettar.durxx
-
-    # Instead of counting vowels, now count sonorants.
-    if (feacur & FSON1) and pDph_t.allophons[nphon] != 0:
-        sonocnt += 1
-
-    # EAB 11/20/98: consonants before vowel are also marked with
-    # stress; we want to ignore them here. Only fire when the current
-    # phone is also syllabic.
-    if (struccur & FSTRESS) and feasyllabiccur:
-        if sonocnt == 1:
-            adjust = pDph_t.timeref - syldur
-        elif sonocnt == 2:
-            adjust = (pDph_t.timeref - syldur) >> 1
-        elif sonocnt == 3:
-            # do 3/8 instead of divide by 3
-            adjust = ((pDph_t.timeref - syldur) >> 3) * 3
-        elif sonocnt == 4:
-            adjust = (pDph_t.timeref - syldur) >> 2
-        elif sonocnt == 5:
-            adjust = (pDph_t.timeref - syldur) >> 3
-        elif sonocnt == 6:
-            adjust = (pDph_t.timeref - syldur) >> 4
-        elif sonocnt == 7:
-            adjust = (pDph_t.timeref - syldur) >> 5
-        elif sonocnt == 8:
-            adjust = (pDph_t.timeref - syldur) >> 6
-        elif sonocnt == 9:
-            adjust = (pDph_t.timeref - syldur) >> 7
-        elif sonocnt == 10:
-            adjust = (pDph_t.timeref - syldur) >> 8
-        else:
-            adjust = (pDph_t.timeref - syldur) >> 7
-
-        adjust = adjust >> 1
-        if pDphsettar.sprat0 <= 150:
-            adjust = 0
-        if nphon < 3:
-            # First stress at beginning vowel of a stressed word --
-            # reduce effect.
-            adjust = adjust >> 3
-
-        # Skip the redistribution if a user-supplied dur is in play
-        # or we're in singing mode.
-        user_dur_active = (
-            pDph_t.user_durs is not None
-            and nphon < len(pDph_t.user_durs)
-            and pDph_t.user_durs[nphon] != 0
-        )
-        if user_dur_active or pDph_t.f0mode == SINGING:
-            adjust = 0
-
-        # Walk back from nphon-1 to stcnt; redistribute adjust across
-        # sonorant phones that aren't nasal.
-        endcnt = nphon - 1
-        while stcnt - endcnt != 0:
-            phon_e = pDph_t.allophons[endcnt]
-            feat_e = phone_feature(phon_e)
-            if (feat_e & FSON1) and not (feat_e & FNASAL):
-                # Not first one much.
-                if endcnt >= 3:
-                    if pDph_t.allodurs[endcnt] <= 8:
-                        # Phone already very short -- minimise effect.
-                        adjust_local = adjust >> 1
-                    else:
-                        adjust_local = adjust
-                    pDph_t.allodurs[endcnt] += adjust_local
-                    if pDph_t.allodurs[endcnt] <= 6:
-                        pDph_t.allodurs[endcnt] = 6
-                    ncnt += 1
-            endcnt -= 1
-            if endcnt < 0:
-                break
-
-        ncnt = 0
-        stcnt = nphon
-        # reset syldur
-        syldur = 0
-        sonocnt = 0
-
-    _ = phocur
-    return stcnt, endcnt, ncnt, syldur, sonocnt, adjust
-
-
 def _typing_mode_override(
     *,
     phTTS: TtsHandle,
@@ -1053,18 +684,8 @@ def _typing_mode_override(
     feacur: int,
     minsize_in: int,
 ) -> None:
-    """``#ifdef TYPING_MODE`` override (p_us_tim.c lines 1298-1310).
-
-    When the engine is in typing mode, override the just-computed
-    ``allodurs[nphon]`` with a uniform short duration so each phone
-    fires quickly. Sonorants get ``minsize`` (``30 / (nallotot - 1)``,
-    floored at 6); everything else gets 3.
-    """
-    del minsize_in  # always recomputed below; kept for signature parity.
-    # The TtsHandle exposes ``bInTypingMode`` only when the C build
-    # defines TYPING_MODE; the Python port stores it as a bool that
-    # defaults to False, so the override is a no-op until callers set
-    # the flag.
+    """``#ifdef TYPING_MODE`` override (p_us_tim0.c lines 1072-1095)."""
+    del minsize_in
     if not getattr(phTTS, "bInTypingMode", False):
         return
     denom = pDph_t.nallotot - 1
@@ -1073,8 +694,13 @@ def _typing_mode_override(
     minsize = 30 // denom
     if minsize < 6:
         minsize = 6
-    if (feacur & FSON1) and phocur != GEN_SIL:
+    if (feacur & FSONOR) and phocur != GEN_SIL:
         pDph_t.allodurs[nphon] = minsize
+    else:
+        if pDph_t.allophons[nphon] == USP_S:
+            pDph_t.allodurs[nphon] = 5
+        else:
+            pDph_t.allodurs[nphon] = 1
 
 
 __all__ = ["us_phtiming"]
