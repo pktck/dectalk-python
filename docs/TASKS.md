@@ -19,4 +19,3 @@ checklist, and `docs/PLAN.md` for strategic phase context.
 | C source | Python target | Stage | Status | Owner |
 |---|---|---|---|---|
 | `—` | `src/dectalk/api/speak.py` | api | open | — |
-| `—` | `src/dectalk/vtm/seed_speaker_state.py` | vtm | open | — |
