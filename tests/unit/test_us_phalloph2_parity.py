@@ -140,9 +140,7 @@ def test_arpabet_words_to_symbols_leading_sil_then_wbound() -> None:
     assert syms[0] == expected_sil, (
         f"expected leading GEN_SIL ({expected_sil:#x}), got {syms[0]:#x} (issue #200)"
     )
-    assert syms[1] == WBOUND, (
-        f"expected WBOUND after leading GEN_SIL, got {syms[1]:#x}"
-    )
+    assert syms[1] == WBOUND, f"expected WBOUND after leading GEN_SIL, got {syms[1]:#x}"
 
 
 def test_arpabet_words_to_symbols_emits_stress_markers() -> None:
