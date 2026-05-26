@@ -111,7 +111,7 @@ def test_inline_rate_is_absolute_wpm_on_full_pipeline(
     # picks up the same per-clause silence pad regardless of WPM, but
     # it's close enough that we can sanity-check direction + magnitude
     # without depending on exact PH-stage parity). The lower bound was
-    # relaxed from 1.5× to 1.4× after issue #199 re-ported us_phtiming
+    # relaxed from 1.5x to 1.4x after issue #199 re-ported us_phtiming
     # from p_us_tim0.c — the older OLD_INTONATION rule set has slightly
     # different rate-scaling at the slow end.
     assert 1.4 * baseline < rate_90 < 2.5 * baseline, (
