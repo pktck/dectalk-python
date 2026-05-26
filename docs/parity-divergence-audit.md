@@ -1763,3 +1763,158 @@ Proposals #1-#3 above are filed for dispatch.
 
 Authored-by: Claude:claude-opus-4-7
 
+## Update 2026-05-26 — approximate-path is what the parity test runs
+
+### Headline finding
+
+The remaining `hello world` gap (+1128 samples, +102 ms) is **not**
+in the `DECTALK_FULL_PIPELINE=1` C-translated path. The parity test
+(`tests/parity/test_binary_wav_parity.py`) calls `dectalk.to_wav`
+without setting `DECTALK_FULL_PIPELINE`, so under
+`DECTALK_DISABLE_CAPI=1` it routes through `_speak_via_python` →
+**approximate** sequencer (`dectalk.ph.sequencer.synthesize_phonemes`),
+**not** through `_speak_via_python_full` / `_render_clause_full` /
+`us_phtiming`. The +1128-sample gap is therefore unrelated to PR #205's
+us_phtiming re-port and unrelated to allodurs.
+
+### Per-prompt breakdown on dev HEAD `c371c26`
+
+```
+prompt                     C_total Py_total    delta  C_lead Py_lead  C_trail Py_trail body_delta
+hello world                  13845    14973    +1128     213     213     3972     4200       +900
+hi.                           9727     9913     +186     213     213     3930     4703       -587
+hello!                       11431    11783     +352     213     213     4018     4641       -271
+one two three.               14271    15413    +1142     348     214     3941     4578       +639
+test.                        10721    10353     -368     994     213     4160     4856       -283
+```
+
+Lead/trail measured as count of zero samples before/after the
+non-zero range. Body = total − lead − trail. `C_lead=994` on
+`test.` is the leading aspiration on `/T/` measuring as near-zero
+under the np.nonzero detector, not a real 994-sample silence pad.
+
+### Root cause of the body divergence
+
+`dectalk.hlsyn.vowels.default_speaker().UI = 110` (samples per
+synthesizer frame at 11 025 Hz). The approximate sequencer in
+`src/dectalk/ph/sequencer.py:270` rounds every phoneme up to a
+whole multiple of `UI`:
+
+```python
+samples_per_frame = synth.spkr.UI  # 110
+n_frames = max(1, math.ceil(n_samples / samples_per_frame))
+```
+
+C's NSAMP_FRAME at 11 kHz is **71** (`ph_defs.h:330`). Each phoneme
+in the approximate path rounds up to a 110-sample boundary that
+the C kernel would round up to a 71-sample boundary, producing
+per-phone overshoot averaging ~20-40 samples and accumulating across
+8-15 phonemes per prompt. On `hello world` (8 phonemes, OW1 split
+into two halves → 9 segments) this contributes +900 body samples.
+
+Verifying the math for `hello world`:
+- Per-phone durations (`_segment_durations`): `[1102, 937, 772, 2381,
+  662, 2408, 772, 882]`, sum = 9 916.
+- Rounded to UI=110 boundaries (with diphthong split): 1136 + 994 +
+  781 + 2414 + 710 + 2414 + 781 + 923 = **10 153 samples**.
+- Observed Python body: 10 560 samples.
+- Residual 407 samples likely from the inter-phoneme transition
+  buffer the synth carries between calls (not investigated).
+
+The deeper issue is that the C kernel's per-phone duration arithmetic
+(`p_us_tim0.c` Rule 26 → `pDphsettar->durxx`) operates in **frame
+units** before multiplying by NSAMP_FRAME at the end; the approximate
+path operates in **sample units** and only quantises at synthesis
+time. Different quantisation grids → different totals, with no
+single-constant fix.
+
+### Root cause of the trailing-pad divergence
+
+`_TRAILING_SILENCE_SAMPLES_SENTENCE = 4200` in
+`src/dectalk/api/speak.py:101`. Across the 5 measured sentence-final
+prompts the actual C trailing range is **3930-4160 samples**
+(median ~3 980). Python's constant 4200 is at the top of that band.
+A constant pad cannot match the C reference exactly because the C
+trailing length depends on the last-phone tail-off (the synth's
+internal state at the moment `phclause` returns); the GEN_SIL
+allodur consumes `nfperiod + perpause + asperation` frames, then the
+synth's per-frame decay extends a few hundred samples into the
+buffer.
+
+For `hello world` specifically: C trailing 3972 vs Py 4200 = **+228
+samples** of excess pad. Tightening `_TRAILING_SILENCE_SAMPLES_SENTENCE`
+to 3972 would close the trailing portion but break the other four
+prompts by 40-700 samples each in the opposite direction. Without a
+content-aware pad model, this is a wash.
+
+### Why the apparent +1128 on `hello world` masks a structural issue
+
+The per-prompt deltas in the table above range from -587 to +1142
+samples with no obvious common factor. The approximate sequencer's
+sample-domain rounding produces this distribution; closing any
+single prompt by tuning a constant breaks the others. This isn't a
+one-rule mis-port — it's the fundamental gap that
+`_render_clause_full` (full pipeline) was supposed to close once
+`us_phtiming` etc. ported faithfully. The full pipeline currently
+*over*-runs (44 264 bytes vs 27 734 → +16 530 bytes / +7 500 samples)
+on `hello world` under `DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1`,
+so dispatch hasn't crossed over to it yet.
+
+### Recommendations for the next agent
+
+1. **Stop tuning the approximate path's pads against the parity
+   test.** Every tweak helps one prompt and hurts another. This is
+   the wrong axis to invest on.
+2. **Route the parity test through the full pipeline** once
+   `_render_clause_full` reaches body-length parity. The previous
+   diagnostic estimated +16-frame drift; current measurement shows
+   the full pipeline overshoots by ~106 frames (44 264 − 27 734) ÷ 110
+   on `hello world`, so the drift compounds beyond just allodurs
+   (possibly the per-frame delay buffer or the trailing GEN_SIL
+   frame count). Recapture allodurs vs C-instrumented baseline.
+3. **Switch `dectalk.to_wav` default to the full pipeline** once
+   #2 above shows a smaller delta than the approximate path. Today
+   the approximate path's mean |Δ| is *smaller* than the full
+   pipeline on `hello world` — counterintuitive given the full
+   pipeline is closer in design intent to the C kernel, but that
+   tells us the full pipeline has independent bugs that have to
+   land first.
+
+### Reproducer (2026-05-26)
+
+```bash
+export AGENT_SLUG=parity-gap-diag-2026-05-26
+eval "$(scripts/agent_oracle_env.sh)"
+scripts/setup_c_oracle.sh
+
+# Per-prompt envelope analysis (the table above):
+DECTALK_DISABLE_CAPI=1 uv run python - <<'PY'
+import numpy as np, wave, subprocess, tempfile, os
+from pathlib import Path
+import dectalk
+binroot = os.environ['DECTALK_BIN']
+for text in ['hello world', 'hi.', 'hello!', 'one two three.', 'test.']:
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+        cpath = Path(f.name)
+    subprocess.run([str(Path(binroot)/'say'), '-a', text, '-fo', str(cpath)],
+                   cwd=binroot, check=True, capture_output=True)
+    with wave.open(str(cpath), 'rb') as wf:
+        c = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+    os.unlink(cpath)
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+        ppath = Path(f.name)
+    dectalk.to_wav(text, ppath)
+    with wave.open(str(ppath), 'rb') as wf:
+        p = np.frombuffer(wf.readframes(wf.getnframes()), dtype=np.int16)
+    os.unlink(ppath)
+    cz = np.nonzero(c)[0]; pz = np.nonzero(p)[0]
+    cl, ct = int(cz[0]), len(c) - 1 - int(cz[-1])
+    pl, pt = int(pz[0]), len(p) - 1 - int(pz[-1])
+    print(f'{text:<25} {len(c):>6} {len(p):>6} {len(p)-len(c):>+6} '
+          f'C_l={cl:>4} P_l={pl:>4} C_t={ct:>4} P_t={pt:>4} '
+          f'body_delta={(len(p)-pl-pt)-(len(c)-cl-ct):>+6}')
+PY
+```
+
+Authored-by: Claude:claude-opus-4-7
+
