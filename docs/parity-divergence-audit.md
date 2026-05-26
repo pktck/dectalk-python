@@ -1763,3 +1763,141 @@ Proposals #1-#3 above are filed for dispatch.
 
 Authored-by: Claude:claude-opus-4-7
 
+## Update 2026-05-26 (b) — `DECTALK_FULL_PIPELINE=1 + DECTALK_USE_VTM1=1` measurement
+
+### Headline
+
+The vtm1-synth combo (`DECTALK_FULL_PIPELINE=1` + `DECTALK_USE_VTM1=1`)
+closes ~95 % of the hlsyn-UI=110 gap on `hello world` (8265 → 426
+samples) but does **not** clear the <200-sample acceptance bar.
+Default routing of `dectalk.to_wav` therefore stays on the approximate
+sequencer for now. Closing the remaining gap is a per-prompt body-
+length porting task, not a one-constant tweak.
+
+### Measurements: 5-prompt corpus, `DECTALK_DISABLE_CAPI=1`
+
+Each cell is `Py_total (Py - C)`:
+
+```
+prompt              C_bin     baseline   FULL_PIPELINE=1   USE_VTM1=1   FULL+USE_VTM1
+hello world         13845     14973 (+1128)  22110 (+8265)  14973 (+1128)  14271 (+426)
+hi.                  9727      9913  (+186)  13750 (+4023)   9913  (+186)   8875 (-852)
+hello!              11431     11783  (+352)  16060 (+4629)  11783  (+352)  10366 (-1065)
+one two three.      14271     15413 (+1142)  20020 (+5749)  15413 (+1142)  12922 (-1349)
+test.               10721     10353  (-368)  15070 (+4349)  10353  (-368)   9727  (-994)
+```
+
+Observations:
+- `USE_VTM1=1` **alone** is a no-op vs baseline. The flag only takes
+  effect inside `_speak_via_python_full`, so without
+  `DECTALK_FULL_PIPELINE=1` it never reaches `pump_frames_via_vtm1`.
+- `FULL_PIPELINE=1` alone overshoots wildly (+4 k to +8 k) because the
+  hlsyn back-end uses `UI=110` samples/frame while the C binary
+  ships with `vtm1` at NSAMP_FRAME=71.
+- `FULL_PIPELINE=1 + USE_VTM1=1` drops the gap to a tight band
+  (-1349 to +426). The hlsyn UI=110 path is gone; the residual is
+  per-prompt body-length drift in the PH pipeline plus a small
+  envelope offset.
+
+### Envelope decomposition for FULL+VTM1
+
+```
+prompt              C_n   Py_n  delta  C_l  P_l   C_t   P_t  body_d
+hello world         13845 14271  +426  213  142  3972  3809   +660
+hi.                  9727  8875  -852  213  142  3930  3884   -735
+hello!              11431 10366 -1065  213  142  4018  3878   -854
+one two three.      14271 12922 -1349  348  142  3941  3921  -1123
+test.               10721  9727  -994  994  994  4160  4160   -994
+```
+
+(`*_l` = leading-zero samples; `*_t` = trailing-zero samples;
+`body_d = (Py_n - Py_l - Py_t) - (C_n - C_l - C_t)`.)
+
+Structural findings:
+- **Leading**: Py path emits ~142 samples of leading silence vs C's
+  213 (off by ~71 = one NSAMP_FRAME). `test.` is the outlier where
+  the C measurement of 994 picks up the unvoiced /T/ aspiration as
+  near-zero (Py matches).
+- **Trailing**: Py trailing is within 20-163 samples of C across
+  all four sentence-terminated prompts -- tight. The phinton-
+  injected schwa appears to be doing the right thing here.
+- **Body**: Py body ranges +660 (over) to -1123 (under). No single-
+  constant pad can close this; the source of the residual is per-
+  phone duration accounting in the ported PH stage (allodurs +
+  per-frame loop interaction).
+
+### Decision
+
+Acceptance criterion for switching the `to_wav` default was
+**<200 samples on `hello world`**. `FULL+VTM1` delivers **+426**,
+which fails the bar. Keep the current default routing.
+
+### Recommendations for the next agent
+
+1. **Don't switch the default to FULL+VTM1 yet.** The improvement on
+   `hello world` is real (+8265 → +426) but body-length drift on the
+   other four prompts (-852 to -1349) means the global parity error
+   would *grow* on the sentence-terminated subset.
+2. **Hunt the body-length drift in the PH stage.** Compare allodurs
+   row-by-row between the C oracle and the Python `us_phtiming`
+   output for each of the five prompts; the +660 / -1123 deltas
+   should fall out of an allodur mismatch on specific phonemes.
+3. **Move the leading-silence pad into `_speak_via_python_full`.**
+   The full pipeline emits ~142 samples of leading silence vs the
+   C kernel's 213. Prepending one more ~71-sample frame of silence
+   in `_render_clause_full` would close that ~71-sample piece on
+   all five prompts and reduce overall envelope error by ~71
+   samples each; not enough on its own but a clean low-risk win.
+4. **Once body drift is <200 on `hello world`, flip the default.**
+   The single-line change is at `src/dectalk/api/speak.py:965` --
+   route through `_speak_via_python_full` unconditionally for
+   `lang=="us"`, and set `DECTALK_USE_VTM1` semantics so the vtm1
+   path is the default within the full pipeline.
+
+### Reproducer (2026-05-26)
+
+```bash
+export AGENT_SLUG=vtm1-default-eval
+eval "$(scripts/agent_oracle_env.sh)"
+scripts/setup_c_oracle.sh
+
+# 4-combo total-samples measurement (table above):
+uv run python - <<'PY'
+import os, subprocess, sys, tempfile, wave
+from pathlib import Path
+BIN = Path(os.environ["DECTALK_BIN"])
+
+def wav_n(p): 
+    with wave.open(str(p), "rb") as w: return w.getnframes()
+
+def cnt_bin(t):
+    with tempfile.TemporaryDirectory() as td:
+        o = Path(td)/"b.wav"
+        subprocess.run([str(BIN/"say"),"-a",t,"-fo",str(o)], cwd=str(BIN),
+                       check=True, capture_output=True)
+        return wav_n(o)
+
+def cnt_py(t, env):
+    e = {**os.environ, **env, "DECTALK_DISABLE_CAPI":"1"}
+    with tempfile.TemporaryDirectory() as td:
+        o = Path(td)/"p.wav"
+        r = subprocess.run([sys.executable,"-c",
+            f"import dectalk;dectalk.to_wav({t!r},{str(o)!r})"],
+            env=e, capture_output=True, text=True, check=False)
+        if r.returncode: return -1
+        return wav_n(o)
+
+CFG = [("baseline",{}),
+       ("FULL",{"DECTALK_FULL_PIPELINE":"1"}),
+       ("VTM1",{"DECTALK_USE_VTM1":"1"}),
+       ("FULL+VTM1",{"DECTALK_FULL_PIPELINE":"1","DECTALK_USE_VTM1":"1"})]
+for t in ["hello world","hi.","hello!","one two three.","test."]:
+    c = cnt_bin(t); cells=[]
+    for n,e in CFG:
+        p = cnt_py(t,e); d = p-c if p>=0 else None
+        cells.append(f"{p}({'+'if d and d>0 else ''}{d})")
+    print(f"{t:<20} C={c:<6}", " ".join(f"{n}={c}" for n,c in zip([x[0] for x in CFG],cells)))
+PY
+```
+
+Authored-by: Claude:claude-opus-4-7
