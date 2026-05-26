@@ -106,12 +106,15 @@ def test_inline_rate_is_absolute_wpm_on_full_pipeline(
         f"100→{rate_100} 180→{rate_180} 250→{rate_250} 360→{rate_360}"
     )
 
-    # 3. Half-speed roughly doubles the audio (within ±25% — the
+    # 3. Half-speed roughly doubles the audio (within ±35% — the
     # phoneme-duration table interpolation isn't perfectly linear and
     # picks up the same per-clause silence pad regardless of WPM, but
     # it's close enough that we can sanity-check direction + magnitude
-    # without depending on exact PH-stage parity).
-    assert 1.5 * baseline < rate_90 < 2.5 * baseline, (
+    # without depending on exact PH-stage parity). The lower bound was
+    # relaxed from 1.5× to 1.4× after issue #199 re-ported us_phtiming
+    # from p_us_tim0.c — the older OLD_INTONATION rule set has slightly
+    # different rate-scaling at the slow end.
+    assert 1.4 * baseline < rate_90 < 2.5 * baseline, (
         f"[:rate 90] should be ~2x baseline; got {rate_90} vs {baseline}"
     )
 

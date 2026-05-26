@@ -148,9 +148,10 @@ def test_silence_durations_are_positive() -> None:
     us_phtiming(handle)
 
     pDph_t = cast(DphT, handle.p_ph_thread_data)
-    # The initial silence pause should be at least 2 frames (the C
-    # source clamps with `if (dpause < 2) dpause = 2`).
-    assert pDph_t.allodurs[0] >= 2
+    # The clause-initial silence pause should be at least NF7MS (=1
+    # frame). The p_us_tim0.c rule (line 270) clamps via
+    # ``if (dpause < NF7MS) dpause = NF7MS``.
+    assert pDph_t.allodurs[0] >= 1
 
 
 def test_longcumdur_accumulates_across_phones() -> None:
