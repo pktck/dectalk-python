@@ -149,7 +149,6 @@ from dectalk.ph.phoneme_features import (
     FPLOSV,
     FSON1,
     FSON2,
-    FSONCON,
     FSONOR,
     FSYLL,
     FVOICD,
@@ -226,7 +225,7 @@ def us_phtiming(phTTS: TtsHandle) -> None:
     strucstresscur: int = 0
     dpause: int = 0
     arg1: int = 0
-    arg2: int = 0
+    arg2: int = 0  # noqa: F841  # C-source-fidelity placeholder
 
     minsize: int = 0  # TYPING_MODE
 
@@ -280,9 +279,8 @@ def us_phtiming(phTTS: TtsHandle) -> None:
 
             # Rule 1: Pause durations depend on syntax.
             if phocur == GEN_SIL:
-                if (
-                    ((pDphsettar.feanex & FVOICD) and (pDphsettar.feanex & FOBST))
-                    or (pDphsettar.feanex & FPLOSV)
+                if ((pDphsettar.feanex & FVOICD) and (pDphsettar.feanex & FOBST)) or (
+                    pDphsettar.feanex & FPLOSV
                 ):
                     dpause = 1
                 else:
@@ -338,18 +336,13 @@ def us_phtiming(phTTS: TtsHandle) -> None:
 
             # Rule 3: Shortening of non-phrase-final syllabics.
             if feasyllabiccur:
-                if (strucboucur < FVPNEXT and pKsd_t.sprate > 160) or (
-                    strucboucur < FPPNEXT
-                ):
+                if (strucboucur < FVPNEXT and pKsd_t.sprate > 160) or (strucboucur < FPPNEXT):
                     prcnt = mlsh1(N70PRCNT, prcnt)
 
             # Rule 4: Shorten syllabic segs in syll-init / medial /
             # unstressed monosyl positions.
             if feasyllabiccur:
-                if (
-                    not (strucstresscur & FSTRESS_1)
-                    and (struccur & FTYPESYL) == FMONOSYL
-                ):
+                if not (strucstresscur & FSTRESS_1) and (struccur & FTYPESYL) == FMONOSYL:
                     arg1 = N85PRCNT
                     if not strucstresscur:
                         arg1 = N70PRCNT
@@ -367,11 +360,7 @@ def us_phtiming(phTTS: TtsHandle) -> None:
 
             # Rule 6: Shortening of non-word-initial consonants.
             if not feasyllabiccur and not (struccur & FWINITC):
-                if (
-                    (feacur & FOBST)
-                    and not (feacur & FPLOSV)
-                    and (struccur & FBOUNDARY) == FWBNEXT
-                ):
+                if (feacur & FOBST) and not (feacur & FPLOSV) and (struccur & FBOUNDARY) == FWBNEXT:
                     deldur += NF20MS
                 else:
                     prcnt = mlsh1(prcnt, N85PRCNT)
@@ -403,17 +392,11 @@ def us_phtiming(phTTS: TtsHandle) -> None:
             else:
                 # Penultimate lengthening of stressed syllabic with hat-fall.
                 if feasyllabiccur:
-                    if (
-                        (struccur & FHAT_ENDS)
-                        and strucboucur < FVPNEXT
-                        and strucboucur > FMBNEXT
-                    ):
+                    if (struccur & FHAT_ENDS) and strucboucur < FVPNEXT and strucboucur > FMBNEXT:
                         deldur = deldur + NF25MS
 
             # Rule 8: Lengthen each seg of an emphasized syllable.
-            if (struccur & FWINITC) or (
-                feasyllabiccur and strucstresscur != FEMPHASIS
-            ):
+            if (struccur & FWINITC) or (feasyllabiccur and strucstresscur != FEMPHASIS):
                 emphasissw = 0
             if strucstresscur == FEMPHASIS:
                 emphasissw = 1
@@ -508,9 +491,11 @@ def us_phtiming(phTTS: TtsHandle) -> None:
                                 goto_break3 = True
                         if not goto_break3:
                             prcnt = mlsh1(arg1, prcnt)
-                    if (not goto_break3) and (fealas & FCONSON) and (
-                        struclas & FBOUNDARY
-                    ) < FVPNEXT:
+                    if (
+                        (not goto_break3)
+                        and (fealas & FCONSON)
+                        and (struclas & FBOUNDARY) < FVPNEXT
+                    ):
                         arg1 = N70PRCNT
                         durmin -= durmin >> 2
                         if feacur & FPLOSV:
