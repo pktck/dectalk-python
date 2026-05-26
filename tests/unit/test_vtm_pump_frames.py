@@ -72,11 +72,16 @@ def _make_parstochip_frame(av_db: int = 65, ph_value: int = 1) -> list[int]:
 
 
 class TestSeedSpeakerState:
-    def test_sample_rate_other_than_11025_raises(self) -> None:
+    def test_8khz_path_sets_51_samples_per_frame(self) -> None:
+        """MULAW_SAMPLE_RATE (8000 Hz) → 51 samples/frame (vtm1.c line 2061)."""
         state = SynthState()
-        chip = default_us_paul_spd()
-        with pytest.raises(NotImplementedError, match="11025"):
-            seed_speaker_state(state, chip, sample_rate=8000)
+        seed_speaker_state(state, default_us_paul_spd(), sample_rate=8000)
+        assert state.uiNumberOfSamplesPerFrame == 51
+        assert state.bEightKHz is True
+        assert state.rate_scale == 26214
+        assert state.inv_rate_scale == 20480
+        # noiseb takes the SAMPLE_RATE_DECREASE branch (-1873).
+        assert state.noiseb == -1873
 
     def test_11k_path_sets_71_samples_per_frame(self) -> None:
         state = SynthState()
@@ -173,12 +178,17 @@ class TestPumpFramesViaVtm1:
         b = pump_frames_via_vtm1(list(frames))
         np.testing.assert_array_equal(a, b)
 
-    def test_unsupported_sample_rate_raises(self) -> None:
-        with pytest.raises(NotImplementedError):
-            pump_frames_via_vtm1(
-                [_make_parstochip_frame()],
-                sample_rate=8000,
-            )
+    def test_8khz_path_produces_51_samples_per_frame(self) -> None:
+        """MULAW_SAMPLE_RATE (8000 Hz) → 51 samples/frame; pump should drive
+        the SAMPLE_RATE_DECREASE branch of speech_waveform_generator end
+        to end without errors.
+        """
+        out = pump_frames_via_vtm1(
+            [_make_parstochip_frame(av_db=55) for _ in range(3)],
+            sample_rate=8000,
+        )
+        assert out.shape == (3 * 51,)
+        assert out.dtype == np.int16
 
     def test_output_within_int16_range(self) -> None:
         frames = [_make_parstochip_frame(av_db=65) for _ in range(10)]

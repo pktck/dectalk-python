@@ -24,6 +24,8 @@ from dectalk.ph.spdef_chip import SpdChip
 from dectalk.vtm.amp_table import amptable
 from dectalk.vtm.frac import frac1mul
 from dectalk.vtm.resonator import (
+    NO_SAMPLE_RATE_CHANGE,
+    SAMPLE_RATE_DECREASE,
     SAMPLE_RATE_INCREASE,
     d2pole_cf45,
     d2pole_pf,
@@ -34,23 +36,49 @@ from dectalk.vtm.synth_state import SynthState
 # routes audio through (see ``dectalkf_klsyn.h`` ``PC_SAMPLE_RATE``).
 PC_SAMPLE_RATE: int = 11025
 
-# Q14 rate scaler at 11025 Hz (``frac1mul(rate_scale, ...) << 1`` reverses
-# the half-step to give a Q15 product). See ``vtm1.c::SetSampleRate``
-# lines 2024-2044.
-_RATE_SCALE_11025: int = 18063
-_INV_RATE_SCALE_11025: int = 29722
+# 8 kHz mu-law sample rate (``samprate.h`` line 12, ``MULAW_SAMPLE_RATE``).
+MULAW_SAMPLE_RATE: int = 8000
+
+# Q15 rate scalers at 8 kHz (``vtm1.c::SetSampleRate`` lines 2058-2059).
+# rate_scale = 0.8 in Q15, inv_rate_scale = 1.25 in Q14. The 11 kHz
+# values (18063 / 29722) are computed from the C formulae below rather
+# than hard-coded, so PC_SAMPLE_RATE changes flow through automatically.
+_RATE_SCALE_8000: int = 26214
+_INV_RATE_SCALE_8000: int = 20480
 
 # Hard-coded constants from ``vtm1.c::read_speaker_definition`` body.
 _NASAL_FNP_FIXED: int = 290  # line 1635: fixed nasal pole frequency
 _NASAL_BNP_FIXED: int = 70  # line 1637: fixed nasal pole bandwidth
 _LOWPASS_FLP_11K: int = 948  # line 1674 (PC_SAMPLE_RATE == 11025 branch)
 _LOWPASS_BLP_11K: int = 615  # line 1675
+_LOWPASS_FLP_8K: int = 698  # line 1685 (SAMPLE_RATE_DECREASE branch)
+_LOWPASS_BLP_8K: int = 453  # line 1686
+_LOWPASS_FLP_DEFAULT: int = 860  # line 1693 (NO_SAMPLE_RATE_CHANGE default)
+_LOWPASS_BLP_DEFAULT: int = 558  # line 1694
 _LOWPASS_RLPG: int = 2400  # line 1680: Q4.12 -> 0.5859375
 _PARALLEL_B4P: int = 400  # line 1725
 _PARALLEL_B5P: int = 500  # line 1734
 _R6PB_AT_11K: int = -5702  # line 1759
 _R6PC_AT_11K: int = -1995  # line 1760
 _NOISEB_INCREASE: int = -2913  # lines 1582 / 1598 (Q4.12 -> -0.711...)
+_NOISEB_DECREASE: int = -1873  # line 1590 (Q4.12 -> -0.457...)
+
+
+def _classify_sample_rate(sample_rate: int) -> int:
+    """Return the ``uiSampleRateChange`` enum for ``sample_rate``.
+
+    Mirrors the ``if/else`` tree in ``vtm1.c::SetSampleRate`` lines
+    2003-2065. PC_SAMPLE_RATE (11025) gives ``SAMPLE_RATE_INCREASE``
+    on the active linux build (the ``#if PC_SAMPLE_RATE == 10000``
+    branch sets NO_SAMPLE_RATE_CHANGE, but is not the configured one).
+    MULAW_SAMPLE_RATE (8000) gives ``SAMPLE_RATE_DECREASE``. Anything
+    else falls back to ``NO_SAMPLE_RATE_CHANGE``.
+    """
+    if sample_rate == PC_SAMPLE_RATE:
+        return SAMPLE_RATE_INCREASE
+    if sample_rate == MULAW_SAMPLE_RATE:
+        return SAMPLE_RATE_DECREASE
+    return NO_SAMPLE_RATE_CHANGE
 
 
 # ruff: noqa: PLR0915  -- this function intentionally inlines the whole
@@ -78,26 +106,46 @@ def seed_speaker_state(
             ``r2ca``/``r1ca``/``nopen1``/``nopen2``/``aturb``/
             ``fnscale``/``afgain``/``rnpgain``/``azgain``/``apgain``/
             ``t0jit`` attributes are read.
-        sample_rate: Output sample rate in Hz. Currently only 11025 is
-            supported -- the rate-change branch is keyed off this.
+        sample_rate: Output sample rate in Hz. ``PC_SAMPLE_RATE`` (11025)
+            and ``MULAW_SAMPLE_RATE`` (8000) take the
+            ``SAMPLE_RATE_INCREASE`` / ``SAMPLE_RATE_DECREASE`` branches
+            of ``SetSampleRate`` respectively. Anything else falls into
+            the ``NO_SAMPLE_RATE_CHANGE`` branch, which mirrors the C
+            ``else`` arm and leaves ``rate_scale`` /
+            ``uiNumberOfSamplesPerFrame`` at their dataclass defaults.
 
     Returns:
         None. ``state`` is updated in place.
     """
-    if sample_rate != PC_SAMPLE_RATE:
-        raise NotImplementedError(
-            f"seed_speaker_state currently supports only {PC_SAMPLE_RATE} Hz; "
-            f"got {sample_rate}. The 8 kHz / 10 kHz branches of "
-            f"vtm1.c::SetSampleRate would need wiring."
-        )
-
-    # --- SetSampleRate (vtm1.c lines 2024-2044) --------------------------
+    # --- SetSampleRate (vtm1.c lines 1986-2069) --------------------------
+    # The C function uses pKsd_t->uiSampleRate for the formulae. The
+    # Python equivalent stores the float ``SampleRate`` on ``state``.
     state.SampleRate = float(sample_rate)
-    state.uiSampleRateChange = SAMPLE_RATE_INCREASE
-    state.rate_scale = _RATE_SCALE_11025
-    state.inv_rate_scale = _INV_RATE_SCALE_11025
-    state.uiNumberOfSamplesPerFrame = ((sample_rate * 64) + 5000) // 10000
-    state.bEightKHz = False
+    rate_change = _classify_sample_rate(sample_rate)
+    state.uiSampleRateChange = rate_change
+
+    if sample_rate == PC_SAMPLE_RATE:
+        # vtm1.c lines 2003-2046: the PC_SAMPLE_RATE branch. Note the
+        # ``+5000`` / ``+10000/2`` rounding mirrors the C integer math.
+        state.bEightKHz = False
+        # The active linux build defines PC_SAMPLE_RATE == 11025, so the
+        # ``#if PC_SAMPLE_RATE == 10000`` arm is not the configured one
+        # and we always emit SAMPLE_RATE_INCREASE (set above).
+        # rate_scale = round((1<<14) * sample_rate / 10000)
+        state.rate_scale = (((1 << 14) * sample_rate) + 5000) // 10000
+        # inv_rate_scale = round((1<<15) * 10000 / sample_rate)
+        state.inv_rate_scale = ((1 << 15) * 10000 + sample_rate // 2) // sample_rate
+        state.uiNumberOfSamplesPerFrame = ((sample_rate * 64) + 5000) // 10000
+    elif sample_rate == MULAW_SAMPLE_RATE:
+        # vtm1.c lines 2049-2061: the MULAW_SAMPLE_RATE branch.
+        state.bEightKHz = True
+        state.rate_scale = _RATE_SCALE_8000
+        state.inv_rate_scale = _INV_RATE_SCALE_8000
+        state.uiNumberOfSamplesPerFrame = 51
+    # else: NO_SAMPLE_RATE_CHANGE — vtm1.c lines 2063-2065 leave
+    # rate_scale / inv_rate_scale / uiNumberOfSamplesPerFrame untouched.
+    # The dataclass defaults (11 kHz values) carry through, matching
+    # the C behaviour of running whatever was last loaded.
 
     # --- read_speaker_definition zero-init (lines 1503-1554) -------------
     state.ldspdef = 1  # flag: just loaded a speaker def (eab 10/96)
@@ -142,7 +190,11 @@ def seed_speaker_state(
         setattr(state, field, 0)
 
     # --- Noise filter coefficients (lines 1578-1607) ----------------------
-    state.noiseb = _NOISEB_INCREASE
+    # SAMPLE_RATE_DECREASE → -1873; INCREASE / NO_SAMPLE_RATE_CHANGE → -2913.
+    if rate_change == SAMPLE_RATE_DECREASE:
+        state.noiseb = _NOISEB_DECREASE
+    else:
+        state.noiseb = _NOISEB_INCREASE
 
     # --- Parallel 6th formant (lines 1759-1760) --------------------------
     state.r6pb = _R6PB_AT_11K
@@ -161,11 +213,23 @@ def seed_speaker_state(
     state.rnpc = rnpc
 
     # --- Down-sampling low-pass filter (lines 1669-1699) -----------------
+    # Per-rate flp/blp constants; rlpg is invariant.
+    if rate_change == SAMPLE_RATE_INCREASE:
+        # PC_SAMPLE_RATE == 11025 branch: hard-coded 948/615 (= 860 *
+        # 1.1025 / 558 * 1.1025).
+        flp = _LOWPASS_FLP_11K
+        blp = _LOWPASS_BLP_11K
+    elif rate_change == SAMPLE_RATE_DECREASE:
+        flp = _LOWPASS_FLP_8K
+        blp = _LOWPASS_BLP_8K
+    else:
+        flp = _LOWPASS_FLP_DEFAULT
+        blp = _LOWPASS_BLP_DEFAULT
     rlpa, rlpb, rlpc = d2pole_pf(
         state.inv_rate_scale,
         state.uiSampleRateChange,
-        _LOWPASS_FLP_11K,
-        _LOWPASS_BLP_11K,
+        flp,
+        blp,
         _LOWPASS_RLPG,
     )
     state.rlpa = rlpa
@@ -203,8 +267,13 @@ def seed_speaker_state(
     # --- Jitter parameter (lines 1780-1804) ------------------------------
     t0jit = int(spd_chip.t0jit)
     state.t0jitr = t0jit  # initial sign branch: t0jitr starts at 0 (>= 0)
-    # Scale for the 11 kHz rate increase:
-    state.t0jitr = frac1mul(state.rate_scale, state.t0jitr) << 1
+    # Rate-scaling switch: INCREASE takes the half-step << 1 path
+    # (Q14 → Q15); DECREASE keeps the half-step (Q15 → Q15);
+    # NO_SAMPLE_RATE_CHANGE leaves the value alone.
+    if rate_change == SAMPLE_RATE_INCREASE:
+        state.t0jitr = frac1mul(state.rate_scale, state.t0jitr) << 1
+    elif rate_change == SAMPLE_RATE_DECREASE:
+        state.t0jitr = frac1mul(state.rate_scale, state.t0jitr)
 
     # --- Cascade resonator gains (lines 1811-1824) -----------------------
     state.R5ca = amptable[int(spd_chip.r5ca)]
@@ -231,4 +300,4 @@ def seed_speaker_state(
     state.SpeakerGain = int(spd_chip.osgain)
 
 
-__all__ = ["PC_SAMPLE_RATE", "seed_speaker_state"]
+__all__ = ["MULAW_SAMPLE_RATE", "PC_SAMPLE_RATE", "seed_speaker_state"]
