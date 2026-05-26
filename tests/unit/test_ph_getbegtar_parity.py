@@ -2,8 +2,8 @@
 
 Re-parses the C body via brace-depth tracking and asserts the
 beginning-of-phone target lookup still exists in the develop branch
-with its expected ``gettar`` delegation and diphthong handling. Also
-checks the Python shim raises ``NotImplementedError`` as documented.
+with its expected ``gettar`` delegation, diphthong handling, and
+per-language ``*_special_coartic`` dispatch.
 
 Skips cleanly when ``DECTALK_SRC`` / ``/tmp/dectalk-src`` is absent.
 """
@@ -19,6 +19,7 @@ import pytest
 
 from dectalk.include.usp_codes import USP_AA, USP_N
 from dectalk.kernel.ksd_t import KsdT
+from dectalk.ph import getbegtar as getbegtar_mod
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.getbegtar import getbegtar
@@ -143,3 +144,17 @@ def test_form_freq_path_executable() -> None:
     # Confirm us_special_coartic wasn't invoked: par_type would be 3.
     settar = cast(DphSettarSt, cast(DphT, handle.p_ph_thread_data).pSTphsettar)
     assert settar.par_type == 3
+
+
+def test_no_unported_branches() -> None:
+    """The Python shim should not raise NotImplementedError for any font.
+
+    Since gr/la/sp_special_coartic are all ported, getbegtar should
+    dispatch into them rather than raise for non-US fonts. We verify
+    by inspecting the source for the absence of NotImplementedError.
+    """
+    assert getbegtar_mod.__file__ is not None
+    src = Path(getbegtar_mod.__file__).read_text(encoding="utf-8")
+    assert "raise NotImplementedError" not in src, (
+        "getbegtar still has an unported NotImplementedError branch"
+    )

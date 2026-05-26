@@ -2,8 +2,7 @@
 
 Re-parses the C body via brace-depth tracking and asserts the
 end-of-phone target lookup still exists in the develop branch with
-its expected diph-table walk and per-language coartic. Also checks
-the Python shim raises ``NotImplementedError`` as documented.
+its expected diph-table walk and per-language coartic.
 
 Skips cleanly when ``DECTALK_SRC`` / ``/tmp/dectalk-src`` is absent.
 """
@@ -19,6 +18,7 @@ import pytest
 
 from dectalk.include.usp_codes import USP_AA, USP_N
 from dectalk.kernel.ksd_t import KsdT
+from dectalk.ph import getendtar as getendtar_mod
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.getendtar import getendtar
@@ -153,3 +153,16 @@ def test_diphthong_walk_returns_last_diph_entry() -> None:
     # plus us_special_coartic delta (which is 0 for AA at F1 with all
     # GEN_SIL neighbours -- AA is not in any of the rule predicates).
     assert getendtar(handle, 1) == 800
+
+
+def test_no_unported_branches() -> None:
+    """The Python shim should not raise NotImplementedError for any font.
+
+    Since gr/la/sp_special_coartic are all ported, getendtar should
+    dispatch into them rather than raise for non-US fonts.
+    """
+    assert getendtar_mod.__file__ is not None
+    src = Path(getendtar_mod.__file__).read_text(encoding="utf-8")
+    assert "raise NotImplementedError" not in src, (
+        "getendtar still has an unported NotImplementedError branch"
+    )
