@@ -372,6 +372,14 @@ def phalloph2(
             ``QUEST`` so ``phsort`` sets ``cbsymbol = 1`` (which
             ``phinton`` reads to switch to question-final rising
             intonation).
+        is_exclamation: ``True`` if the sentence ends in ``!``;
+            emits ``EXCLAIM`` instead of ``PERIOD`` so
+            ``all_phsort``'s C-line-1311 hook calls
+            :func:`raise_last_stress` (promotes the last ``S1``
+            marker to ``SEMPH`` / ``FEMPHASIS`` and drives
+            ``us_phtiming`` Rule 8's +60 ms emphasis bump per
+            issue #212). ``is_question`` takes precedence if both
+            flags are set.
     """
     from dectalk.ph.dph_t import DphT  # noqa: PLC0415
 
