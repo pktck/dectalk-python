@@ -553,6 +553,20 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
         lang=lang,
         lts_fallback=lts_fallback,
     )
+    # A trailing PAUSE_LONG / PAUSE_SHORT token (sentence-final ``.`` /
+    # ``!`` / ``?``) was lowered into a synthetic ``["SIL"]`` word by
+    # ``_tokens_to_phoneme_words``. The PH-stage chain below
+    # (:func:`phalloph2`) already emits the trailing GEN_SIL via its
+    # ``is_sentence_final`` PERIOD marker. Leaving the synthetic SIL
+    # word in place causes ``all_phsort`` to emit TWO trailing GEN_SIL
+    # phones instead of one — visible as an extra ``allodurs[-2]=1``
+    # slot ahead of the long-pause slot in the per-allophone duration
+    # trace. The C oracle on ``hi.`` produces ``nallotot=4`` while the
+    # Python pipeline produces ``nallotot=5`` until this entry is
+    # stripped.  Detect that case and drop the synthetic pause word so
+    # the trailing-SIL count matches C.
+    while arpabet_words and arpabet_words[-1] == ["SIL"]:
+        arpabet_words.pop()
     arpabet_phones = [name for word in arpabet_words for name in word]
     if not arpabet_phones:
         return np.zeros(0, dtype=np.int16)
