@@ -58,6 +58,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from dectalk.include.phoneme_codes import (
+    EXCLAIM,
     PERIOD,
     PFUSA,
     QUEST,
@@ -180,6 +181,7 @@ def _arpabet_words_to_symbols(
     *,
     is_sentence_final: bool = True,
     is_question: bool = False,
+    is_exclamation: bool = False,
 ) -> tuple[list[int], int]:
     """Convert ARPABET word groups to a DECtalk ``symbols[]`` stream.
 
@@ -204,8 +206,12 @@ def _arpabet_words_to_symbols(
        allophone code with the US font shifted into the high byte.
     3. Emits a ``WBOUND`` between adjacent words (but not after the
        last word, where the sentence-end marker goes instead).
-    4. Closes with ``PERIOD`` (declarative) or ``QUEST`` (yes/no
-       question) per the caller's flags.
+    4. Closes with ``PERIOD`` (declarative), ``QUEST`` (yes/no
+       question), or ``EXCLAIM`` (exclamation) per the caller's flags.
+       ``EXCLAIM`` triggers ``all_phsort``'s ``raise_last_stress`` —
+       promoting the last ``S1`` marker to ``SEMPH`` (= ``FEMPHASIS``)
+       so ``us_phtiming`` Rule 8 adds +60 ms per emphasised syllable
+       (issue #212).
 
     Args:
         arpabet_words: ARPABET word groups in clause order. Pause
@@ -219,6 +225,10 @@ def _arpabet_words_to_symbols(
         is_question: ``True`` if the sentence ends in ``?`` — emits
             ``QUEST`` instead of ``PERIOD``. Mutually exclusive with
             ``is_sentence_final == False``.
+        is_exclamation: ``True`` if the sentence ends in ``!`` —
+            emits ``EXCLAIM`` instead of ``PERIOD``. ``EXCLAIM`` and
+            ``QUEST`` are mutually exclusive; ``QUEST`` takes
+            precedence if both are set.
 
     Returns:
         ``(symbols, nsymbtot)`` — the populated stream and its
@@ -283,9 +293,20 @@ def _arpabet_words_to_symbols(
 
     # Sentence-end marker. WBOUND-before-PERIOD is redundant per
     # ``all_phsort``'s cleanup pass (C lines 599-603 collapse it), so
-    # emit just the boundary marker.
+    # emit just the boundary marker. ``EXCLAIM`` is the C-source
+    # ``EXCLAIM`` token (phoneme_codes.EXCLAIM); when emitted,
+    # ``all_phsort`` (lines 1311-1314 of ``ph_sort.c``) calls
+    # ``raise_last_stress`` to promote the last ``S1`` to ``SEMPH``
+    # (which the output_pass then translates into a ``FEMPHASIS``
+    # feature bit), driving ``us_phtiming`` Rule 8's +60 ms per
+    # emphasised syllable (issue #212).
     if is_sentence_final:
-        symbols.append(QUEST if is_question else PERIOD)
+        if is_question:
+            symbols.append(QUEST)
+        elif is_exclamation:
+            symbols.append(EXCLAIM)
+        else:
+            symbols.append(PERIOD)
 
     return symbols, len(symbols)
 
@@ -296,6 +317,7 @@ def phalloph2(
     *,
     is_sentence_final: bool = True,
     is_question: bool = False,
+    is_exclamation: bool = False,
 ) -> None:
     """Drive the full ``phsort + phalloph`` chain from ARPABET word groups.
 
@@ -360,6 +382,7 @@ def phalloph2(
         arpabet_words,
         is_sentence_final=is_sentence_final,
         is_question=is_question,
+        is_exclamation=is_exclamation,
     )
 
     # 2. Pad to the size the C kernel uses (NPHON_MAX + SAFETY + 2 ~
