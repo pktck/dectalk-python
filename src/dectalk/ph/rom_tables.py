@@ -1,9 +1,23 @@
 """US English PH ROM tables (phoneme-target voice definitions).
 
-Translated verbatim from ``src/dapi/src/ph/p_us_rom.c``. These 21
-phoneme-indexed lookup tables drive the Klatt-frame target generation
-in the PH module — feeding into the duration/F0/formant trajectory
-synthesis that produces what gets handed to the HLSYN synthesizer.
+Translated from ``src/dapi/src/ph/p_us_rom.c`` and (for the
+duration-critical entries ``us_inhdr`` / ``us_mindur``) from
+``src/dapi/src/ph/p_us_rom_dectalk_1996m_43f.c`` — the latter being
+the active voice ROM selected by ``dectalkf_klsyn.h:296``
+(``#define VOICE_ROM_DECTALK_1996M_43F``). ``ph_romi.c`` then
+``#include``s that file rather than ``p_us_rom.c``.
+
+The 1996m_43f vs p_us_rom split matters for byte-identical
+PH-stage durations: the inherent + minimum per-allophone duration
+tables differ across the two ROM files (e.g. HX inhdr = 70 in
+1996m_43f vs 80 in p_us_rom; AX = 120 vs 160). The remaining
+tables (formant targets, amplitudes, etc.) still mirror
+``p_us_rom.c`` pending a full re-port to the 1996m_43f values.
+
+These 21 phoneme-indexed lookup tables drive the Klatt-frame
+target generation in the PH module — feeding into the
+duration/F0/formant trajectory synthesis that produces what gets
+handed to the HLSYN synthesizer.
 
 Per-phoneme tables (71 entries, indexed by allophone code from
 :class:`dectalk.include.phoneme_codes.USPhoneme`):
@@ -42,25 +56,40 @@ from __future__ import annotations
 from typing import Final
 
 us_inhdr: Final[tuple[int, ...]] = (
-    305, 170, 130, 200, 120, 230, 240, 235, 260, 160,
-    240, 220, 220, 170, 195, 180, 230, 160, 160, 230,
-    250, 250, 250, 230, 60, 75, 75, 70, 80, 120,
-    100, 80, 80, 120, 160, 60, 150, 100, 100, 75,
-    100, 125, 120, 125, 120, 95, 80, 85, 80, 99,
-    70, 50, 70, 100, 160, 100, 50, 100, 120, 120,
-    160, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0,
+    # Values from p_us_rom_dectalk_1996m_43f.c (VOICE_ROM_DECTALK_1996M_43F),
+    # the active voice ROM selected by dectalkf_klsyn.h:296.
+    # SI    IY    IH    EY    EH    AE    AA    AY    AW    AH
+    205, 170, 160, 200, 160, 230, 240, 250, 250, 160,
+    # AO    OW    OY    UH    UW    RR    YU    AX    IX    IR
+    240, 220, 220, 170, 210, 180, 230, 120, 120, 230,
+    # ER    AR    OR    UR     W     Y     R     L    HX    RX
+    250, 250, 250, 230,  60,  75,  65,  75,  70, 120,
+    # LX     M     N    NG    EL    D$    EN     F     V    TH
+    100,  70,  65,  80, 160,  60, 170, 100,  70, 100,
+    # DH     S     Z    SH    ZH     P     B     T     D     K
+     60, 115,  75, 115,  70,  85,  80,  85,  80,  90,
+    # G    DX    TQ     Q    CH    JH    DF (then trailing zeros for unused slots)
+     90,  30,  70,   5, 160, 100,  30,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+      0,
 )  # fmt: skip
 
 us_mindur: Final[tuple[int, ...]] = (
-    7, 80, 60, 110, 60, 50, 90, 105, 110, 70,
-    140, 90, 110, 60, 70, 90, 100, 60, 60, 120,
-    120, 120, 120, 120, 15, 30, 30, 40, 60, 70,
-    70, 60, 50, 80, 110, 35, 100, 60, 70, 50,
-    50, 65, 70, 60, 70, 70, 50, 50, 40, 55,
-    30, 25, 50, 70, 100, 75, 25, 60, 60, 80,
-    120, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0,
+    # Values from p_us_rom_dectalk_1996m_43f.c (VOICE_ROM_DECTALK_1996M_43F).
+    # SI    IY    IH    EY    EH    AE    AA    AY    AW    AH
+      7,  80,  80, 110,  80,  80,  90, 100, 110,  70,
+    # AO    OW    OY    UH    UW    RR    YU    AX    IX    IR
+    100,  90, 110,  80,  80,  90, 100,  50,  50, 120,
+    # ER    AR    OR    UR     W     Y     R     L    HX    RX
+    120, 120, 120, 120,  15,  30,  30,  40,  35,  70,
+    # LX     M     N    NG    EL    D$    EN     F     V    TH
+     70,  60,  35,  50, 110,  35, 100,  60,  55,  40,
+    # DH     S     Z    SH    ZH     P     B     T     D     K
+     35,  65,  60,  60,  50,  70,  60,  50,  40,  75,
+    # G    DX    TQ     Q    CH    JH    DF (then trailing zeros for unused slots)
+     65,  20,  50,   5, 100,  70,  20,   0,   0,   0,
+      0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
+      0,
 )  # fmt: skip
 
 us_burdr: Final[tuple[int, ...]] = (
