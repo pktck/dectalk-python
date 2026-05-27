@@ -286,6 +286,20 @@ def looks_like_question(text: str) -> bool:
     return text.rstrip().endswith("?")
 
 
+def looks_like_exclamation(text: str) -> bool:
+    """Return True if the text segment ends with ``!`` (trailing whitespace tolerated).
+
+    Used by the FULL-pipeline path (``_render_clause_full``) to drive
+    ``phalloph2``'s ``is_exclamation`` flag, which propagates an
+    ``EXCLAIM`` symbol (vs ``PERIOD``) into ``all_phsort``. ``EXCLAIM``
+    triggers ``raise_last_stress`` (C ``ph_sort.c`` lines 1311-1314),
+    promoting the final ``S1`` to ``SEMPH`` / ``FEMPHASIS`` and adding
+    +60 ms per emphasised syllable via ``us_phtiming`` Rule 8
+    (issue #212).
+    """
+    return text.rstrip().endswith("!")
+
+
 def split_sentences(text: str) -> list[tuple[str, bool]]:
     """Split ``text`` into individual sentences for per-sentence prosody.
 

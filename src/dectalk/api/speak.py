@@ -43,7 +43,7 @@ from dectalk.kernel.text import Token, TokenKind, tokenize
 from dectalk.lts import lts
 from dectalk.lts.homo_disambig import HOMOGRAPH_FC_BITS, disambiguate
 from dectalk.nt.audio import write_wav
-from dectalk.ph.prosody import split_sentences
+from dectalk.ph.prosody import looks_like_exclamation, looks_like_question, split_sentences
 from dectalk.ph.sequencer import synthesize_phonemes
 
 # Forward-declared imports for the experimental full pipeline. These
@@ -734,7 +734,22 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     )
     from dectalk.ph.us_phalloph2 import phalloph2  # noqa: PLC0415
 
-    phalloph2(handle, arpabet_words, is_sentence_final=True, is_question=False)
+    # Detect sentence-terminal punctuation from the clause body so the
+    # PH-stage chain emits the matching ``QUEST`` / ``EXCLAIM`` /
+    # ``PERIOD`` symbol. ``!`` propagates as ``EXCLAIM``, which drives
+    # ``all_phsort``'s ``raise_last_stress`` hook (C ``ph_sort.c``
+    # lines 1311-1314) -- promoting the last ``S1`` to ``SEMPH`` /
+    # ``FEMPHASIS`` so ``us_phtiming`` Rule 8 adds +60 ms per
+    # emphasised syllable (issue #212).
+    is_question_clause = looks_like_question(text)
+    is_exclamation_clause = (not is_question_clause) and looks_like_exclamation(text)
+    phalloph2(
+        handle,
+        arpabet_words,
+        is_sentence_final=True,
+        is_question=is_question_clause,
+        is_exclamation=is_exclamation_clause,
+    )
     nallotot = p_dph_t.nallotot
 
     # 4a-bis. End-of-clause sentence-boundary marker on the allophone
