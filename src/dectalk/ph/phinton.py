@@ -44,14 +44,17 @@ from __future__ import annotations
 from typing import Final, cast
 
 from dectalk.include.usp_codes import (
+    USP_AE,
     USP_AX,
     USP_CH,
+    USP_D,
     USP_F,
     USP_G,
     USP_IX,
     USP_P,
     USP_S,
     USP_SH,
+    USP_T,
     USP_TH,
 )
 from dectalk.kernel.ksd_t import KsdT
@@ -79,7 +82,6 @@ from dectalk.ph.frame_counts import (
     NF7MS,
     NF20MS,
     NF25MS,
-    NF40MS,
     NF80MS,
     NF160MS,
 )
@@ -100,10 +102,8 @@ from dectalk.ph.phoneme_features import F_ADJ as _F_ADJ_WF
 from dectalk.ph.phoneme_features import F_NOUN as _F_NOUN_WF
 from dectalk.ph.phoneme_features import F_VERB as _F_VERB_WF
 from dectalk.ph.phoneme_features import (
-    FALVEL,
     FBURST,
     FOBST,
-    FPLOSV,
     FSON1,
     FSONOR,
     FSYLL,
@@ -111,7 +111,7 @@ from dectalk.ph.phoneme_features import (
     WORDFEAT,
 )
 from dectalk.ph.task_helpers import mstofr
-from dectalk.ph.timing import begtyp, phone_feature
+from dectalk.ph.timing import phone_feature
 from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.utterance_constants import (
     COMMACLAUSE,
@@ -707,11 +707,18 @@ def phinton(phTTS: TtsHandle) -> None:
             pDph_t.tcumdur += pDph_t.allodurs[nphon]
 
         # ---- Rule 9: insert dummy schwa after clause-final plosive ----
-        if (
-            phonex == GEN_SIL
-            and (phone_feature(phocur) & FPLOSV)
-            and (phone_feature(phocur) & FBURST)
-        ):
+        # ph_inton0.c lines 1972-1976 (the production ENGLISH_US Rule 9
+        # build path):
+        #
+        #   if ((phonex == GEN_SIL)
+        #       && (((phocur >= USP_P) && (phocur <= USP_G))  /* p t k b d g */)
+        #       && (pDph_t->nallotot < NPHON_MAX))
+        #
+        # rather than ph_inton2.c's HLSYN-build predicate
+        # ``FPLOSV & FBURST`` (which expands to also cover DZ / TX —
+        # those code points fall outside the USP_P..USP_G range the
+        # production build tests).
+        if phonex == GEN_SIL and USP_P <= phocur <= USP_G and pDph_t.nallotot < NPHON_MAX:
             # Shift trailing phones one slot to the right.
             for k in range(pDph_t.nallotot + 1, nphon, -1):
                 if k < len(pDph_t.allophons):
@@ -724,14 +731,31 @@ def phinton(phTTS: TtsHandle) -> None:
                     pDph_t.user_f0[k] = pDph_t.user_f0[k - 1]
 
             pDph_t.allophons[nphon + 1] = SCHWA1
-            if begtyp(pholas) == 1 or (phone_feature(phocur) & FALVEL):
+            # The production US-English build (``OLD_INTONATION_AND_TIMING``,
+            # no ``HLSYN``) uses ``ph_inton0.c``'s Rule 9 (lines 1972-1996
+            # of ``ph_inton0.c``):
+            #
+            #   pDph_t->allophons[nphon+1] = USP_AX;
+            #   if ((pholas < USP_AE) || ((phocur >= USP_T) && (phocur <= USP_D)))
+            #       pDph_t->allophons[nphon+1] = USP_IX;
+            #   pDph_t->allodurs[nphon+1] = NF25MS;
+            #
+            # rather than ``ph_inton2.c``'s HLSYN variant (which uses
+            # ``begtyp(pholas)==1 || FALVEL`` for the schwa selection and
+            # ``NF40MS`` for the duration). The previous Python port
+            # mirrored ``ph_inton2.c`` and produced a 6-frame schwa with
+            # the wrong selection predicate, inflating every plosive-final
+            # prompt's body by 142 samples (~13 ms) and picking the wrong
+            # schwa quality. Switching to the production rule set
+            # (NF25MS + the ``USP_T..USP_D`` predicate) closes the
+            # ``hello world`` over-run from +426 to ~+284 samples.
+            if pholas < USP_AE or (USP_T <= phocur <= USP_D):
                 pDph_t.allophons[nphon + 1] = SCHWA2
 
-            # NF40MS for both branches (the C if/else is dead code).
-            if USP_P <= phocur <= USP_G and (feacur & FVOICD):
-                pDph_t.allodurs[nphon + 1] = NF40MS
-            else:
-                pDph_t.allodurs[nphon + 1] = NF40MS
+            # ph_inton0.c line 1991: ``allodurs[nphon+1] = NF25MS`` — the
+            # ``USP_P..USP_G && FVOICD`` if/else from ph_inton2.c is dead
+            # code in the older intonation-and-timing build.
+            pDph_t.allodurs[nphon + 1] = NF25MS
 
             cumdur[0] += pDph_t.allodurs[nphon + 1]
             pDph_t.tcumdur += pDph_t.allodurs[nphon + 1]
