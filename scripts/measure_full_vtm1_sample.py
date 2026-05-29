@@ -14,6 +14,8 @@ Used by ``docs/parity-divergence-audit.md`` to decide whether the
 ``_speak_via_python`` dispatch should default to FULL+VTM1.
 """
 
+# ruff: noqa: D103, PLR0911, PLR0912, PLR0915, PLR2004, SIM105 -- one-off measurement script
+
 from __future__ import annotations
 
 import json
@@ -37,7 +39,6 @@ _REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO))
 
 import dectalk  # noqa: E402
-
 from tests.parity._corpus import CORPUS  # noqa: E402
 
 _BIN_ROOT = Path(os.environ.get("DECTALK_BIN", "/tmp/dectalk-binary-stable"))
@@ -160,31 +161,35 @@ def main() -> None:
             exact = bin_b == py_b
             if exact:
                 n_exact += 1
-            records.append({
-                "text": text,
-                "cat": _categorize(text),
-                "bin_len": len(bin_b),
-                "py_len": len(py_b),
-                "bin_samples": bin_n,
-                "py_samples": py_n,
-                "delta_samples": py_n - bin_n,
-                "delta_bytes": len(py_b) - len(bin_b),
-                "exact": exact,
-                "error": None,
-            })
-        except Exception as e:  # noqa: BLE001
-            records.append({
-                "text": text,
-                "cat": _categorize(text),
-                "bin_len": None,
-                "py_len": None,
-                "bin_samples": None,
-                "py_samples": None,
-                "delta_samples": None,
-                "delta_bytes": None,
-                "exact": False,
-                "error": f"{type(e).__name__}: {e}",
-            })
+            records.append(
+                {
+                    "text": text,
+                    "cat": _categorize(text),
+                    "bin_len": len(bin_b),
+                    "py_len": len(py_b),
+                    "bin_samples": bin_n,
+                    "py_samples": py_n,
+                    "delta_samples": py_n - bin_n,
+                    "delta_bytes": len(py_b) - len(bin_b),
+                    "exact": exact,
+                    "error": None,
+                }
+            )
+        except Exception as e:
+            records.append(
+                {
+                    "text": text,
+                    "cat": _categorize(text),
+                    "bin_len": None,
+                    "py_len": None,
+                    "bin_samples": None,
+                    "py_samples": None,
+                    "delta_samples": None,
+                    "delta_bytes": None,
+                    "exact": False,
+                    "error": f"{type(e).__name__}: {e}",
+                }
+            )
         if (i + 1) % 25 == 0:
             elapsed = time.time() - t0
             print(
@@ -242,9 +247,7 @@ def main() -> None:
         "abs_delta_p99": abs_deltas[int(0.99 * len(abs_deltas))] if abs_deltas else None,
         "abs_delta_max": abs_deltas[-1] if abs_deltas else None,
         "abs_delta_mean": (sum(abs_deltas) / len(abs_deltas)) if abs_deltas else None,
-        "abs_delta_bins": [
-            {"lt": bins[i + 1], "n": hist[i]} for i in range(len(hist))
-        ],
+        "abs_delta_bins": [{"lt": bins[i + 1], "n": hist[i]} for i in range(len(hist))],
         "by_category": {
             cat: {
                 "n": b["n"],
@@ -253,7 +256,8 @@ def main() -> None:
                 "pct_exact": 100 * int(b["n_exact"]) / int(b["n"]),  # type: ignore[arg-type]
                 "abs_delta_median": (
                     sorted(abs(d) for d in b["deltas"])[len(b["deltas"]) // 2]  # type: ignore[arg-type]
-                    if b["deltas"] else None  # type: ignore[arg-type]
+                    if b["deltas"]
+                    else None  # type: ignore[arg-type]
                 ),
                 "delta_min": min(b["deltas"]) if b["deltas"] else None,  # type: ignore[arg-type]
                 "delta_max": max(b["deltas"]) if b["deltas"] else None,  # type: ignore[arg-type]
