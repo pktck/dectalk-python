@@ -16,15 +16,23 @@ the target family from the active file:
 - ``us_maleloc`` / ``us_femloc`` -- formant-locus targets.
 - ``us_plocu`` -- per-phone locus pointers (57-strided).
 
-The active C source embeds in-table integer arithmetic (e.g. ``180+80``,
-``300+100``); the parser below evaluates it so the comparison is on
-final values.
+Issue #235 followed up by re-porting the parallel-branch amplitude
+tables (``us_malamp`` / ``us_femamp``) and the per-phone gesture/prosody
+tables (``us_burdr`` / ``us_f0segtars`` / ``us_endtyp`` / ``us_ptram``)
+from the same active file. The active amplitude ROM uses a 1 + 16 x
+(4 x 6) block layout referenced by 24-strided ``us_ptram`` offsets and
+an undefined ``DEC_SZ`` Phc-toolchain macro on the S/Z A5 entries; the
+parser resolves ``DEC_SZ`` to 0 (see ``_parse_rom_table``).
 
-Tables that are *not* yet re-ported (the amplitude tables and the
-per-phone gesture/prosody tables) are still asserted against the legacy
-``p_us_rom.c`` reference. Tables that are voice-independent
-(``us_place``, ``us_begtyp``) match both files. Skips when
-``DECTALK_SRC`` is absent.
+The active C source embeds in-table integer arithmetic (e.g. ``180+80``,
+``300+100``, ``49-6``); the parser below evaluates it so the comparison
+is on final values.
+
+Only voice-independent / non-numeric tables are still read from the
+legacy ``p_us_rom.c`` reference: ``us_place`` (active ROM writes it with
+``F*`` flag macros, identical numerically) and the global prosody knobs
+(``us_f0glstp`` etc., parked under ``#if 0`` in the active file). Skips
+when ``DECTALK_SRC`` is absent.
 """
 
 from __future__ import annotations
@@ -82,6 +90,14 @@ def _parse_rom_table(name: str, path: Path) -> tuple[int, ...]:
     # Drop C preprocessor lines that sit inside an initialiser body
     # (the legacy ROM keeps an ``#endif`` right after ``= {``).
     text = re.sub(r"^[ \t]*#.*$", "", text, flags=re.MULTILINE)
+    # ``DEC_SZ`` is an old Phc-toolchain compile-time macro used only by
+    # the active amplitude ROM's S/Z A5 entries (``57-DEC_SZ`` etc.); it
+    # is never #defined in the C source tree. It resolves to 0 -- the
+    # resulting literals match the modern-layout p_us_rom_dectalk41.c /
+    # p_us_rom_dtc_03_03Jan89.c ROMs, which carry the same entries with
+    # DEC_SZ pre-resolved to literal 57/58/51/52 (male) and 58/61/52/55
+    # (female).
+    text = re.sub(r"\bDEC_SZ\b", "0", text)
     m = re.search(
         rf"(?:const\s+)?short\s+{re.escape(name)}\s*\[\d*\]\s*=\s*\{{(.+?)\}}\s*;",
         text,
@@ -106,26 +122,41 @@ _TABLES_TARGET_ACTIVE: tuple[str, ...] = (
 # The Python literal pads these to 71 entries (sentinel tail); compare
 # only the C-defined 57-entry prefix. ``us_begtyp`` is voice-independent
 # (identical in both ROM files) but written numerically in the active
-# file, so we read it there.
+# file, so we read it there. The gesture/prosody tables ``us_burdr`` /
+# ``us_f0segtars`` / ``us_endtyp`` and the amplitude index ``us_ptram``
+# were re-ported from the active ROM in issue #235.
 _TABLES_PERPHONE_ACTIVE: tuple[str, ...] = (
     "us_inhdr", "us_mindur", "us_begtyp",
+    "us_burdr", "us_f0segtars", "us_endtyp", "us_ptram",
 )  # fmt: skip
 
-# Tables still on the legacy ROM (amplitudes + per-phone gesture/prosody),
-# plus the voice-independent ``us_place`` flag table (the active ROM
-# writes it with ``F*`` flag macros rather than numeric literals, so we
-# read its numeric form from the reference file -- it is identical in
-# both ROMs). Re-porting the amplitude/prosody tables is tracked
-# separately; the formant targets (#229) do not depend on them.
+# Parallel-branch amplitude tables, re-ported from the active ROM
+# (issue #235). The active layout is a single SIL slot + 16 obstruent
+# blocks of 4 rows x 6 columns (385 entries total), distinct from the
+# BETA5 30-stride/-1-sentinel layout; the Python tuple equals the C
+# array exactly (no sentinel padding). The active source applies
+# in-table reductions (``49-6`` etc.) and the ``DEC_SZ`` macro (-> 0).
+_TABLES_AMP_ACTIVE: tuple[str, ...] = (
+    "us_malamp", "us_femamp",
+)  # fmt: skip
+
+# Tables read from the legacy ROM only because the active file writes
+# them non-numerically or they are voice-independent: ``us_place`` uses
+# ``F*`` flag macros in the active ROM (identical numeric form in both),
+# and the global prosody knobs (``us_f0glstp`` etc.) live under a
+# ``#if 0`` block in the active file, so the reference numeric copy is
+# authoritative and identical.
 _TABLES_REF_ROM: tuple[str, ...] = (
-    "us_burdr", "us_f0segtars", "us_endtyp",
-    "us_ptram", "us_malamp", "us_femamp",
     "us_place",
     "us_f0glstp", "us_f0_phrase_position", "us_f0_stress_level",
 )  # fmt: skip
 
 _TABLES: tuple[str, ...] = (
-    _TABLES_TARGET_ACTIVE + _TABLES_PERPHONE_ACTIVE + _TABLES_REF_ROM + ("us_featb",)
+    _TABLES_TARGET_ACTIVE
+    + _TABLES_PERPHONE_ACTIVE
+    + _TABLES_AMP_ACTIVE
+    + _TABLES_REF_ROM
+    + ("us_featb",)
 )
 
 
@@ -214,6 +245,36 @@ def test_active_perphone_table_matches_c(name: str) -> None:
     expected = _parse_rom_table(name, _C_FILE)
     pyvals = getattr(rt, name)
     assert pyvals[: len(expected)] == expected, f"{name} mismatch in active prefix"
+
+
+@pytest.mark.parametrize("name", _TABLES_AMP_ACTIVE)
+def test_amp_table_matches_active_rom(name: str) -> None:
+    """Each amplitude table matches the active ROM byte-for-byte (#235).
+
+    Stored in the active ROM's native 1 + 16 x (4 x 6) layout, so the
+    whole tuple must equal the C array exactly -- no sentinel padding.
+    Exercises the ``DEC_SZ`` -> 0 substitution and the in-table
+    arithmetic (``49-6`` etc.) in the parser.
+    """
+    expected = _parse_rom_table(name, _C_FILE)
+    assert getattr(rt, name) == expected, f"{name} mismatch vs active ROM"
+
+
+def test_amp_index_bound_holds_for_active_layout() -> None:
+    """``us_gettar`` indexes ``p_amp`` as ``ptram + (npar - A2 + 1) +
+    6*begtypnex``; the max such index must stay within the active
+    385-entry amplitude tables.
+
+    ``us_ptram`` max base is 361 (ZH); the column term ``npar - A2 + 1``
+    spans 1..5 (A2..A6) and ``6*begtypnex`` spans 0..18 (begtypnex in
+    0..3), so the worst-case index is 361 + 5 + 18 == 384 == len - 1.
+    """
+    max_ptram = max(rt.us_ptram)
+    max_index = max_ptram + 5 + 18
+    assert max_ptram == 361
+    assert max_index == 384
+    assert len(rt.us_malamp) == max_index + 1
+    assert len(rt.us_femamp) == max_index + 1
 
 
 @pytest.mark.parametrize("name", _TABLES_REF_ROM)
