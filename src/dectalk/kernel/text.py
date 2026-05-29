@@ -9,8 +9,11 @@ normalizations needed for the bundled lexicon:
 - Stripping leading/trailing punctuation from each word.
 - Sentence-final punctuation (``. ? !``) is reported as a pause token so
   the synthesizer can insert silence.
-- Numbers are spoken digit by digit (``2024`` → "two zero two four"); a
-  later phase can replace this with a proper number-to-words pass.
+- Integers are expanded to words via :func:`number_to_words`
+  (``2024`` → "two thousand twenty four").
+- Decimal / version numbers (``2.5``, ``6.2.0``) expand to
+  "<integer> point <digits...>", with each ``.``-separated fraction
+  group spoken digit by digit, matching the C front end.
 """
 
 from __future__ import annotations
@@ -151,5 +154,43 @@ def _body_words(word: str) -> Iterable[str]:
             continue
         if part.replace(",", "").isdigit():
             yield from number_to_words(int(part.replace(",", "")))
+        elif _is_decimal_number(part):
+            yield from _decimal_words(part)
         else:
             yield part.upper()
+
+
+def _is_decimal_number(part: str) -> bool:
+    """True if ``part`` is a decimal number like ``2.5`` / ``6.2.0``.
+
+    Matches the DECtalk front end's decimal recogniser: one or more
+    digit groups (optionally comma-grouped) separated by ``.`` periods,
+    where every group is non-empty digits. Plain integers (no ``.``) and
+    a trailing-period token like ``2.`` (handled earlier as a
+    sentence-final pause) are not decimals.
+    """
+    if "." not in part:
+        return False
+    segments = part.split(".")
+    if len(segments) < 2:  # noqa: PLR2004 — needs at least one period
+        return False
+    return all(seg.replace(",", "").isdigit() for seg in segments)
+
+
+def _decimal_words(part: str) -> Iterable[str]:
+    """Expand a decimal number into spoken words.
+
+    Mirrors the C oracle: the integer part (before the first ``.``) is
+    spoken as a whole number; every subsequent ``.``-separated group is
+    introduced by "POINT" and spoken digit by digit. So ``2.5`` ->
+    "two point five", ``3.14`` -> "three point one four", ``6.2.0`` ->
+    "six point two point zero", ``100.25`` -> "one hundred point two
+    five".
+    """
+    segments = part.split(".")
+    integer = segments[0].replace(",", "")
+    yield from number_to_words(int(integer))
+    for seg in segments[1:]:
+        yield "POINT"
+        for digit in seg.replace(",", ""):
+            yield from number_to_words(int(digit))

@@ -28,6 +28,15 @@ CORPUS: tuple[str, ...] = (
     "3 point 14",
     "one hundred and one dalmatians",
     "1234567890",
+    # Bare decimal numbers -- regression for the decimal-silence bug
+    # (front-end dropped ``2.5`` etc. as an unpronounceable literal,
+    # yielding zero audio on the pure-Python FULL pipeline). The front
+    # end now expands these to "<int> point <digits...>" matching the
+    # C oracle.
+    "2.5",
+    "0.5",
+    "6.2.0",
+    "3.14",
     # Punctuation variants.
     "hello! how are you?",
     "wait... what just happened?",
