@@ -17,6 +17,7 @@ from typing import cast
 
 import pytest
 
+from dectalk.include.phoneme_codes import US_TOT_ALLOPHONES
 from dectalk.include.usp_codes import USP_AA, USP_K, USP_N
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.ph.dph_settar_st import DphSettarSt
@@ -189,13 +190,13 @@ def test_k_coarticulation_f3_plus_500() -> None:
 
 
 def _us_f2_target(phone: int) -> int:
-    """Helper: read us_femtar's F2 row directly."""
-    return us_femtar[(phone & 0xFF) + 1 * 71]
+    """Helper: read us_femtar's F2 row directly (57-strided active ROM)."""
+    return us_femtar[(phone & 0xFF) + 1 * US_TOT_ALLOPHONES]
 
 
 def _us_f3_target(phone: int) -> int:
-    """Helper: read us_femtar's F3 row directly."""
-    return us_femtar[(phone & 0xFF) + 2 * 71]
+    """Helper: read us_femtar's F3 row directly (57-strided active ROM)."""
+    return us_femtar[(phone & 0xFF) + 2 * US_TOT_ALLOPHONES]
 
 
 def test_gr_font_dispatches_to_gr_gettar() -> None:

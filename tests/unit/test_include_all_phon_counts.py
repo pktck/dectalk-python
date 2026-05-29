@@ -51,10 +51,18 @@ def test_novalid_equals_sp_tot_allophones() -> None:
     assert apc.NOVALID == apc.SP_TOT_ALLOPHONES
 
 
-def test_us_largest_phoneme_inventory() -> None:
-    """US English has the largest allophone inventory (71 codes)."""
-    assert US_TOT_ALLOPHONES > apc.GR_TOT_ALLOPHONES
-    assert US_TOT_ALLOPHONES > apc.UK_TOT_ALLOPHONES
+def test_us_allophone_count_active_rom() -> None:
+    """US allophone count is 57 for the active ROM, matching UK.
+
+    For ``VOICE_ROM_DECTALK_1996M_43F`` (the active ROM),
+    ``US_TOT_ALLOPHONES == 57`` -- the same as ``UK_TOT_ALLOPHONES`` and
+    below German's 62. (The BETA5 ROM used 71, which would have made US
+    the largest; that ROM is not the one the C build compiles.)
+    """
+    us_active = 57
+    assert us_active == US_TOT_ALLOPHONES
+    assert US_TOT_ALLOPHONES == apc.UK_TOT_ALLOPHONES
+    assert US_TOT_ALLOPHONES < apc.GR_TOT_ALLOPHONES
     assert US_TOT_ALLOPHONES > apc.FR_TOT_ALLOPHONES
     assert US_TOT_ALLOPHONES > apc.LA_TOT_ALLOPHONES
     assert US_TOT_ALLOPHONES > apc.SP_TOT_ALLOPHONES

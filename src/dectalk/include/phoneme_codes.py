@@ -148,8 +148,22 @@ class USPhoneme(IntEnum):
     Z1 = 70  # final extension
 
 
-US_TOT_ALLOPHONES: Final[int] = 71
-"""Number of US allophones (matches ``US_TOT_ALLOPHONES`` in ``l_us_ph.h``)."""
+US_TOT_ALLOPHONES: Final[int] = 57
+"""Number of US allophones for the active voice ROM.
+
+``l_all_ph.h`` defines ``US_TOT_ALLOPHONES`` conditionally on the
+selected voice ROM: ``57`` for ``VOICE_ROM_DECTALK_43`` /
+``VOICE_ROM_DECTALK_1996M_43F`` (the active one per
+``dectalkf_klsyn.h:296``) and ``71`` for the legacy ``BETA5`` / ``1996``
+/ ``1997`` ROMs. This is both the phone-code bound used by
+``ls_util_pluralize`` and the per-parameter stride into the US target
+ROM tables (``us_maltar`` / ``us_femtar`` / ``us_plocu``); the active
+ROM lays those tables out in 57-phone blocks, so the value must be 57.
+
+The :class:`USPhoneme` enum still defines symbolic codes for the 71
+``BETA5`` slots (incl. the ``X1``-``Z1`` extension allophones), but the
+active US ROM only populates codes ``0``..``56`` (``SIL``..``DF``).
+"""
 
 
 __all__ = [

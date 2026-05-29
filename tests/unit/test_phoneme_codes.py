@@ -115,14 +115,35 @@ def test_us_phoneme_matches(phoneme: pc.USPhoneme) -> None:
     )
 
 
-def test_us_phoneme_total_count() -> None:
-    """``US_TOT_ALLOPHONES`` matches our enum size (71)."""
-    expected_count = 71
-    assert expected_count == pc.US_TOT_ALLOPHONES
-    assert len(pc.USPhoneme) == expected_count
-    # And the codes are dense 0..70:
+def test_us_phoneme_enum_is_dense_71() -> None:
+    """The ``USPhoneme`` enum defines the 71 BETA5-era symbolic codes.
+
+    The enum still carries dense codes ``0..70`` (incl. the ``X1``-``Z1``
+    extension slots) even though the *active* voice ROM only populates
+    ``0..56``. ``US_TOT_ALLOPHONES`` (the active count / ROM stride) is a
+    separate constant -- see :func:`test_us_tot_allophones_active`.
+    """
+    enum_size = 71
+    assert len(pc.USPhoneme) == enum_size
     values = sorted(m.value for m in pc.USPhoneme)
-    assert values == list(range(expected_count))
+    assert values == list(range(enum_size))
+
+
+def test_us_tot_allophones_active() -> None:
+    """``US_TOT_ALLOPHONES`` is the active-ROM value (57), not the BETA5 71.
+
+    ``l_all_ph.h`` gates ``US_TOT_ALLOPHONES`` to ``57`` for the active
+    ``VOICE_ROM_DECTALK_1996M_43F`` (``dectalkf_klsyn.h:296``); the BETA5
+    / 1996 / 1997 ROMs use ``71``. The Python tracks the active build.
+    """
+    active_us_tot = 57
+    assert active_us_tot == pc.US_TOT_ALLOPHONES
+    text = _l_all_ph_text()
+    assert re.search(
+        r"VOICE_ROM_DECTALK_1996M_43F.*?#define\s+US_TOT_ALLOPHONES\s+57",
+        text,
+        re.DOTALL,
+    ), "l_all_ph.h should define US_TOT_ALLOPHONES=57 for the active ROM"
 
 
 def test_pfusa_matches() -> None:

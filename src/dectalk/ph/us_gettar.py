@@ -41,6 +41,7 @@ from __future__ import annotations
 from typing import cast
 
 from dectalk.include.cmd_codes import PVALUE
+from dectalk.include.phoneme_codes import US_TOT_ALLOPHONES
 from dectalk.include.usp_codes import (
     USP_EN,
     USP_HX,
@@ -84,7 +85,12 @@ from dectalk.ph.utterance_constants import (
 )
 
 # US_TOT_ALLOPHONES is the inner-table stride; one row per parameter.
-_US_TOT_ALLOPHONES: int = 71
+# The active voice ROM (VOICE_ROM_DECTALK_1996M_43F) lays out
+# us_maltar / us_femtar in 57-phone blocks, so the stride is 57
+# (l_all_ph.h, gated on the VOICE_ROM_DECTALK_43/1996M_43F define).
+# Sourced from phoneme_codes so the stride and the table layout never
+# drift apart.
+_US_TOT_ALLOPHONES: int = US_TOT_ALLOPHONES
 
 # par_type encoding from ph_defs.h IS_* macros:
 #   IS_AV_OR_AH         == 0
@@ -108,9 +114,10 @@ def us_gettar(phTTS: TtsHandle, nphone_temp: int) -> int:  # noqa: N803, PLR0912
     The C source's flow:
 
     1. Look up the three surrounding phone codes via :func:`get_phone`.
-    2. Compute ``npar = np - PF1`` and ``pphotr = npar * 71`` (or
-       ``(npar - 1) * 71`` for ``np >= PFZ``, since there's no PAP
-       table row).
+    2. Compute ``npar = np - PF1`` and ``pphotr = npar *
+       US_TOT_ALLOPHONES`` (or ``(npar - 1) * US_TOT_ALLOPHONES`` for
+       ``np >= PFZ``, since there's no PAP table row).
+       ``US_TOT_ALLOPHONES`` is 57 for the active voice ROM.
     3. Dispatch on ``partyp[npar]`` (cached into
        ``pDphsettar->par_type``).
     4. Within each branch, read the per-parameter table
