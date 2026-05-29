@@ -1,10 +1,14 @@
-"""Verify the per-voice tables in voice_definitions.py match p_us_vdf.c.
+"""Verify the per-voice tables in voice_definitions.py match the active C source.
 
-Re-parses each ``const short NAME[SPDEF]`` (or ``[]``) voice
-initialiser from ``src/dapi/src/ph/p_us_vdf.c`` for the 10 modern
-US-English voices (paul, chris, betty, harry, frank, kit, ursula,
-rita, wendy, dennis — *not* the older _8 variants) and asserts the
-Python literal matches byte-for-byte.
+Re-parses each ``const short NAME[SPDEF]`` voice initialiser from
+``src/dapi/src/ph/p_us_vdf_dectalk43.c`` -- the active DECtalk 4.3 voice
+file (``VDF_DECTALK_43`` in ``dectalkf_klsyn.h``; ``HLSYN`` undefined) --
+for the US-English voices and asserts the Python literal matches
+byte-for-byte. The **non-``_8``** rows are used: ``ph_vset.c:449-459``
+loads ``voidef[voice]`` (the non-``_8`` arrays) at the default 11025 Hz
+sample rate, so those are what the C oracle binary synthesises from.
+``chris`` is not a distinct row in the 4.3 table (it aliases ``paul``),
+so it is verified against the parsed ``paul`` array.
 
 Skips when ``/tmp/dectalk-src`` is absent.
 """
@@ -19,7 +23,9 @@ import pytest
 
 from dectalk.ph import voice_definitions as vd
 
-_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / ("src/dapi/src/ph/p_us_vdf.c")
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / (
+    "src/dapi/src/ph/p_us_vdf_dectalk43.c"
+)
 
 pytestmark = pytest.mark.skipif(
     not _C_FILE.is_file(),
@@ -81,9 +87,10 @@ def _eval_field(expr: str) -> int:
 def _parse_voice(name: str) -> tuple[int, ...]:
     """Parse the FIRST ``const short NAME[...]`` block matching ``name``.
 
-    The C source has both ``NAME_8`` (older 8 kHz variant) and ``NAME``
-    (modern 11025 Hz). We want the modern one — the first declaration
-    whose array name exactly matches ``name`` (not ``name_8``).
+    The C source has both ``NAME_8`` (8 kHz variant) and ``NAME`` (the
+    11025 Hz row loaded by ``ph_vset.c`` at the default sample rate). We
+    want the non-``_8`` one — the regex requires ``name`` immediately
+    followed by ``[``, so ``paul[`` never matches ``paul_8[``.
     """
     text = _C_FILE.read_text(encoding="latin-1")
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
@@ -101,55 +108,39 @@ def _parse_voice(name: str) -> tuple[int, ...]:
     return tuple(_eval_field(f) for f in fields)
 
 
-_VOICES: tuple[tuple[str, tuple[int, ...]], ...] = (
-    ("paul", vd.voice_paul),
-    ("chris", vd.voice_chris),
-    ("betty", vd.voice_betty),
-    ("harry", vd.voice_harry),
-    ("frank", vd.voice_frank),
-    ("kit", vd.voice_kit),
-    ("ursula", vd.voice_ursula),
-    ("rita", vd.voice_rita),
-    ("wendy", vd.voice_wendy),
-    ("dennis", vd.voice_dennis),
+# (python_name, python_voice, c_array_name). ``chris`` has no separate
+# row in the 4.3 table -- it aliases ``paul`` (ph_main.c maps the slot to
+# ``paul``), so it is verified against the parsed ``paul`` array.
+_VOICES: tuple[tuple[str, tuple[int, ...], str], ...] = (
+    ("paul", vd.voice_paul, "paul"),
+    ("chris", vd.voice_chris, "paul"),
+    ("betty", vd.voice_betty, "betty"),
+    ("harry", vd.voice_harry, "harry"),
+    ("frank", vd.voice_frank, "frank"),
+    ("kit", vd.voice_kit, "kit"),
+    ("ursula", vd.voice_ursula, "ursula"),
+    ("rita", vd.voice_rita, "rita"),
+    ("wendy", vd.voice_wendy, "wendy"),
+    ("dennis", vd.voice_dennis, "dennis"),
 )
 
 
-# Per-voice field overrides where the *shipped binary's* speaker table
-# (``p_us_vdf_dectalk43.c`` — the DECtalk 4.3 release the C oracle is
-# built from) differs from this dev-reference file (``p_us_vdf.c``).
-#
-# ``paul[3]`` (average pitch) is 100 in ``p_us_vdf.c`` but 122 in the
-# 4.3 table (``p_us_vdf_dectalk43.c:8``/:386). The C oracle's measured
-# baseline F0 is ~120 Hz, confirming the binary uses 122; matching it
-# moves the Python pipeline's f0[0] from 88 Hz to 110 Hz on
-# "hello world" (issue #220 fault 1). The remaining 4.3-vs-vdf.c gaps
-# in Paul's gain fields (GF/GH/GV/GN/G1/G3/G4) are issue #220 fault 2
-# and stay tracked against ``p_us_vdf.c`` until that work lands.
-_C_SOURCE_OVERRIDES: dict[str, dict[int, int]] = {
-    "paul": {3: 122},
-}
+@pytest.mark.parametrize(("name", "py_voice", "c_name"), _VOICES)
+def test_voice_matches_c_source(name: str, py_voice: tuple[int, ...], c_name: str) -> None:
+    """Each voice's parameter array matches the active 4.3 C source initialiser.
 
-
-@pytest.mark.parametrize(("name", "py_voice"), _VOICES)
-def test_voice_matches_c_source(name: str, py_voice: tuple[int, ...]) -> None:
-    """Each voice's parameter array matches the C source initialiser.
-
-    The expected row comes from the dev-reference ``p_us_vdf.c`` with
-    per-field overrides applied from :data:`_C_SOURCE_OVERRIDES` where
-    the shipped 4.3 binary's table is known to differ (and the Python
-    side already tracks the binary's value).
+    The expected row is the non-``_8`` ``c_name`` array parsed from
+    ``p_us_vdf_dectalk43.c``. No overrides are needed -- the Python
+    literals are sourced directly from the active table the C oracle
+    binary is built from.
     """
-    expected = list(_parse_voice(name))
-    for idx, value in _C_SOURCE_OVERRIDES.get(name, {}).items():
-        expected[idx] = value
-    assert py_voice == tuple(expected)
+    assert py_voice == _parse_voice(c_name), f"{name} mismatch vs p_us_vdf_dectalk43.c"
 
 
-def test_all_voices_have_33_entries() -> None:
-    """Every modern voice initialises 33 of the 39 SPDEF fields (rest zero)."""
-    expected_len = 33
-    for _name, voice in _VOICES:
+def test_all_voices_have_38_entries() -> None:
+    """Every 4.3 voice initialises 38 of the 39 SPDEF slots (38 = SPD_NM, set at load)."""
+    expected_len = 38
+    for _name, voice, _c_name in _VOICES:
         assert len(voice) == expected_len
 
 
@@ -169,7 +160,7 @@ def test_sex_field_matches_canonical_genders() -> None:
         "wendy": female,
         "dennis": male,
     }
-    voice_map = dict(_VOICES)
+    voice_map = {name: voice for name, voice, _c_name in _VOICES}
     for name, sex in expected.items():
         assert voice_map[name][0] == sex, f"{name} should be sex={sex}"
 
