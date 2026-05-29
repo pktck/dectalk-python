@@ -95,6 +95,14 @@ _LINUX_DEFINED: frozenset[str] = frozenset(
 # --------------------------------------------------------------------------
 _DEFERRED: dict[str, str] = {
     # ---- vtmiont.c -- VTM-stage dump hook (Phase A.4). -----------------
+    # These two ``static`` helpers are injected into the oracle source by
+    # the parity-only c-patch ``0006-vtm-frame-out-t0-dump.patch`` (#149) to
+    # dump per-frame VTM params for byte-diffing; they are test
+    # instrumentation, not shipped DECtalk functions, so there is no Python
+    # port to write. They are absent from the upstream tree and only appear
+    # once the c-oracle is built with our patches applied.
+    "_dectalk_dump_vtm_frames_open": "parity debug dump from c-patch 0006 (#149); not a shipped fn",
+    "_dectalk_dump_vtm_frame": "parity debug dump from c-patch 0006 (#149); not a shipped fn",
     # ---- vtm3.c -- the speech waveform generator (Klatt synthesiser). --
     # ---- sync.c -- the VTM-side sync thread and WFASTP helper. --------
     # ---- vtmiont.c -- the VTM output thread and pipe machinery. -------
