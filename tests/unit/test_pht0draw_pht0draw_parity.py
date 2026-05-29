@@ -22,6 +22,7 @@ import pytest
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.getcosine import HIGHEST_F0, LOWEST_F0
+from dectalk.ph.math_helpers import muldv
 from dectalk.ph.numeric_constants import FEMALE, MALE
 from dectalk.ph.param_indices import OUT_T0
 from dectalk.ph.pht0draw import _frac4mul_ph, pht0draw
@@ -220,7 +221,9 @@ def test_female_dispatch_runs_to_completion() -> None:
     assert isinstance(p_dph_t, DphT)
     assert p_dph_t.nf0ev == 0
     assert LOWEST_F0 <= p_dph_t.f0prime <= HIGHEST_F0
-    assert p_dph_t.parstochip[OUT_T0] == p_dph_t.f0prime
+    # Non-HLSYN build (issue #227): OUT_T0 is the pitch *period*
+    # muldv(400, 1000, f0prime), not f0prime itself.
+    assert p_dph_t.parstochip[OUT_T0] == muldv(400, 1000, p_dph_t.f0prime)
 
 
 def test_female_hard_init_uses_newnote_1600() -> None:

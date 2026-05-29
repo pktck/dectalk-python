@@ -130,20 +130,40 @@ def test_frame0_tlt_is_voice_derived(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_frame0_t0_is_above_safety_floor(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Frame 0 ``parstochip[OUT_T0]`` is not the LOWEST_F0 = 500 clamp.
+    """Frame 0 F0 (via ``parstochip[OUT_T0]``) is not the LOWEST_F0 = 500 clamp.
 
-    Pre-fix Python emitted T0=500 because ``f0 = 0`` initially and
+    Pre-fix Python emitted f0prime=500 because ``f0 = 0`` initially and
     ``f0prime = f0 + f0s ≈ 0`` then scaled to below LOWEST_F0 = 500
     deciHz, hitting the safety clamp. Seeding ``f0 = f0minimum`` (Paul:
     880 deciHz = 88 Hz) lifts frame 0 above the clamp.
+
+    Per issue #227, the non-HLSYN build emits OUT_T0 as the pitch
+    *period* ``muldv(400, 1000, f0prime)`` rather than f0prime in
+    deciHz, so a frequency *above* the LOWEST_F0 floor maps to a period
+    strictly *below* ``muldv(400, 1000, LOWEST_F0)``. The bounds are
+    derived from the clamp limits so the intent (f0prime not stuck at
+    the floor, not above the ceiling) is preserved.
     """
+    from dectalk.ph.getcosine import HIGHEST_F0, LOWEST_F0  # noqa: PLC0415
+    from dectalk.ph.math_helpers import muldv  # noqa: PLC0415
+
+    # Period at the LOWEST_F0 floor (largest legal period) and at the
+    # HIGHEST_F0 ceiling (smallest legal period).
+    floor_period = muldv(400, 1000, LOWEST_F0)  # 800
+    ceil_period = muldv(400, 1000, HIGHEST_F0)  # 78
+
     frame0 = _capture_frame0("hello world", monkeypatch)
-    assert frame0[OUT_T0] > 500, (
-        f"frame 0 OUT_T0 = {frame0[OUT_T0]} is at or below the LOWEST_F0 "
-        "safety clamp (500 deciHz) — f0 seed for hard-init is missing"
+    assert frame0[OUT_T0] < floor_period, (
+        f"frame 0 OUT_T0 = {frame0[OUT_T0]} period >= the LOWEST_F0 "
+        f"safety-clamp period ({floor_period}) — f0prime is stuck at or "
+        "below the 500 deciHz floor; f0 seed for hard-init is missing"
     )
-    # Sanity-bound: HIGHEST_F0 = 5121 deciHz = 512.1 Hz.
-    assert frame0[OUT_T0] <= 5121, f"frame 0 OUT_T0 = {frame0[OUT_T0]} above HIGHEST_F0 clamp"
+    # Sanity-bound: f0prime must not exceed HIGHEST_F0 = 5121 deciHz,
+    # i.e. the period must not drop below ceil_period.
+    assert frame0[OUT_T0] >= ceil_period, (
+        f"frame 0 OUT_T0 = {frame0[OUT_T0]} period < the HIGHEST_F0 "
+        f"clamp period ({ceil_period}) — f0prime above the ceiling"
+    )
 
 
 def test_early_f1_is_voice_derived(monkeypatch: pytest.MonkeyPatch) -> None:
