@@ -12,6 +12,12 @@ __pycache__/
 tests/parity/c_harness/llsyn_dump
 tests/parity/c_harness/llsyn_dump.exe
 
+# Measurement artefacts from scripts/measure_full_vtm1_sample.py
+# (TSV + JSON summary). Numbers are summarised in
+# docs/parity-divergence-audit.md; raw artefacts are local-only.
+tests/parity/_full_vtm1_sample_results.tsv
+tests/parity/_full_vtm1_sample_summary.json
+
 # Diagnostic harness output (per-prompt WAVs + report).
 artifacts/audio/
 
