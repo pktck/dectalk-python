@@ -39,8 +39,10 @@ High-level flow (mirrored by both MALE and FEMALE branches):
    ``f0flutter``-scaled jitter on EXCLAIM clauses.
 9. **Scale** ``f0prime`` by ``f0scalefac`` from the speaker
    definition, clamp to ``[LOWEST_F0, HIGHEST_F0]``.
-10. **Emit** ``parstochip[OUT_T0] = f0prime`` (HLSYN path stores
-    ``f0prime`` directly, not the muldv period).
+10. **Emit** ``parstochip[OUT_T0] = muldv(400, 1000, f0prime)`` — the
+    pitch *period*. The shipped ``libtts_us.so`` builds with ``HLSYN``
+    (and ``FAKE_HLSYN``) undefined; only the HLSYN build would store
+    ``f0prime`` directly.
 
 Key MALE/FEMALE differences (faithful to the C source):
 
@@ -95,7 +97,7 @@ from dectalk.ph.getcosine import (
 )
 from dectalk.ph.inton_constants import SINGING, TIME_VALUE_SPECIFIED
 from dectalk.ph.linear_interp import linear_interp
-from dectalk.ph.math_helpers import mlsh1
+from dectalk.ph.math_helpers import mlsh1, muldv
 from dectalk.ph.numeric_constants import FRAC_ONE, MALE
 from dectalk.ph.param_indices import OUT_T0
 from dectalk.ph.phoneme_features import FPLOSV, FVOICD
@@ -154,16 +156,18 @@ def pht0draw(ph_tts: TtsHandle) -> None:
     The function mutates ``ph_tts.p_ph_thread_data`` (a :class:`DphT`)
     in place; specifically it writes:
 
-    - ``parstochip[OUT_T0]`` — the F0 value passed to the synthesiser.
+    - ``parstochip[OUT_T0]`` — the pitch period passed to the
+      synthesiser (``muldv(400, 1000, f0prime)``).
     - ``f0prime`` — the unscaled output F0 before chip output.
     - ``f0`` — the smoothed hat+impulse baseline.
     - ``f0s`` — the smoothed segmental adjustment.
     - ``avglstop`` — glottal-stop amplitude reduction flag
       (FEMALE branch only).
 
-    Build flags: ``HLSYN`` active (so ``OUT_T0 = f0prime``, not
-    ``muldv(400, 1000, f0prime)``).  Non-US language table branches
-    fall back to the US tables (matching the C default).
+    Build flags: ``HLSYN`` undefined (so ``OUT_T0 =
+    muldv(400, 1000, f0prime)`` — the pitch period — not ``f0prime``
+    itself).  Non-US language table branches fall back to the US
+    tables (matching the C default).
 
     The MALE and FEMALE branches differ in initialisation constants,
     several control-flow comparisons, the segmental F0 table choice,
@@ -583,10 +587,15 @@ def _pht0draw_male(p_dph_t: DphT, pdphsettar: DphSettarSt) -> None:  # noqa: PLR
     # -------------------------------------------------------------------
     # 11. Emit parstochip[OUT_T0]
     # ph_drwt02.c lines 1397-1409
-    # HLSYN path: store f0prime directly (not the period muldv result).
+    # The shipped libtts_us.so builds with HLSYN undefined (and
+    # FAKE_HLSYN undefined), so OUT_T0 carries the pitch *period*
+    # ``temp = muldv(400, 1000, f0prime)`` — the "only essential divide
+    # in all of DECTALK" — not f0prime itself. The vtm1 synth consumes
+    # OUT_T0 as a period.  f0prime is clamped to [LOWEST_F0, HIGHEST_F0]
+    # above (LOWEST_F0 = 500 > 0), so the divide is always safe.
     # -------------------------------------------------------------------
     if len(p_dph_t.parstochip) > OUT_T0:
-        p_dph_t.parstochip[OUT_T0] = p_dph_t.f0prime
+        p_dph_t.parstochip[OUT_T0] = muldv(400, 1000, p_dph_t.f0prime)
 
     # -------------------------------------------------------------------
     # 12. Increment time counters
@@ -1015,10 +1024,15 @@ def _pht0draw_female(p_dph_t: DphT, pdphsettar: DphSettarSt) -> None:  # noqa: P
     # -------------------------------------------------------------------
     # 11. Emit parstochip[OUT_T0]
     # ph_drwt02.c lines 2067-2072.
-    # HLSYN path: store f0prime directly (not the muldv period result).
+    # The shipped libtts_us.so builds with HLSYN undefined (and
+    # FAKE_HLSYN undefined), so OUT_T0 carries the pitch *period*
+    # ``temp = muldv(400, 1000, f0prime)`` — the "only essential divide
+    # in all of DECTALK" — not f0prime itself. The vtm1 synth consumes
+    # OUT_T0 as a period.  f0prime is clamped to [LOWEST_F0, HIGHEST_F0]
+    # above (LOWEST_F0 = 500 > 0), so the divide is always safe.
     # -------------------------------------------------------------------
     if len(p_dph_t.parstochip) > OUT_T0:
-        p_dph_t.parstochip[OUT_T0] = p_dph_t.f0prime
+        p_dph_t.parstochip[OUT_T0] = muldv(400, 1000, p_dph_t.f0prime)
 
     # -------------------------------------------------------------------
     # 12. Increment time counters

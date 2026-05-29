@@ -68,6 +68,7 @@ convention = "google"
 "tests/**/*.py" = ["D", "ANN", "PLR2004"]  # tests don't need docstrings or magic-value bans
 "src/dectalk/__init__.py" = ["D104"]       # package-level docstring lives in README
 "src/dectalk/cmd/par_process_input.py" = ["E501"]  # faithful C port; long buffer-copy lines are inherent
+"scripts/verify_out_t0_parity.py" = ["PLR2004", "T201"]  # one-off OUT_T0 measurement script: prints + dump-format literals
 
 [tool.ruff.format]
 quote-style = "double"
