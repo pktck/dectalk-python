@@ -53,7 +53,7 @@ from dectalk.ph.param_indices import (
     OUT_T0,
     OUT_TLT,
 )
-from dectalk.ph.phdraw import phdraw
+from dectalk.ph.phdraw import _phdraw_hlsyn_blocks, phdraw
 from dectalk.ph.tts_handle import TtsHandle
 
 _C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_draw.c"
@@ -232,24 +232,56 @@ def test_amp_param_uses_tarcur_plus_ftran_div_by8() -> None:
     assert p_dph_t.parstochip[OUT_A2] == 43
 
 
-def test_amp_double_burst_noop_on_hlsyn_build() -> None:
-    """Parallel-amp double-burst rule is FAKE_HLSYN-only -- the HLSYN
-    production build (libtts_us.so, our target) compiles it out at
-    ``ph_draw.c`` lines 508-524. The Python ``_apply_amp_special_double_burst``
-    is consequently a no-op, so the parallel amplitude survives the
-    ``tcum == tspesh + 1`` window unchanged.
+def test_amp_double_burst_fires_on_us_build() -> None:
+    """Parallel-amp double-burst knocks A2 down by 10 dB on the US build.
+
+    The rule (``ph_draw.c`` lines 508-524) is gated behind
+    ``#if (defined FAKE_HLSYN || !(defined HLSYN))``; ``libtts_us.so``
+    has HLSYN undefined, so the ``!(defined HLSYN)`` arm keeps it
+    compiled in. At ``tcum == tspesh + 1`` a parallel amp (here A2,
+    ``param_idx > AP``) that is still >= 10 dB is reduced by 10 dB.
     """
     handle, p_dph_t, _ = _build_handle()
-    p_dph_t.tcum = 6
     p = p_dph_t.param[A2]
     p.tarcur = 25
     p.ftran = 0
     p.btran = 0
     p.tbacktr = 1000
     p.tspesh = 5
-    p.pspesh = 0  # Inside-tspesh override (won't fire because tcum > tspesh now).
+    p.pspesh = 0  # Inside-tspesh override (won't fire because tcum > tspesh).
+    p_dph_t.tcum = 6  # tspesh + 1 -> the double-burst window.
     phdraw(handle)
-    # No double-burst: value stays at 25 (the amplitude-loop output).
+    # Double-burst: 25 - 10 = 15.
+    assert p_dph_t.parstochip[OUT_A2] == 15
+
+
+def test_amp_double_burst_skipped_below_10db() -> None:
+    """The double-burst does nothing when the amplitude is below 10 dB."""
+    handle, p_dph_t, _ = _build_handle()
+    p = p_dph_t.param[A2]
+    p.tarcur = 9  # < 10 -> rule's ``*parp >= 10`` guard fails.
+    p.ftran = 0
+    p.btran = 0
+    p.tbacktr = 1000
+    p.tspesh = 5
+    p.pspesh = 0
+    p_dph_t.tcum = 6  # tspesh + 1.
+    phdraw(handle)
+    assert p_dph_t.parstochip[OUT_A2] == 9
+
+
+def test_amp_double_burst_only_at_tspesh_plus_one() -> None:
+    """The double-burst fires only at ``tcum == tspesh + 1`` (not later)."""
+    handle, p_dph_t, _ = _build_handle()
+    p = p_dph_t.param[A2]
+    p.tarcur = 25
+    p.ftran = 0
+    p.btran = 0
+    p.tbacktr = 1000
+    p.tspesh = 5
+    p.pspesh = 0
+    p_dph_t.tcum = 7  # tspesh + 2 -> outside the one-frame window.
+    phdraw(handle)
     assert p_dph_t.parstochip[OUT_A2] == 25
 
 
@@ -285,68 +317,104 @@ def test_av_glottal_stop_reduction_skipped_below_threshold() -> None:
 # ----- Tilt computation ----------------------------------------------------
 
 
-def test_tilt_zeroed_on_hlsyn_build() -> None:
-    """On the HLSYN production build, ``OUT_TLT`` is forced to 0.
+def test_tilt_additive_on_us_build() -> None:
+    """On the US build (HLSYN undefined), ``OUT_TLT`` gets the additive tilt.
 
-    The entire spectral-tilt computation (``ph_draw.c`` lines 617-742,
-    including the breathy-voice modifier and breathyah/breathytilt
-    state tracking) is gated behind
-    ``#if (defined FAKE_HLSYN || !(defined HLSYN))``; the HLSYN
-    branch is just ``pDph_t->parstochip[OUT_TLT] = 0`` with the C
-    source comment "it doesn't really do anything in hlsyn".
+    ``libtts_us.so`` compiles with ``-DENGLISH -DENGLISH_US -DACNA
+    -DACCESS32 -DTYPING_MODE`` -- HLSYN and CHANGES_AFTER_V43 are
+    *undefined*. Preprocessing ``ph_draw.c`` with those flags keeps the
+    ``#if (defined FAKE_HLSYN || !(defined HLSYN))`` arm (the additive
+    tilt at C 617-742) and elides the ``#else`` (``OUT_TLT = 0``). So
+    OUT_TLT is the f0-dependent tilt plus ``(spdeftltoff - 6)``, not 0.
+
+    With ``f0 = 1500`` (> 1400): ``temptilt = frac4mul(1400 - 1500, 73)
+    = (-100 * 73) >> 12 = -2`` -> clamp to 0 -> ``12 - 0 = 12`` ->
+    ``+= (spdeftltoff - 6) = (5 - 6) = -1`` -> ``OUT_TLT = 11``.
     """
     handle, p_dph_t, _ = _build_handle()
     p_dph_t.malfem = MALE
-    p_dph_t.f0 = 1500  # Would yield non-zero temptilt under FAKE_HLSYN.
+    p_dph_t.f0 = 1500
     p_dph_t.f0_dep_tilt = 73
     p_dph_t.spdeftltoff = 5
     p_dph_t.spdeflaxprcnt = 0
     p_dph_t.breathysw = 0
     phdraw(handle)
-    assert p_dph_t.parstochip[OUT_TLT] == 0
+    assert p_dph_t.parstochip[OUT_TLT] == 11
 
 
-def test_tilt_zero_regardless_of_spdeftltoff() -> None:
-    """``spdeftltoff`` (was a tilt offset in the FAKE_HLSYN formula)
-    has no effect on OUT_TLT in the HLSYN build, which simply writes 0.
+def test_tilt_low_f0_increases_tilt() -> None:
+    """Lower F0 -> larger ``temptilt`` -> larger OUT_TLT (capped at 31).
+
+    With ``f0 = 1000``, ``f0_dep_tilt = 0`` (the default _build_handle
+    value): ``temptilt = frac4mul(400, 0) = 0`` -> ``12 - 0 = 12`` ->
+    ``+= (spdeftltoff - 6) = (3 - 6) = -3`` -> ``OUT_TLT = 9``.
+    """
+    handle, p_dph_t, _ = _build_handle()
+    p_dph_t.f0 = 1000
+    p_dph_t.f0_dep_tilt = 0
+    p_dph_t.spdeftltoff = 3
+    phdraw(handle)
+    assert p_dph_t.parstochip[OUT_TLT] == 9
+
+
+def test_tilt_spdeftltoff_offset_applied() -> None:
+    """``spdeftltoff`` shifts OUT_TLT by ``(spdeftltoff - 6)`` then clamps.
+
+    A large ``spdeftltoff`` drives OUT_TLT to the 31 ceiling (C 733-736).
     """
     handle, p_dph_t, _ = _build_handle()
     p_dph_t.spdeftltoff = 1000
     phdraw(handle)
-    assert p_dph_t.parstochip[OUT_TLT] == 0
+    assert p_dph_t.parstochip[OUT_TLT] == 31
 
 
-def test_breathy_state_untouched_on_hlsyn_build() -> None:
-    """``breathyah`` and ``breathytilt`` are FAKE_HLSYN-only state
-    (mutated only by the gated ``_compute_tilt`` body). On the HLSYN
-    build phdraw leaves them at whatever the caller set, since the
-    tilt block that read / wrote them is compiled out.
+def test_breathy_state_advanced_on_us_build() -> None:
+    """``breathyah`` / ``breathytilt`` ramp when ``breathysw == 1`` (US build).
+
+    The breathy-voice modifier (C 686-731) is inside the live tilt block
+    on the US build. With AV > 40, ``breathyah`` ramps by +2 (cap 27) and
+    ``breathytilt`` by +1 (cap 16) per frame.
     """
     handle, p_dph_t, p_dphsettar = _build_handle()
     p_dphsettar.breathyah = 10
     p_dphsettar.breathytilt = 5
     p_dph_t.breathysw = 1
+    p_dph_t.spdeflaxprcnt = 0
     p = p_dph_t.param[AV]
-    p.tarcur = 50
+    p.tarcur = 50  # AV > 40 so the breathy ramps fire.
     p.ftran = 0
     p.btran = 0
     p.tbacktr = 1000
     p.tspesh = 0
     p_dph_t.avglstop = 0
     phdraw(handle)
-    # Untouched -- phdraw does not enter the FAKE_HLSYN tilt block.
-    assert p_dphsettar.breathyah == 10
-    assert p_dphsettar.breathytilt == 5
+    assert p_dphsettar.breathyah == 12  # 10 + 2
+    assert p_dphsettar.breathytilt == 6  # 5 + 1
+
+
+def test_breathy_state_reset_when_breathysw_off() -> None:
+    """When ``breathysw != 1`` the breathy ramps are zeroed (C 728-730)."""
+    handle, p_dph_t, p_dphsettar = _build_handle()
+    p_dphsettar.breathyah = 10
+    p_dphsettar.breathytilt = 5
+    p_dph_t.breathysw = 0
+    phdraw(handle)
+    assert p_dphsettar.breathyah == 0
+    assert p_dphsettar.breathytilt == 0
 
 
 # ----- Formant scaling -----------------------------------------------------
+# Formant scaling lives behind ``#if defined(HLSYN) || defined(CHANGES_AFTER_V43)``
+# (both undefined on libtts_us.so) and is DEAD on the US build; ``phdraw``
+# does NOT call ``_apply_formant_scaling`` there. The first test confirms
+# phdraw leaves F2 untouched on the US path; the others drive the ported
+# helper directly to keep its (HLSYN-build) logic covered.
 
 
-def test_formant_scaling_identity_at_q12_unity() -> None:
-    """``fnscale == 4096`` (Q12 1.0) leaves F2 / F3 unchanged."""
+def test_formant_scaling_not_applied_by_phdraw_on_us_build() -> None:
+    """phdraw does not rescale F2 on the US build (formant scaling is dead)."""
     handle, p_dph_t, _ = _build_handle()
-    p_dph_t.fnscale = 4096
-    # Pre-populate F2 / F3 trajectories.
+    p_dph_t.fnscale = 2048  # Q12 0.5 -- would halve F2 if scaling were live.
     for idx in (F2, 3):  # F2 and F3
         p = p_dph_t.param[idx]
         p.tarcur = 1500
@@ -356,8 +424,43 @@ def test_formant_scaling_identity_at_q12_unity() -> None:
         p.tspesh = 0
         p.durlin = -1
     phdraw(handle)
-    # F2 went through coarticulation but with fvvtran=0 should be 1500.
+    # F2 went through coarticulation but with fvvtran=0 stays 1500 -- the
+    # 0.5 fnscale is NOT applied because phdraw skips the dead block.
     assert p_dph_t.parstochip[OUT_F2] == 1500
+
+
+def test_formant_scaling_helper_identity_at_q12_unity() -> None:
+    """``_apply_formant_scaling`` with ``fnscale == 4096`` is identity."""
+    from dectalk.ph.param_indices import OUT_F1, OUT_F3  # noqa: PLC0415
+    from dectalk.ph.phdraw import _apply_formant_scaling  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    phdraw(handle)  # allocate parstochip.
+    p_dph_t.fnscale = 4096
+    p_dph_t.parstochip[OUT_F1] = 500
+    p_dph_t.parstochip[OUT_F2] = 1500
+    p_dph_t.parstochip[OUT_F3] = 2500
+    _apply_formant_scaling(p_dph_t)
+    assert p_dph_t.parstochip[OUT_F1] == 500
+    assert p_dph_t.parstochip[OUT_F2] == 1500
+    assert p_dph_t.parstochip[OUT_F3] == 2500
+
+
+def test_formant_scaling_helper_scales_at_half() -> None:
+    """``_apply_formant_scaling`` with ``fnscale == 2048`` (Q12 0.5) scales F2/F3."""
+    from dectalk.ph.param_indices import OUT_F2, OUT_F3  # noqa: PLC0415
+    from dectalk.ph.phdraw import _apply_formant_scaling  # noqa: PLC0415
+    from dectalk.vtm.frac import frac4mul  # noqa: PLC0415
+
+    handle, p_dph_t, _ = _build_handle()
+    phdraw(handle)
+    p_dph_t.fnscale = 2048
+    p_dph_t.parstochip[OUT_F2] = 1500
+    p_dph_t.parstochip[OUT_F3] = 2500
+    _apply_formant_scaling(p_dph_t)
+    complement = 4096 - 2048
+    assert p_dph_t.parstochip[OUT_F2] == frac4mul(1500, 2048) + (complement >> 3)
+    assert p_dph_t.parstochip[OUT_F3] == frac4mul(2500, 2048)
 
 
 # ----- C-source parity assertions (skipped when source absent) -------------
@@ -465,13 +568,19 @@ def test_c_body_has_formant_scaling() -> None:
 
 
 # ----- HLSyn area-loop tests (ph_draw.c lines 761-907) -----------------------
+# This loop lives inside ``#ifdef HLSYN`` (C 761-4291) and is compiled out
+# of ``libtts_us.so``; ``phdraw`` does NOT call ``_phdraw_hlsyn_area_loop``
+# on the US build. These tests exercise the ported helper directly so its
+# (HLSYN-build) logic stays covered.
 
 
 def test_hlsyn_area_loop_skipped_when_no_tspesh() -> None:
     """Loop is a no-op when neither AREAL/AREAB/TONGUEBODY has tspesh > 0."""
     from dectalk.ph.param_indices import AREAB, AREAL, TONGUEBODY  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_hlsyn_area_loop  # noqa: PLC0415
 
     handle, p_dph_t, _ = _build_handle()
+    phdraw(handle)  # one call to allocate parstochip + outp pointers
     p_dph_t.param[AREAL].tspesh = 0
     p_dph_t.param[AREAB].tspesh = 0
     p_dph_t.param[TONGUEBODY].tspesh = 0
@@ -479,7 +588,7 @@ def test_hlsyn_area_loop_skipped_when_no_tspesh() -> None:
     p_dph_t.in_brelease = 7
     p_dph_t.in_lclosure = 7
     p_dph_t.target_l = 42
-    phdraw(handle)
+    _phdraw_hlsyn_area_loop(p_dph_t)
     assert p_dph_t.in_brelease == 7
     assert p_dph_t.in_lclosure == 7
     assert p_dph_t.target_l == 42
@@ -489,15 +598,17 @@ def test_hlsyn_area_loop_pareab_clears_lrelease_when_tspesh_window_expired() -> 
     """When ``tcum >= tspesh`` and current phone has no consonant feature, the
     PAREAB branch should clear ``in_lrelease`` and ``in_bclosure``."""
     from dectalk.ph.param_indices import AREAB  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_hlsyn_area_loop  # noqa: PLC0415
 
     handle, p_dph_t, _ = _build_handle()
+    phdraw(handle)
     p_dph_t.allophons = [0, 0, 0]
     p_dph_t.nphone = 1
     p_dph_t.param[AREAB].tspesh = 5
     p_dph_t.tcum = 10  # past tspesh
     p_dph_t.in_lrelease = 1
     p_dph_t.in_bclosure = 1
-    phdraw(handle)
+    _phdraw_hlsyn_area_loop(p_dph_t)
     assert p_dph_t.in_lrelease == 0
     assert p_dph_t.in_bclosure == 0
 
@@ -507,8 +618,10 @@ def test_hlsyn_area_loop_ptongebody_sets_closure_at_tcum_zero_for_stop() -> None
     ``in_tbclosure = 1`` and ``tbstep = -2``."""
     from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
     from dectalk.ph.param_indices import TONGUEBODY  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_hlsyn_area_loop  # noqa: PLC0415
 
     handle, p_dph_t, _ = _build_handle()
+    phdraw(handle)
     # A velar stop /K/ has FSTOP set; pick the US allophone code.
     k_code = (PFUSA << 8) | int(USPhoneme["K"])
     p_dph_t.allophons = [0, k_code, 0]
@@ -517,7 +630,7 @@ def test_hlsyn_area_loop_ptongebody_sets_closure_at_tcum_zero_for_stop() -> None
     p_dph_t.tcum = 0
     p_dph_t.in_tbclosure = 0
     p_dph_t.in_tbrelease = 1
-    phdraw(handle)
+    _phdraw_hlsyn_area_loop(p_dph_t)
     assert p_dph_t.in_tbclosure == 1
     assert p_dph_t.in_tbrelease == 0
     assert p_dph_t.tbstep == -2
@@ -537,6 +650,21 @@ def test_c_body_has_hlsyn_area_loop() -> None:
 
 
 # ----- Per-frame HLSyn state machine tests (ph_draw.c lines 2350-4300) ------
+# The per-frame state machine lives inside ``#ifdef HLSYN`` (C 761-4291)
+# and is compiled out of ``libtts_us.so``; ``phdraw`` does NOT invoke it
+# on the US build. These tests drive the ported HLSYN-build chain directly
+# via ``_phdraw_hlsyn_blocks`` so its logic stays covered.
+
+
+def _run_state_machine(handle: TtsHandle, p_dph_t: DphT, p_dphsettar: DphSettarSt) -> None:
+    """Allocate parstochip via one ``phdraw`` call, then run the HLSYN chain.
+
+    The first ``phdraw`` populates ``parstochip`` / ``outp`` pointers and
+    the live trajectory; ``_phdraw_hlsyn_blocks`` then runs the dead
+    (HLSYN-build-only) per-frame state machine the tests assert against.
+    """
+    phdraw(handle)
+    _phdraw_hlsyn_blocks(p_dph_t, p_dphsettar)
 
 
 def _build_state_machine_handle(  # noqa: PLR0915 — state setup needs many fields
@@ -613,19 +741,19 @@ def _build_state_machine_handle(  # noqa: PLR0915 — state setup needs many fie
 
 def test_state_machine_phonestep_incremented_when_same_phone() -> None:
     """``phonestep`` increments each frame when ``nphone == nphonelast``."""
-    handle, p_dph_t, _ = _build_state_machine_handle()
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle()
     p_dph_t.phonestep = 3
     p_dph_t.nphonelast = p_dph_t.nphone  # same phone
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.phonestep == 4
 
 
 def test_state_machine_phonestep_reset_on_new_phone() -> None:
     """``phonestep`` resets to 0 when ``nphone != nphonelast``."""
-    handle, p_dph_t, _ = _build_state_machine_handle()
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle()
     p_dph_t.phonestep = 7
     p_dph_t.nphonelast = p_dph_t.nphone + 1  # different phone
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.phonestep == 0
 
 
@@ -636,14 +764,14 @@ def test_state_machine_nasal_step_increments_during_nasal() -> None:
 
     m_code = (PFUSA << 8) | int(USPhoneme["M"])
     # Use 5 phones: SIL, M, SIL, SIL, SIL to avoid index-out-of-range
-    handle, p_dph_t, _ = _build_state_machine_handle(
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle(
         nphone=1,
         allophons=[0, m_code, 0, 0, 0],
         allofeats=[0] * 5,
         allodurs=[40] * 5,
     )
     p_dph_t.nasal_step = 2
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     # nasal_step should have incremented (by +2 from the else branch)
     assert p_dph_t.nasal_step >= 3
     assert p_dph_t.area_n == _NASALIZATION[min(p_dph_t.nasal_step, 12)]
@@ -654,14 +782,14 @@ def test_state_machine_nasal_target_ag_set_during_nasal() -> None:
     from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
 
     m_code = (PFUSA << 8) | int(USPhoneme["M"])
-    handle, p_dph_t, _ = _build_state_machine_handle(
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle(
         nphone=1,
         allophons=[0, m_code, 0, 0, 0],
         allofeats=[0] * 5,
         allodurs=[40] * 5,
     )
     p_dph_t.target_ag = 0
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.target_ag == 700
 
 
@@ -671,14 +799,14 @@ def test_state_machine_pressure_builds_for_voiced() -> None:
 
     # /V/ is voiced fricative
     v_code = (PFUSA << 8) | int(USPhoneme["V"])
-    handle, p_dph_t, _ = _build_state_machine_handle(
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle(
         nphone=1,
         allophons=[0, v_code, 0, 0, 0],
         allofeats=[0] * 5,
         allodurs=[40] * 5,
     )
     p_dph_t.pressure = 0
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.pressure == 70
 
 
@@ -686,8 +814,8 @@ def test_state_machine_out_ag_written() -> None:
     """``parstochip[OUT_AG]`` is written to a non-negative value each call."""
     from dectalk.ph.param_indices import OUT_AG  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_state_machine_handle()
-    phdraw(handle)
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle()
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.parstochip[OUT_AG] >= 0
 
 
@@ -695,18 +823,18 @@ def test_state_machine_out_an_equals_area_n() -> None:
     """``parstochip[OUT_AN]`` equals ``area_n`` at the end of each call."""
     from dectalk.ph.param_indices import OUT_AN  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_state_machine_handle()
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle()
     p_dph_t.area_n = 160
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.parstochip[OUT_AN] == p_dph_t.area_n
 
 
 def test_state_machine_nphonelast_updated() -> None:
     """``nphonelast`` is set to ``nphone`` at the end of each call."""
-    handle, p_dph_t, _ = _build_state_machine_handle()
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle()
     p_dph_t.nphonelast = 99  # stale value
     p_dph_t.nphone = 1
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.nphonelast == 1
 
 
@@ -717,7 +845,7 @@ def test_state_machine_dh_closure_not_at_word_boundary() -> None:
 
     dh_code = (PFUSA << 8) | int(USPhoneme["DH"])
     # boundary_val < FWBNEXT: use 0 (no boundary, less than the 0o140 threshold)
-    handle, p_dph_t, _ = _build_state_machine_handle(
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle(
         nphone=1,
         allophons=[0, dh_code, 0, 0, 0],
         allofeats=[0, 0, 0, 0, 0],  # boundary = 0 < FWBNEXT
@@ -726,7 +854,7 @@ def test_state_machine_dh_closure_not_at_word_boundary() -> None:
     p_dph_t.phonestep = 3  # < allodurs[1] - 1 = 9
     p_dph_t.target_b = 500
     p_dph_t.area_b = 500
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     # The DH rule should have set target_b = area_b = 0
     assert p_dph_t.target_b == 0
     assert p_dph_t.area_b == 0
@@ -737,7 +865,7 @@ def test_state_machine_flap_opens_after_half_duration() -> None:
     from dectalk.include.phoneme_codes import PFUSA, USPhoneme  # noqa: PLC0415
 
     dx_code = (PFUSA << 8) | int(USPhoneme["DX"])
-    handle, p_dph_t, _ = _build_state_machine_handle(
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle(
         nphone=1,
         allophons=[0, dx_code, 0, 0, 0],
         allofeats=[0] * 5,
@@ -745,104 +873,81 @@ def test_state_machine_flap_opens_after_half_duration() -> None:
     )
     p_dph_t.tcum = 12  # > half (10) → opening phase
     p_dph_t.area_flap = 0
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.area_flap > 0  # was increased
 
 
 def test_state_machine_non_flap_phone_sets_area_flap_1200() -> None:
     """For a non-flap phone, ``area_flap`` is reset to 1200."""
-    handle, p_dph_t, _ = _build_state_machine_handle()
+    handle, p_dph_t, p_dphsettar = _build_state_machine_handle()
     p_dph_t.area_flap = 42
-    phdraw(handle)
+    _run_state_machine(handle, p_dph_t, p_dphsettar)
     assert p_dph_t.area_flap == 1200
 
 
 # ----- Lateral AV reduction + F3/F2 floor (ph_draw.c lines 4619-4644) -------
-# These two unconditional rules are active on the US HLSYN build and are
-# ported by _phdraw_lateral_av_and_f3_floor(), called at the end of phdraw().
+# This block is DEAD on the US build: it lives after the
+# ``#if !defined(HLSYN) && !defined(CHANGES_AFTER_V43)`` ``return;`` at
+# C 4307, so phdraw returns before reaching it and does NOT call
+# _phdraw_lateral_av_and_f3_floor(). The tests drive the ported helper
+# directly to keep its (HLSYN/CHANGES_AFTER_V43-build) logic covered.
 
 
 def test_lateral_av_reduction_fires_for_usp_ll() -> None:
     """USP_LL allophone triggers the -6 dB AV reduction (ph_draw.c line 4629)."""
     from dectalk.include.usp_codes import USP_LL  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_lateral_av_and_f3_floor  # noqa: PLC0415
 
     handle, p_dph_t, _ = _build_handle()
-    p = p_dph_t.param[AV]
-    p.tarcur = 40
-    p.ftran = 0
-    p.btran = 0
-    p.tbacktr = 1000
-    p.tspesh = 0
-    p_dph_t.avglstop = 0  # Disable glottal-stop reduction.
+    phdraw(handle)  # allocate parstochip + run the live trajectory.
     p_dph_t.allophons = [0, USP_LL, 0]
     p_dph_t.nphone = 1
-    phdraw(handle)
-    # AV from trajectory = 40; lateral reduction -6 = 34.
+    p_dph_t.parstochip[OUT_AV] = 40
+    _phdraw_lateral_av_and_f3_floor(p_dph_t)
+    # AV = 40; lateral reduction -6 = 34.
     assert p_dph_t.parstochip[OUT_AV] == 34
 
 
 def test_lateral_av_reduction_clamps_to_zero() -> None:
     """Lateral AV reduction never takes AV below zero (ph_draw.c line 4633)."""
     from dectalk.include.usp_codes import USP_LL  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_lateral_av_and_f3_floor  # noqa: PLC0415
 
     handle, p_dph_t, _ = _build_handle()
-    p = p_dph_t.param[AV]
-    p.tarcur = 3  # After -6 would be -3 -> clamped to 0.
-    p.ftran = 0
-    p.btran = 0
-    p.tbacktr = 1000
-    p.tspesh = 0
-    p_dph_t.avglstop = 0
+    phdraw(handle)
     p_dph_t.allophons = [0, USP_LL, 0]
     p_dph_t.nphone = 1
-    phdraw(handle)
+    p_dph_t.parstochip[OUT_AV] = 3  # After -6 would be -3 -> clamped to 0.
+    _phdraw_lateral_av_and_f3_floor(p_dph_t)
     assert p_dph_t.parstochip[OUT_AV] == 0
 
 
 def test_lateral_av_reduction_skipped_for_non_lateral() -> None:
     """A non-lateral allophone does not trigger the AV reduction."""
     from dectalk.include.usp_codes import USP_R  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_lateral_av_and_f3_floor  # noqa: PLC0415
 
     handle, p_dph_t, _ = _build_handle()
-    p = p_dph_t.param[AV]
-    p.tarcur = 40
-    p.ftran = 0
-    p.btran = 0
-    p.tbacktr = 1000
-    p.tspesh = 0
-    p_dph_t.avglstop = 0
+    phdraw(handle)
     p_dph_t.allophons = [0, USP_R, 0]
     p_dph_t.nphone = 1
-    phdraw(handle)
-    # No lateral reduction; AV trajectory result is 40.
+    p_dph_t.parstochip[OUT_AV] = 40
+    _phdraw_lateral_av_and_f3_floor(p_dph_t)
+    # No lateral reduction; AV stays at 40.
     assert p_dph_t.parstochip[OUT_AV] == 40
 
 
 def test_f3_f2_floor_enforces_300hz_gap() -> None:
     """When F3 - F2 < 300, F3 is raised to F2 + 300 (ph_draw.c lines 4635-4638)."""
     from dectalk.ph.param_indices import OUT_F2, OUT_F3  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_lateral_av_and_f3_floor  # noqa: PLC0415
 
     handle, p_dph_t, _ = _build_handle()
-    # F2 = 1500, F3 = 1600 (gap = 100, below the 300-Hz floor).
-    p_f2 = p_dph_t.param[F2]
-    p_f2.tarcur = 1500
-    p_f2.ftran = 0
-    p_f2.btran = 0
-    p_f2.tbacktr = 1000
-    p_f2.tspesh = 0
-    p_f2.dipcum = 0
-    p_f2.deldip = 0
-    p_f2.durlin = -1
-    p_f3 = p_dph_t.param[3]  # F3 param index
-    p_f3.tarcur = 1600
-    p_f3.ftran = 0
-    p_f3.btran = 0
-    p_f3.tbacktr = 1000
-    p_f3.tspesh = 0
-    p_f3.dipcum = 0
-    p_f3.deldip = 0
-    p_f3.durlin = -1
     phdraw(handle)
+    # F2 = 1500, F3 = 1600 (gap = 100, below the 300-Hz floor).
+    p_dph_t.parstochip[OUT_F2] = 1500
+    p_dph_t.parstochip[OUT_F3] = 1600
+    _phdraw_lateral_av_and_f3_floor(p_dph_t)
     f2 = p_dph_t.parstochip[OUT_F2]
     f3 = p_dph_t.parstochip[OUT_F3]
     assert f3 == f2 + 300, f"Expected F3={f2 + 300}, got F3={f3} (F2={f2})"
@@ -851,28 +956,14 @@ def test_f3_f2_floor_enforces_300hz_gap() -> None:
 def test_f3_f2_floor_not_applied_when_gap_sufficient() -> None:
     """When F3 - F2 >= 300, F3 is left unchanged (ph_draw.c lines 4635-4638)."""
     from dectalk.ph.param_indices import OUT_F2, OUT_F3  # noqa: PLC0415
+    from dectalk.ph.phdraw import _phdraw_lateral_av_and_f3_floor  # noqa: PLC0415
 
     handle, p_dph_t, _ = _build_handle()
-    # F2 = 1200, F3 = 2500 (gap = 1300 >> 300).
-    p_f2 = p_dph_t.param[F2]
-    p_f2.tarcur = 1200
-    p_f2.ftran = 0
-    p_f2.btran = 0
-    p_f2.tbacktr = 1000
-    p_f2.tspesh = 0
-    p_f2.dipcum = 0
-    p_f2.deldip = 0
-    p_f2.durlin = -1
-    p_f3 = p_dph_t.param[3]  # F3 param index
-    p_f3.tarcur = 2500
-    p_f3.ftran = 0
-    p_f3.btran = 0
-    p_f3.tbacktr = 1000
-    p_f3.tspesh = 0
-    p_f3.dipcum = 0
-    p_f3.deldip = 0
-    p_f3.durlin = -1
     phdraw(handle)
+    # F2 = 1200, F3 = 2500 (gap = 1300 >> 300).
+    p_dph_t.parstochip[OUT_F2] = 1200
+    p_dph_t.parstochip[OUT_F3] = 2500
+    _phdraw_lateral_av_and_f3_floor(p_dph_t)
     f2 = p_dph_t.parstochip[OUT_F2]
     f3 = p_dph_t.parstochip[OUT_F3]
     assert f3 - f2 >= 300
@@ -1583,22 +1674,25 @@ def test_fvowel_a2_jamming_hx_anticipation_opens_glottis_to_1800() -> None:
 
 
 def test_once_per_phone_runs_before_state_machine_in_phdraw() -> None:
-    """The full phdraw call invokes once-per-phone *before* the state machine.
+    """The HLSYN chain invokes once-per-phone *before* the state machine.
 
-    Empirically verified by phdraw() producing a stable parstochip after one
-    call. Anti-regression for the issue-71 acceptance criterion #2 (no
+    Anti-regression for the issue-71 acceptance criterion #2 (no
     double-writes): if the per-phone setup were called after the state
     machine, target_ag would be left in the per-phone "raw" state and the
     OUT_AG slot would be wrong on FNASAL phones.
+
+    Drives ``_phdraw_hlsyn_blocks`` directly: the per-frame state machine
+    is ``#ifdef HLSYN`` dead code that phdraw does not run on the US build.
     """
     from dectalk.include.usp_codes import USP_N  # noqa: PLC0415
 
-    handle, p_dph_t, _ = _build_handle()
+    handle, p_dph_t, p_dphsettar = _build_handle()
+    phdraw(handle)  # allocate parstochip + run the live trajectory.
     # New phone (nphone != nphonelast) so once-per-phone fires.
     p_dph_t.nphone = 1
     p_dph_t.nphonelast = 0
     p_dph_t.allophons = [USP_N, USP_N, USP_N]
-    phdraw(handle)
+    _phdraw_hlsyn_blocks(p_dph_t, p_dphsettar)
     # The state machine sets target_ag = 700 for FNASAL phones at
     # C ~2510. If once-per-phone ran *after* the state machine, the
     # FOBST branch in once-per-phone (which sets target_ag to

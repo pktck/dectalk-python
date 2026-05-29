@@ -455,24 +455,46 @@ def _amp_param_trajectory(p_dph_t: DphT, p: Parameter) -> int:
 
 
 def _apply_amp_special_double_burst(p_dph_t: DphT, param_idx: int, p: Parameter, value: int) -> int:
-    """No-op on the libtts_us.so HLSYN build.
+    """Double-burst knock-down for /k,g,ch,jh/ parallel amplitudes.
 
-    The C source's double-burst rule (``ph_draw.c`` lines 508-524) for
-    /k,g,ch,jh/ is gated behind
-    ``#if (defined FAKE_HLSYN || !(defined HLSYN))``, so the HLSYN
-    production build (our target) compiles it out. The HLSyn vocal-tract
-    model in ``hlframe.c`` (un-ported; Phase E) handles the secondary-
-    release acoustics directly from the area trajectory.
+    ACTIVE on the US build. The C rule (``ph_draw.c`` lines 508-524) is
+    gated behind ``#if (defined FAKE_HLSYN || !(defined HLSYN))``;
+    ``libtts_us.so`` has HLSYN undefined, so the ``!(defined HLSYN)``
+    arm keeps it compiled in (the enclosing ``#ifdef HLSYN`` block does
+    not start until C 532). Verified by preprocessing ph_draw.c with the
+    US build flags: the ``*parp -= 10`` survives.
 
-    Signature is kept (taking ``value`` and returning it unchanged) so
-    the caller's invocation pattern matches the C source line-by-line
-    rather than diverging into an inline branch.
+    One frame after the burst window closes (``tcum == tspesh + 1``),
+    parallel amplitudes strictly *after* ``PAP`` (i.e. ``param_idx >
+    AP``: A2 / A3 / A4 / A5 / A6 / AB / TILT) that are still >= 10 dB
+    are knocked down by 10 dB, producing the secondary-release dip. The
+    German-affricate ``GRP_KSX -> 0`` special case (C 516-519) tests a
+    German font code absent from the US allophone stream, so only the
+    ``*parp -= 10`` ``else`` arm fires.
+
+    Args:
+        p_dph_t: Active PH thread state (read: ``tcum``).
+        param_idx: Amplitude-loop parameter index (compared against AP).
+        p: The :class:`Parameter` for this slot (read: ``tspesh``).
+        value: The just-computed ``parstochip`` value for this slot.
+
+    Returns:
+        ``value - 10`` when the double-burst fires, else ``value``.
     """
+    if param_idx > AP and p_dph_t.tcum == (p.tspesh + 1) and value >= 10:
+        # C 520-521 (GRP_KSX -> 0 is German-dead on the US stream).
+        return value - 10
     return value
 
 
 def _apply_formant_scaling(p_dph_t: DphT) -> None:
     """Formant-frequency scaling (ph_draw.c lines 750-757).
+
+    **DEAD on the US build.** Gated behind
+    ``#if defined(HLSYN) || defined(CHANGES_AFTER_V43)`` (both undefined
+    on ``libtts_us.so``), so the C never rescales F1/F2/F3 here and
+    ``phdraw`` does NOT call this helper. Kept for the HLSYN /
+    CHANGES_AFTER_V43 builds and for source traceability.
 
     The ``fnscale`` factor is a Q12 voice-specific multiplier (1.0 =
     4096). It's applied to F1 (above the 250 Hz floor), F2 and F3 with
@@ -489,6 +511,76 @@ def _apply_formant_scaling(p_dph_t: DphT) -> None:
         parstochip[OUT_F1] = frac4mul(parstochip[OUT_F1], fnscale) + (complement >> 4)
     parstochip[OUT_F2] = frac4mul(parstochip[OUT_F2], fnscale) + (complement >> 3)
     parstochip[OUT_F3] = frac4mul(parstochip[OUT_F3], fnscale)
+
+
+def _apply_source_spectral_tilt(p_dph_t: DphT, p_dphsettar: DphSettarSt) -> None:
+    """Source spectral tilt (ph_draw.c lines 617-742, non-HLSYN branches).
+
+    Faithful port of the ``#if (defined FAKE_HLSYN || !(defined HLSYN))``
+    block. ``libtts_us.so`` builds with HLSYN **and** CHANGES_AFTER_V43
+    undefined, so the ``#if defined(HLSYN) || defined(CHANGES_AFTER_V43)``
+    sub-branches inside this block (the MALE f0-900 variant at C 640-643,
+    the ``8 - temptilt`` form at C 654, the GRP_IH +3 at C 668-671, the
+    ``spdeftltoff - 3`` offset at C 679, and the HLSYN breathy ``value``
+    form at C 699) are all dead; this mirrors only the surviving ``#else``
+    arms.
+
+    The spectrum becomes less smooth (more tilt) as F0 falls below
+    1400 Hz x10. ``OUT_TLT`` accumulates an additive tilt plus the
+    speaker default tilt offset, then the breathy-voice modifier (C
+    685-731), and is clamped to ``[0, 31]`` (C 733-741).
+
+    Mirrors the C exactly: ``parp = &parstochip[OUT_TLT]`` is left
+    pointing at OUT_TLT for the caller's later loudness compensation.
+
+    Args:
+        p_dph_t: Active PH thread state; ``parstochip[OUT_TLT]`` and
+            (for the breathy modifier) ``parstochip[OUT_AP]`` are
+            mutated in place.
+        p_dphsettar: Per-frame settar state holding the breathy
+            ``breathyah`` / ``breathytilt`` ramps (mutated in place).
+    """
+    parstochip = p_dph_t.parstochip
+
+    # C 647 (active #else of the MALE/f0-900 split): temptilt scales the
+    # gap below 1400 Hz by the speaker-default f0_dep_tilt (Q12 frac).
+    temptilt = frac4mul(1400 - p_dph_t.f0, p_dph_t.f0_dep_tilt)
+
+    # C 655-660 (active #else): clamp to >= 0, then invert about 12.
+    temptilt = max(temptilt, 0)
+    temptilt = 12 - temptilt
+
+    # C 661-662: re-clamp to >= 0 after the inversion.
+    temptilt = max(temptilt, 0)
+
+    # C 675: add the f0-dependent tilt to OUT_TLT.
+    parstochip[OUT_TLT] += temptilt
+
+    # C 681 (active #else): add (speaker-default tilt offset - 6).
+    parstochip[OUT_TLT] += p_dph_t.spdeftltoff - 6
+
+    # C 686-731: breathy-voice offset (set via LX in ph_setar.c).
+    if p_dph_t.breathysw == 1:
+        if parstochip[OUT_AV] > 40:
+            # C 692-695: ramp aspiration up (asp increase 32 dB/100 ms).
+            if p_dphsettar.breathyah < 27:
+                p_dphsettar.breathyah += 2
+            # C 701-705 (active #else): bump OUT_AP toward the breathy
+            # aspiration target.
+            value = frac4mul(p_dphsettar.breathyah + 30, p_dph_t.spdeflaxprcnt)
+            parstochip[OUT_AP] = max(parstochip[OUT_AP], value)
+            # C 714-718: ramp the breathy tilt and fold it into OUT_TLT.
+            if p_dphsettar.breathytilt < 16:
+                p_dphsettar.breathytilt += 1  # tilt decrease 16 dB/100 ms
+            parstochip[OUT_TLT] += frac4mul(p_dph_t.spdeflaxprcnt, p_dphsettar.breathytilt)
+    else:
+        # C 728-730: zero / re-initialise the breathy ramps.
+        p_dphsettar.breathyah = 0
+        p_dphsettar.breathytilt = 0
+
+    # C 733-741: source tilt clamped to [0, 31].
+    parstochip[OUT_TLT] = min(parstochip[OUT_TLT], 31)
+    parstochip[OUT_TLT] = max(parstochip[OUT_TLT], 0)
 
 
 # ----------------------------------------------------------------------------
@@ -2198,9 +2290,14 @@ def _phdraw_tombuchler_modulation_dead_code() -> None:
 def _phdraw_lateral_av_and_f3_floor(p_dph_t: DphT) -> None:
     """Reduce AV by 6 dB for lateral phonemes and enforce F3-F2 >= 300 Hz.
 
-    Faithful translation of ``ph_draw.c`` lines 4619-4644 (outside the
-    ``#ifdef TOMBUCHLER`` block, so **always** executed on the US HLSYN
-    build path):
+    Faithful translation of ``ph_draw.c`` lines 4619-4644.
+
+    **DEAD on the US build.** This block sits *after* the
+    ``#if !defined(HLSYN) && !defined(CHANGES_AFTER_V43)`` ``return;``
+    at C 4307, so on ``libtts_us.so`` (HLSYN / CHANGES_AFTER_V43 both
+    undefined) ``phdraw`` returns before reaching it. ``phdraw`` does
+    NOT call this helper on the US build; it is kept for the HLSYN /
+    CHANGES_AFTER_V43 builds and for source traceability.
 
     * **Lateral AV reduction** (C lines 4621-4635): if the current
       allophone (``pDph_t->allophons[nphone]``) is a lateral consonant
@@ -2226,12 +2323,42 @@ def _phdraw_lateral_av_and_f3_floor(p_dph_t: DphT) -> None:
         p_dph_t.parstochip[OUT_F3] = p_dph_t.parstochip[OUT_F2] + 300
 
 
+def _phdraw_hlsyn_blocks(p_dph_t: DphT, p_dphsettar: DphSettarSt) -> None:
+    """Run the full ``#ifdef HLSYN`` per-frame chain (HLSYN build only).
+
+    Encapsulates the call sequence that ``phdraw`` would execute on a
+    build with HLSYN defined: the area-parameter loop (C 761-907), the
+    phone-step counter update (C 909-927), initial-silence anticipation
+    (929-1244), GEN_SIL ending anticipation (1245-1332), the
+    regular-phoneme branch + FVOWEL A2-jamming (1333-2398), the
+    per-frame area/glottis state machine (2350-4291), and finally the
+    post-``return`` lateral AV / F3-floor rules (4619-4644).
+
+    **Not called on the US build.** On ``libtts_us.so`` the entire
+    ``#ifdef HLSYN`` region is compiled out and ``phdraw`` returns at C
+    4307, so this orchestrator is unreachable there. It exists so the
+    ported HLSYN-build logic stays wired together and unit-testable.
+    """
+    _phdraw_hlsyn_area_loop(p_dph_t)
+    # C 909-927: phone-step counter (inside the #ifdef HLSYN block).
+    if p_dph_t.nphone != p_dph_t.nphonelast:
+        p_dph_t.phonestep = 0
+        p_dph_t.modulcount = 0
+    else:
+        p_dph_t.phonestep += 1
+    _phdraw_initial_silence_anticipation(p_dph_t)
+    _phdraw_gen_sil_ending(p_dph_t)
+    _phdraw_regular_phoneme_branch(p_dph_t)
+    _phdraw_per_frame_hlsyn_state_machine(p_dph_t, p_dphsettar)
+    _phdraw_lateral_av_and_f3_floor(p_dph_t)
+
+
 # ----------------------------------------------------------------------------
 # Public entry point.
 # ----------------------------------------------------------------------------
 
 
-def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branches mirror C body
+def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912 — branches mirror C body
     """Emit one Klatt parameter frame.
 
     Faithful (partial) translation of ``void phdraw(LPTTS_HANDLE_T)``
@@ -2357,63 +2484,57 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
     if p_dph_t.parstochip[OUT_AV] > 6:
         p_dph_t.parstochip[OUT_AV] -= p_dph_t.avglstop
 
-    # ----- C lines 617-746: source spectral tilt -----
-    # The entire spectral-tilt computation (C lines 617-742, including
-    # the breathy-voice modifier and breathyah/breathytilt state
-    # tracking) is gated behind
-    # ``#if (defined FAKE_HLSYN || !(defined HLSYN))``; the HLSYN
-    # production build (our target) hits the ``#else`` branch at C
-    # lines 743-746 which simply zeroes OUT_TLT ("it doesn't really
-    # do anything in hlsyn" -- per the comment in the C source). The
-    # HLSyn vocal-tract model in ``hlframe.c`` (Phase E) handles tilt
-    # shaping directly from area / glottis state instead.
-    p_dph_t.parstochip[OUT_TLT] = 0
+    # ----- C lines 617-742: source spectral tilt -----
+    # ACTIVE branch. The whole tilt block is gated behind
+    # ``#if (defined FAKE_HLSYN || !(defined HLSYN))``; ``libtts_us.so``
+    # builds with HLSYN undefined, so the ``#if`` arm (the additive
+    # tilt + breathy modifier) is live and the ``#else`` at C 743-746
+    # (``OUT_TLT = 0``) is dead. Verified by preprocessing ph_draw.c
+    # with ``-DENGLISH -DENGLISH_US -DACNA -DACCESS32 -DTYPING_MODE``:
+    # the line markers jump 714->4297, keeping 617-742 and eliding the
+    # ``#ifdef HLSYN`` block (761-4291).
+    _apply_source_spectral_tilt(p_dph_t, p_dphsettar)
 
     # ----- C lines 750-757: formant scaling -----
-    _apply_formant_scaling(p_dph_t)
+    # DEAD on the US build: gated behind
+    # ``#if defined(HLSYN) || defined(CHANGES_AFTER_V43)`` (both
+    # undefined). The C never rescales F1/F2/F3 here, so the Python
+    # must not call ``_apply_formant_scaling`` (it would shift the
+    # formants by the ``fnscale`` Q12 factor + bias). Left defined for
+    # source traceability / the HLSYN build but not invoked.
 
-    # ----- C lines 761-907: HLSyn area-parameter state machine -----
-    _phdraw_hlsyn_area_loop(p_dph_t)
+    # ----- C lines 761-4291: #ifdef HLSYN block (entirely DEAD) -----
+    # The HLSyn area-parameter state machine, the phone-step counter
+    # update (C 909-927), initial-silence anticipation (929-1244),
+    # GEN_SIL ending anticipation (1245-1332), the regular-phoneme
+    # branch + FVOWEL A2-jamming (1333-2398), and the per-frame
+    # area/glottis state machine with the W/R/LL/LX A2=4000 jams
+    # (2433/2455) all live inside ``#ifdef HLSYN`` and are compiled
+    # out of ``libtts_us.so``. None of the HLSyn-internal state they
+    # compute (target_ag, area_*, nasal_step, pressure, phonestep,
+    # nphonelast, ...) is read by any code on the active VTM1 Klatt
+    # path, and the area parstochip slots they write (OUT_AG/AL/AN/
+    # ABLADE/ATB/PLACE/BRST/CNK/PS/F4) are NEW_VTM-only and never
+    # reach the VOICE_PARS payload. The helpers remain defined for the
+    # HLSYN build but are not invoked here.
 
-    # ----- C lines 908-928: phone-step counter update -----
-    if p_dph_t.nphone != p_dph_t.nphonelast:
-        p_dph_t.phonestep = 0
-        p_dph_t.modulcount = 0
-    else:
-        p_dph_t.phonestep += 1
+    # ----- C lines 4296-4305: loudness compensation for strong tilt -----
+    # ACTIVE. Sits between the elided ``#ifdef HLSYN`` block and the
+    # ``#if !defined(HLSYN) && !defined(CHANGES_AFTER_V43)`` ``return``
+    # at C 4307. ``parp`` still points at OUT_TLT (set by the tilt
+    # block above), so ``*parp`` is the raw tilt value.
+    if p_dph_t.parstochip[OUT_AV] > 3:
+        temptilt = (p_dph_t.parstochip[OUT_TLT] >> 2) - 4
+        temptilt = max(temptilt, 0)  # tilt must be 20 or more
+        p_dph_t.parstochip[OUT_AV] += temptilt
 
-    # ----- C lines 929-1244: initial-silence anticipation -----
-    # (the ``nphone == 0`` branch). Pre-positions HLSyn area /
-    # glottis state on the first frame so the per-frame state
-    # machine has sensible starting values. See
-    # :func:`_phdraw_initial_silence_anticipation` for the body.
-    _phdraw_initial_silence_anticipation(p_dph_t)
-
-    # ----- C lines 1245-1332: GEN_SIL ending-silence anticipation -----
-    # When the current allophone is GEN_SIL the C source sets the
-    # blade / lip / glottis targets based on the previous phone's
-    # features so the final breath decays cleanly. See
-    # :func:`_phdraw_gen_sil_ending`.
-    _phdraw_gen_sil_ending(p_dph_t)
-
-    # ----- C lines 1333-2398: regular-phoneme branch (partial) -----
-    # Pressure / dcstep / stress_pulse tracker. The once-per-phone
-    # setup and FVOWEL A2-jamming sub-blocks remain deferred (they
-    # overlap with rules in :func:`_phdraw_per_frame_hlsyn_state_machine`
-    # and would double-write target_ag if ported in isolation). See
-    # :func:`_phdraw_regular_phoneme_branch`.
-    _phdraw_regular_phoneme_branch(p_dph_t)
-
-    # ----- C lines 2350-4300: per-frame HLSyn state machine -----
-    _phdraw_per_frame_hlsyn_state_machine(p_dph_t, p_dphsettar)
-
-    # ----- C lines 4488-4524: #ifdef TOMBUCHLER (dead code on US build) -----
-    # All four modulation helper calls are inside this block. No call
-    # reaches them from phdraw on the US HLSYN build. See
-    # _phdraw_tombuchler_modulation_dead_code() for the binary proof.
-
-    # ----- C lines 4619-4644: lateral AV reduction + F3/F2 floor -----
-    _phdraw_lateral_av_and_f3_floor(p_dph_t)
+    # ----- C line 4307: return (US build ends here) -----
+    # Everything below C 4307 (the uvular /RR/-modulation at 4321+, the
+    # ``#ifdef TOMBUCHLER`` modulation block, and the lateral AV
+    # reduction + F3/F2 floor at 4619-4644) executes only on the HLSYN
+    # / CHANGES_AFTER_V43 builds. On the US build the function has
+    # already returned, so ``_phdraw_lateral_av_and_f3_floor`` and the
+    # other post-return helpers are not invoked.
 
 
 # Stub helpers naming the still-un-ported C blocks; exported so callers
@@ -2422,9 +2543,12 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915 — branch
 # kept as a deprecated alias forwarding to the live ported loop --
 # downstream tooling that grepped for the stub name doesn't break.
 __all__ = [
+    "_apply_formant_scaling",
     "_phdraw_fvowel_a2_jamming",
     "_phdraw_gen_sil_ending",
+    "_phdraw_hlsyn_area_loop",
     "_phdraw_hlsyn_area_loop_unported",
+    "_phdraw_hlsyn_blocks",
     "_phdraw_initial_silence_anticipation",
     "_phdraw_initial_silence_anticipation_unported",
     "_phdraw_lateral_av_and_f3_floor",
