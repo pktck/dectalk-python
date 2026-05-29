@@ -53,7 +53,11 @@ voice_paul: Final[tuple[int, ...]] = (
     1,
     3,
     100,
-    100,
+    # AP (average pitch, Hz). The C ``paul_8[SPDEF]`` row uses 122
+    # (p_us_vdf_dectalk43.c:8); this had been transcribed as 100, which
+    # dropped the Python pipeline's baseline F0 ~30 Hz below the C
+    # oracle (issue #220 fault 1).
+    122,
     100,
     0,
     70,

@@ -115,11 +115,35 @@ _VOICES: tuple[tuple[str, tuple[int, ...]], ...] = (
 )
 
 
+# Per-voice field overrides where the *shipped binary's* speaker table
+# (``p_us_vdf_dectalk43.c`` — the DECtalk 4.3 release the C oracle is
+# built from) differs from this dev-reference file (``p_us_vdf.c``).
+#
+# ``paul[3]`` (average pitch) is 100 in ``p_us_vdf.c`` but 122 in the
+# 4.3 table (``p_us_vdf_dectalk43.c:8``/:386). The C oracle's measured
+# baseline F0 is ~120 Hz, confirming the binary uses 122; matching it
+# moves the Python pipeline's f0[0] from 88 Hz to 110 Hz on
+# "hello world" (issue #220 fault 1). The remaining 4.3-vs-vdf.c gaps
+# in Paul's gain fields (GF/GH/GV/GN/G1/G3/G4) are issue #220 fault 2
+# and stay tracked against ``p_us_vdf.c`` until that work lands.
+_C_SOURCE_OVERRIDES: dict[str, dict[int, int]] = {
+    "paul": {3: 122},
+}
+
+
 @pytest.mark.parametrize(("name", "py_voice"), _VOICES)
 def test_voice_matches_c_source(name: str, py_voice: tuple[int, ...]) -> None:
-    """Each voice's parameter array matches the C source initialiser."""
-    expected = _parse_voice(name)
-    assert py_voice == expected
+    """Each voice's parameter array matches the C source initialiser.
+
+    The expected row comes from the dev-reference ``p_us_vdf.c`` with
+    per-field overrides applied from :data:`_C_SOURCE_OVERRIDES` where
+    the shipped 4.3 binary's table is known to differ (and the Python
+    side already tracks the binary's value).
+    """
+    expected = list(_parse_voice(name))
+    for idx, value in _C_SOURCE_OVERRIDES.get(name, {}).items():
+        expected[idx] = value
+    assert py_voice == tuple(expected)
 
 
 def test_all_voices_have_33_entries() -> None:
@@ -158,8 +182,12 @@ def test_voices_tuple_indexed_by_speaker_id() -> None:
 
 
 def test_paul_pitch_is_average() -> None:
-    """Paul (the reference voice) has AP=100 Hz."""
-    expected_ap = 100
+    """Paul (the reference voice) has AP=122 Hz (the shipped 4.3 table).
+
+    ``p_us_vdf_dectalk43.c`` — the table the C oracle binary is built
+    from — sets Paul's average pitch to 122 Hz (issue #220 fault 1).
+    """
+    expected_ap = 122
     ap_index = 3
     assert vd.voice_paul[ap_index] == expected_ap
 
