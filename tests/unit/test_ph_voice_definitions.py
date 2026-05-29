@@ -1,10 +1,22 @@
-"""Verify the per-voice tables in voice_definitions.py match p_us_vdf.c.
+"""Verify the per-voice tables in voice_definitions.py match the active C source.
 
 Re-parses each ``const short NAME[SPDEF]`` (or ``[]``) voice
-initialiser from ``src/dapi/src/ph/p_us_vdf.c`` for the 10 modern
-US-English voices (paul, chris, betty, harry, frank, kit, ursula,
-rita, wendy, dennis — *not* the older _8 variants) and asserts the
-Python literal matches byte-for-byte.
+initialiser from ``src/dapi/src/ph/p_us_vdf_dectalk43.c`` -- the
+*active* voice table the shipped binary links against (confirmed by
+the build's ``ph_vdefi.d`` dependency list: ``VDF_DECTALK_43`` is
+defined and ``HLSYN`` is not) -- for the 9 modern US-English voices
+(paul, betty, harry, frank, kit, ursula, rita, wendy, dennis -- *not*
+the older ``_8`` variants, which ``ph_vset.c:454-457`` only selects
+below 8763 Hz; the US sample rate is 11025 Hz). ``chris`` has no row
+of its own in the dectalk43 table and aliases ``paul``.
+
+Each C row initialises 38 of the 39 ``SPDEF`` ints (indices 0..30 =
+``SEX``..``SR``, index 31 = ``AGO``, indices 32..37 =
+``agvo``/``aguo``/``unvow``/``chink``/``open_quo``/``OutputGainMult``).
+The Python literals keep the 33-field convention (indices 0..31
+verbatim plus the C output-gain multiplier at index 32). Because every
+dectalk43 voice zeroes slots 32..37, the truncated row is
+``c_row[0:32] + (c_row[37],)``.
 
 Skips when ``/tmp/dectalk-src`` is absent.
 """
@@ -19,7 +31,9 @@ import pytest
 
 from dectalk.ph import voice_definitions as vd
 
-_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / ("src/dapi/src/ph/p_us_vdf.c")
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / (
+    "src/dapi/src/ph/p_us_vdf_dectalk43.c"
+)
 
 pytestmark = pytest.mark.skipif(
     not _C_FILE.is_file(),
@@ -36,38 +50,10 @@ _NAMES: dict[str, int] = {
     "ZAPB": 6000,
 }
 
-
-def _strip_fp_vtm(body: str) -> str:
-    """Drop lines inside #ifdef FP_VTM blocks; keep #ifndef FP_VTM bodies."""
-    out: list[str] = []
-    skip_depth = 0
-    in_ifndef_fp_vtm = False
-    for line in body.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("#ifndef FP_VTM"):
-            in_ifndef_fp_vtm = True
-            continue
-        if stripped.startswith("#ifdef FP_VTM") or (
-            stripped.startswith("#if") and "FP_VTM" in stripped and "ndef" not in stripped
-        ):
-            skip_depth += 1
-            continue
-        if stripped.startswith("#else") and in_ifndef_fp_vtm and skip_depth == 0:
-            skip_depth += 1
-            in_ifndef_fp_vtm = False
-            continue
-        if stripped.startswith("#endif"):
-            if skip_depth > 0:
-                skip_depth -= 1
-            elif in_ifndef_fp_vtm:
-                in_ifndef_fp_vtm = False
-            continue
-        if skip_depth > 0:
-            continue
-        if stripped.startswith("#"):
-            continue
-        out.append(line)
-    return "\n".join(out)
+# C SPDEF slot count filled by the dectalk43 initialisers, and the
+# index of the output-gain multiplier within that layout.
+_C_ROW_LEN = 38
+_C_OUTPUT_GAIN_IDX = 37
 
 
 def _eval_field(expr: str) -> int:
@@ -79,11 +65,11 @@ def _eval_field(expr: str) -> int:
 
 
 def _parse_voice(name: str) -> tuple[int, ...]:
-    """Parse the FIRST ``const short NAME[...]`` block matching ``name``.
+    """Parse the ``const short NAME[...]`` block matching ``name`` exactly.
 
-    The C source has both ``NAME_8`` (older 8 kHz variant) and ``NAME``
-    (modern 11025 Hz). We want the modern one — the first declaration
-    whose array name exactly matches ``name`` (not ``name_8``).
+    Returns the 33-field row in this module's convention:
+    ``c_row[0:32] + (c_row[37],)`` -- the first 32 C slots verbatim plus
+    the C output-gain multiplier folded into index 32.
     """
     text = _C_FILE.read_text(encoding="latin-1")
     text = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
@@ -96,14 +82,16 @@ def _parse_voice(name: str) -> tuple[int, ...]:
     matches = list(re.finditer(pat, text, re.DOTALL))
     assert matches, f"could not find voice {name!r}"
     body = matches[0].group(1)
-    stripped = _strip_fp_vtm(body)
-    fields = [f.strip() for f in stripped.split(",") if f.strip()]
-    return tuple(_eval_field(f) for f in fields)
+    fields = [_eval_field(f) for f in body.split(",") if f.strip()]
+    assert len(fields) == _C_ROW_LEN, f"{name}: expected {_C_ROW_LEN} C fields, got {len(fields)}"
+    return (*fields[:32], fields[_C_OUTPUT_GAIN_IDX])
 
 
+# (name, python row). ``chris`` is excluded from the C-source compare
+# because the dectalk43 table has no ``chris`` row; it is checked
+# separately to equal ``paul``.
 _VOICES: tuple[tuple[str, tuple[int, ...]], ...] = (
     ("paul", vd.voice_paul),
-    ("chris", vd.voice_chris),
     ("betty", vd.voice_betty),
     ("harry", vd.voice_harry),
     ("frank", vd.voice_frank),
@@ -115,41 +103,21 @@ _VOICES: tuple[tuple[str, tuple[int, ...]], ...] = (
 )
 
 
-# Per-voice field overrides where the *shipped binary's* speaker table
-# (``p_us_vdf_dectalk43.c`` — the DECtalk 4.3 release the C oracle is
-# built from) differs from this dev-reference file (``p_us_vdf.c``).
-#
-# ``paul[3]`` (average pitch) is 100 in ``p_us_vdf.c`` but 122 in the
-# 4.3 table (``p_us_vdf_dectalk43.c:8``/:386). The C oracle's measured
-# baseline F0 is ~120 Hz, confirming the binary uses 122; matching it
-# moves the Python pipeline's f0[0] from 88 Hz to 110 Hz on
-# "hello world" (issue #220 fault 1). The remaining 4.3-vs-vdf.c gaps
-# in Paul's gain fields (GF/GH/GV/GN/G1/G3/G4) are issue #220 fault 2
-# and stay tracked against ``p_us_vdf.c`` until that work lands.
-_C_SOURCE_OVERRIDES: dict[str, dict[int, int]] = {
-    "paul": {3: 122},
-}
-
-
 @pytest.mark.parametrize(("name", "py_voice"), _VOICES)
 def test_voice_matches_c_source(name: str, py_voice: tuple[int, ...]) -> None:
-    """Each voice's parameter array matches the C source initialiser.
+    """Each voice's parameter array matches the active dectalk43 initialiser."""
+    assert py_voice == _parse_voice(name)
 
-    The expected row comes from the dev-reference ``p_us_vdf.c`` with
-    per-field overrides applied from :data:`_C_SOURCE_OVERRIDES` where
-    the shipped 4.3 binary's table is known to differ (and the Python
-    side already tracks the binary's value).
-    """
-    expected = list(_parse_voice(name))
-    for idx, value in _C_SOURCE_OVERRIDES.get(name, {}).items():
-        expected[idx] = value
-    assert py_voice == tuple(expected)
+
+def test_chris_aliases_paul() -> None:
+    """Crusty Chris has no dectalk43 row of its own; it equals Paul."""
+    assert vd.voice_chris == vd.voice_paul == _parse_voice("paul")
 
 
 def test_all_voices_have_33_entries() -> None:
     """Every modern voice initialises 33 of the 39 SPDEF fields (rest zero)."""
     expected_len = 33
-    for _name, voice in _VOICES:
+    for _name, voice in (*_VOICES, ("chris", vd.voice_chris)):
         assert len(voice) == expected_len
 
 
@@ -169,7 +137,7 @@ def test_sex_field_matches_canonical_genders() -> None:
         "wendy": female,
         "dennis": male,
     }
-    voice_map = dict(_VOICES)
+    voice_map = dict((*_VOICES, ("chris", vd.voice_chris)))
     for name, sex in expected.items():
         assert voice_map[name][0] == sex, f"{name} should be sex={sex}"
 
@@ -182,14 +150,32 @@ def test_voices_tuple_indexed_by_speaker_id() -> None:
 
 
 def test_paul_pitch_is_average() -> None:
-    """Paul (the reference voice) has AP=122 Hz (the shipped 4.3 table).
-
-    ``p_us_vdf_dectalk43.c`` — the table the C oracle binary is built
-    from — sets Paul's average pitch to 122 Hz (issue #220 fault 1).
-    """
+    """Paul (the reference voice) has AP=122 Hz (the active dectalk43 table)."""
     expected_ap = 122
     ap_index = 3
     assert vd.voice_paul[ap_index] == expected_ap
+
+
+def test_paul_gains_match_active_table() -> None:
+    """Paul's source-gain row is the active non-``_8`` dectalk43 row.
+
+    These are the gains that feed synth amplitude. The retired
+    ``p_us_vdf.c`` reference had GF=67 GH=67 GV=68 GN=72 G1=71 G3=50
+    G4=67 LO=81 OS=-1; the active dectalk43 ``paul`` row (selected at
+    >= 8763 Hz) is GF=70 GH=70 GV=65 GN=74 G1=68 G3=48 G4=64 LO=86
+    OS=0.
+    """
+    # idx: 16 GF, 17 GH, 18 GV, 19 GN, 20 G1, 21 G2, 22 G3, 23 G4,
+    #      24 LO, 32 OS
+    assert vd.voice_paul[16] == 70  # GF
+    assert vd.voice_paul[17] == 70  # GH
+    assert vd.voice_paul[18] == 65  # GV
+    assert vd.voice_paul[19] == 74  # GN
+    assert vd.voice_paul[20] == 68  # G1
+    assert vd.voice_paul[22] == 48  # G3
+    assert vd.voice_paul[23] == 64  # G4
+    assert vd.voice_paul[24] == 86  # LO
+    assert vd.voice_paul[32] == 0  # OS (output gain multiplier)
 
 
 def test_kit_pitch_is_higher_than_paul() -> None:
