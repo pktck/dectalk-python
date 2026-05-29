@@ -148,14 +148,28 @@ def _python_f0_series(text: str) -> list[float]:
     """
     # Import lazily so the test module can import without the full
     # pipeline being wired up.
+    from dectalk.hlsyn.llsyn import LLFrame  # noqa: PLC0415
     from dectalk.ph import parstochip_to_frames as _ptf  # noqa: PLC0415
+    from dectalk.ph.spdef_chip import SpdChip  # noqa: PLC0415
 
     captured: list[int] = []
     original = _ptf.parstochip_to_llframe_delayed
 
-    def _wrap(parstochip: list[int], previous: list[int] | None):
+    def _wrap(
+        parstochip: list[int],
+        previous: list[int] | None = None,
+        spd_chip: SpdChip | None = None,
+        *args: object,
+        **kwargs: object,
+    ) -> LLFrame:
+        # ``parstochip_to_llframe_delayed`` grew a 3rd positional arg
+        # (``spd_chip``) after this monkey-patch was written; accept it
+        # (plus a trailing ``*args``/``**kwargs`` catch-all for any further
+        # signature growth) and forward everything so the wrapper keeps
+        # matching the live signature whatever the driver loop passes
+        # (issue #221).
         captured.append(parstochip[OUT_T0])
-        return original(parstochip, previous)
+        return original(parstochip, previous, spd_chip, *args, **kwargs)
 
     prev_disable = os.environ.get("DECTALK_DISABLE_CAPI")
     prev_full = os.environ.get("DECTALK_FULL_PIPELINE")
