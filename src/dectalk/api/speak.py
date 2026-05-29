@@ -26,7 +26,7 @@ import os
 import wave
 from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import numpy as np
 from numpy.typing import NDArray
@@ -552,6 +552,11 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
         tokenize(text),
         lang=lang,
         lts_fallback=lts_fallback,
+        # Spell out all-caps 2-4-letter acronyms (BBC -> B-B-C) instead of
+        # running LTS on the raw token, mirroring text_to_dectalk_phonemes
+        # (issue #217). The decision is made on the original text's case
+        # before the tokenizer folds it.
+        spell_out=_acronym_spell_out_words(text),
     )
     # A trailing PAUSE_LONG / PAUSE_SHORT token (sentence-final ``.`` /
     # ``!`` / ``?``) was lowered into a synthetic ``["SIL"]`` word by
@@ -1023,6 +1028,7 @@ def _speak_via_python(
                 tokenize(sentence_text),
                 lang=lang,
                 lts_fallback=lts_fallback,
+                spell_out=_acronym_spell_out_words(sentence_text),
             )
             if not phones:
                 continue
@@ -1055,7 +1061,12 @@ def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) 
     Currently uses the approximate Python front end (kernel/dic/lts); will
     be replaced by the translated C front end in Phase D of the port plan.
     """
-    return _tokens_to_phonemes(tokenize(text), lang=lang, lts_fallback=lts_fallback)
+    return _tokens_to_phonemes(
+        tokenize(text),
+        lang=lang,
+        lts_fallback=lts_fallback,
+        spell_out=_acronym_spell_out_words(text),
+    )
 
 
 def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror C's per-token dispatch
@@ -1653,35 +1664,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     }
 
     # ARPABET pronunciation of each English letter name (the same
-    # phoneme sequences DECtalk's spell-out path emits).
-    letter_names: dict[str, list[str]] = {
-        "A": ["EY1"],
-        "B": ["B", "IY1"],
-        "C": ["S", "IY1"],
-        "D": ["D", "IY1"],
-        "E": ["IY1"],
-        "F": ["EH1", "F"],
-        "G": ["JH", "IY1"],
-        "H": ["EY1", "CH"],
-        "I": ["AY1"],
-        "J": ["JH", "EY1"],
-        "K": ["K", "EY1"],
-        "L": ["EH1", "L"],
-        "M": ["EH1", "M"],
-        "N": ["EH1", "N"],
-        "O": ["OW1"],
-        "P": ["P", "IY1"],
-        "Q": ["K", "Y", "UW1"],
-        "R": ["AA1", "R"],
-        "S": ["EH1", "S"],
-        "T": ["T", "IY1"],
-        "U": ["Y", "UW1"],
-        "V": ["V", "IY1"],
-        "W": ["D", "AH1", "B", "AH0", "L", "Y", "UW1"],
-        "X": ["EH1", "K", "S"],
-        "Y": ["W", "AY1"],
-        "Z": ["Z", "IY1"],
-    }
+    # phoneme sequences DECtalk's spell-out path emits). Aliased to the
+    # module-level constant so the oracle path and the synth path's
+    # acronym spell-out share one source of truth (issue #217).
+    letter_names: dict[str, list[str]] = _LETTER_NAMES
 
     def _dedupe_consecutive_phonemes(phones: list[str]) -> list[str]:
         """Collapse consecutive identical phonemes (LTS ``-LL`` artifact)."""
@@ -2471,11 +2457,116 @@ def available_voices() -> list[str]:
     return sorted(PRESETS.keys())
 
 
-def _tokens_to_phonemes(tokens: Iterable[Token], *, lang: str, lts_fallback: bool) -> list[str]:
-    """Internal helper: flatten a token stream to ARPABET phonemes (approx. path)."""
+# ARPABET pronunciation of each English letter name — the same phoneme
+# sequences DECtalk's spell-out path emits. Shared between the
+# :func:`text_to_dectalk_phonemes` oracle path and the synth path's
+# acronym spell-out so the two stay byte-aligned.
+_LETTER_NAMES: dict[str, list[str]] = {
+    "A": ["EY1"],
+    "B": ["B", "IY1"],
+    "C": ["S", "IY1"],
+    "D": ["D", "IY1"],
+    "E": ["IY1"],
+    "F": ["EH1", "F"],
+    "G": ["JH", "IY1"],
+    "H": ["EY1", "CH"],
+    "I": ["AY1"],
+    "J": ["JH", "EY1"],
+    "K": ["K", "EY1"],
+    "L": ["EH1", "L"],
+    "M": ["EH1", "M"],
+    "N": ["EH1", "N"],
+    "O": ["OW1"],
+    "P": ["P", "IY1"],
+    "Q": ["K", "Y", "UW1"],
+    "R": ["AA1", "R"],
+    "S": ["EH1", "S"],
+    "T": ["T", "IY1"],
+    "U": ["Y", "UW1"],
+    "V": ["V", "IY1"],
+    "W": ["D", "AH1", "B", "AH0", "L", "Y", "UW1"],
+    "X": ["EH1", "K", "S"],
+    "Y": ["W", "AY1"],
+    "Z": ["Z", "IY1"],
+}
+
+# An all-caps WORD is a spell-out candidate only at these lengths
+# (matches ``ls_spel_say_it`` / :func:`dectalk.lts.spell_or_say.say_it`).
+_MIN_SPELL_LEN: Final[int] = 2
+_MAX_SPELL_LEN: Final[int] = 4
+
+
+def _acronym_spell_out_words(text: str) -> set[str]:
+    """Return the upper-cased WORD tokens in ``text`` that must be spelled out.
+
+    Mirrors the tokenisation-time decision in
+    :func:`text_to_dectalk_phonemes` (the LTS+dic oracle path): a
+    whitespace chunk whose alphabetic core is all-upper-case and 2-4
+    letters long is a spell-out candidate, and
+    :func:`dectalk.lts.spell_or_say.say_it` decides spell-vs-speak
+    (``False`` -> spell). The returned set is keyed by the upper-cased
+    core, which equals the token text the kernel tokenizer emits (it
+    upper-cases every word), so the synth path can test
+    ``token.text in spell_out`` directly.
+
+    The case test is done on the *original* text, before the tokenizer
+    folds case, so a genuinely lower-case word like ``"bus"`` is never
+    spelled even though its folded form (``"BUS"``) is a 3-letter token.
+    """
+    from dectalk.lts.spell_or_say import say_it  # noqa: PLC0415
+
+    spell_out: set[str] = set()
+    for chunk in text.split():
+        inner = chunk
+        # Strip surrounding non-alphanumeric punctuation, mirroring the
+        # kernel tokenizer (and the text_to_dectalk_phonemes pre-pass).
+        while inner and not inner[0].isalnum() and inner[0] != "$":
+            inner = inner[1:]
+        while inner and not inner[-1].isalnum():
+            inner = inner[:-1]
+        if (
+            inner.isalpha()
+            and inner.isupper()
+            and _MIN_SPELL_LEN <= len(inner) <= _MAX_SPELL_LEN
+            and not say_it(inner)
+        ):
+            spell_out.add(inner)
+    return spell_out
+
+
+def _spell_out_letters(word: str) -> list[str]:
+    """Expand an acronym into the ARPABET letter-name phoneme stream.
+
+    Each letter maps through :data:`_LETTER_NAMES`; unknown characters
+    fall back to themselves so the stream never silently drops symbols.
+    """
+    phones: list[str] = []
+    for letter in word:
+        phones.extend(_LETTER_NAMES.get(letter, [letter]))
+    return phones
+
+
+def _tokens_to_phonemes(
+    tokens: Iterable[Token],
+    *,
+    lang: str,
+    lts_fallback: bool,
+    spell_out: set[str] | None = None,
+) -> list[str]:
+    """Internal helper: flatten a token stream to ARPABET phonemes (approx. path).
+
+    ``spell_out`` is the set of upper-cased acronym tokens to render
+    letter-by-letter (from :func:`_acronym_spell_out_words`); WORD
+    tokens in it bypass the lexicon/LTS lookup and emit their spelled
+    letter names instead (so ``BBC`` -> "B-B-C", not the LTS reading
+    ``['B', 'B', 'K']``).
+    """
     phonemes: list[str] = []
     for token in tokens:
         if token.kind is TokenKind.WORD:
+            if spell_out is not None and token.text in spell_out:
+                phonemes.extend(_spell_out_letters(token.text))
+                continue
             phones = lookup(token.text, lang=lang)
             if phones is None:
                 if not lts_fallback:
@@ -2488,7 +2579,11 @@ def _tokens_to_phonemes(tokens: Iterable[Token], *, lang: str, lts_fallback: boo
 
 
 def _tokens_to_phoneme_words(
-    tokens: Iterable[Token], *, lang: str, lts_fallback: bool
+    tokens: Iterable[Token],
+    *,
+    lang: str,
+    lts_fallback: bool,
+    spell_out: set[str] | None = None,
 ) -> list[list[str]]:
     """Internal helper: tokenise into per-word ARPABET groups.
 
@@ -2502,10 +2597,22 @@ def _tokens_to_phoneme_words(
     element groups (``["SIL"]``); empty word groups (lookup returned
     an empty phoneme list -- unusual) are dropped so they don't
     confuse the word-counting in ``ph_setallofeats``.
+
+    ``spell_out`` (from :func:`_acronym_spell_out_words`) names the
+    upper-cased acronym tokens to render letter-by-letter. Each spelled
+    letter becomes its own word group so ``ph_setallofeats`` treats the
+    letters as separate words — matching the C oracle's per-letter word
+    boundaries for spelled acronyms (``BBC`` -> ``[[B,IY1],[B,IY1],[S,IY1]]``).
     """
     words: list[list[str]] = []
     for token in tokens:
         if token.kind is TokenKind.WORD:
+            if spell_out is not None and token.text in spell_out:
+                for letter in token.text:
+                    group = list(_LETTER_NAMES.get(letter, [letter]))
+                    if group:
+                        words.append(group)
+                continue
             phones = lookup(token.text, lang=lang)
             if phones is None:
                 if not lts_fallback:
