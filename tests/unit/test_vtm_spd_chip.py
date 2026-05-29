@@ -1,7 +1,8 @@
 """Unit tests for vtm.spd_chip and vtm.vtm_t.
 
 Covers:
-- default_us_paul_spd() field values (sourced from p_us_vdf1.c paul_8)
+- default_us_paul_spd() field values (sourced from the active non-_8
+  paul row in p_us_vdf_dectalk43.c)
 - SpdChip re-export from vtm.spd_chip
 - VtmT NOM_* defaults (sourced from p_us_vdf1.c / vtminst.h)
 - Cross-consistency between SpdChip and VtmT
@@ -15,71 +16,71 @@ from dectalk.vtm.vtm_t import VtmT, default_us_paul_vtm_t
 
 
 class TestDefaultUsPaulSpd:
-    """Verify US-Paul SpdChip field values against p_us_vdf1.c paul_8."""
+    """Verify US-Paul SpdChip field values against p_us_vdf_dectalk43.c paul."""
 
     # Resonator 4 cascade (F4=3300, B4=260)
     def test_r4cc_f4(self) -> None:
-        assert default_us_paul_spd().r4cc == 3400, "F4 centre frequency"
+        assert default_us_paul_spd().r4cc == 3300, "F4 centre frequency"
 
     def test_r4cb_b4(self) -> None:
         assert default_us_paul_spd().r4cb == 260, "B4 bandwidth"
 
     # Resonator 5 cascade (F5=3650, B5=330)
     def test_r5cc_f5(self) -> None:
-        assert default_us_paul_spd().r5cc == 4300, "F5 centre frequency"
+        assert default_us_paul_spd().r5cc == 3650, "F5 centre frequency"
 
     def test_r5cb_b5(self) -> None:
-        assert default_us_paul_spd().r5cb == 280, "B5 bandwidth"
+        assert default_us_paul_spd().r5cb == 330, "B5 bandwidth"
 
     # Parallel resonator proxies (F7=3350, F8=3850)
     def test_r4pb_f7(self) -> None:
-        assert default_us_paul_spd().r4pb == 3400, "F7 (resonator-4 parallel proxy)"
+        assert default_us_paul_spd().r4pb == 3350, "F7 (resonator-4 parallel proxy)"
 
     def test_r5pb_f8(self) -> None:
-        assert default_us_paul_spd().r5pb == 4800, "F8 (resonator-5 parallel proxy)"
+        assert default_us_paul_spd().r5pb == 3850, "F8 (resonator-5 parallel proxy)"
 
     # Cascade amplitudes (G1-G4, LO)
     def test_r5ca_g1(self) -> None:
-        assert default_us_paul_spd().r5ca == 71, "G1 (cascade amp resonator 5)"
+        assert default_us_paul_spd().r5ca == 68, "G1 (cascade amp resonator 5)"
 
     def test_r4ca_g2(self) -> None:
-        assert default_us_paul_spd().r4ca == 65, "G2 (cascade amp resonator 4)"
+        assert default_us_paul_spd().r4ca == 60, "G2 (cascade amp resonator 4)"
 
     def test_r3ca_g3(self) -> None:
-        assert default_us_paul_spd().r3ca == 65, "G3 (cascade amp resonator 3)"
+        assert default_us_paul_spd().r3ca == 48, "G3 (cascade amp resonator 3)"
 
     def test_r2ca_g4(self) -> None:
-        assert default_us_paul_spd().r2ca == 66, "G4 (cascade amp resonator 2)"
+        assert default_us_paul_spd().r2ca == 64, "G4 (cascade amp resonator 2)"
 
     def test_r1ca_lo(self) -> None:
-        assert default_us_paul_spd().r1ca == 70, "LO (output level)"
+        assert default_us_paul_spd().r1ca == 86, "LO (output level)"
 
     # Gain fields
     def test_afgain_gf(self) -> None:
-        assert default_us_paul_spd().afgain == 55, "GF (frication gain)"
+        assert default_us_paul_spd().afgain == 70, "GF (frication gain)"
 
     def test_apgain_gh(self) -> None:
-        assert default_us_paul_spd().apgain == 55, "GH (aspiration gain)"
+        assert default_us_paul_spd().apgain == 70, "GH (aspiration gain)"
 
     def test_azgain_gv(self) -> None:
-        assert default_us_paul_spd().azgain == 60, "GV (voicing/glottal gain)"
+        assert default_us_paul_spd().azgain == 65, "GV (voicing/glottal gain)"
 
     def test_rnpgain_gn(self) -> None:
-        assert default_us_paul_spd().rnpgain == 71, "GN (nasal-pole gain)"
+        assert default_us_paul_spd().rnpgain == 74, "GN (nasal-pole gain)"
 
     # fnscale: 4096 = Q12 unity (HS=100, nominal head size for Paul)
     def test_fnscale_q12_unity(self) -> None:
         assert default_us_paul_spd().fnscale == 4096, "fnscale must be Q12 unity (4096) for HS=100"
 
-    # HLSYN-build fields zero
+    # Integer-cascade build leaves these chip slots zero
     def test_nopen1_zero(self) -> None:
-        assert default_us_paul_spd().nopen1 == 0, "nopen1 unused in HLSYN build"
+        assert default_us_paul_spd().nopen1 == 0, "nopen1 unused in integer cascade build"
 
     def test_nopen2_zero(self) -> None:
-        assert default_us_paul_spd().nopen2 == 0, "nopen2 unused in HLSYN build"
+        assert default_us_paul_spd().nopen2 == 0, "nopen2 unused in integer cascade build"
 
     def test_aturb_zero(self) -> None:
-        assert default_us_paul_spd().aturb == 0, "aturb unused in HLSYN build"
+        assert default_us_paul_spd().aturb == 0, "aturb unused in integer cascade build"
 
     def test_t0jit_zero(self) -> None:
         assert default_us_paul_spd().t0jit == 0
@@ -91,8 +92,10 @@ class TestDefaultUsPaulSpd:
     def test_speaker_paul(self) -> None:
         assert default_us_paul_spd().speaker == 0, "Paul is speaker index 0"
 
-    def test_osgain_auto(self) -> None:
-        assert default_us_paul_spd().osgain == -1, "osgain=-1 means auto/pass-through"
+    def test_osgain_zero(self) -> None:
+        assert default_us_paul_spd().osgain == 0, (
+            "osgain=0: paul[SPD_OS]=0 and paul_tune=0 -> no output-stage dB delta"
+        )
 
 
 class TestSpdChipReexport:

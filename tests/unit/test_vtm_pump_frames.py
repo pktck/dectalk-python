@@ -120,10 +120,11 @@ class TestSeedSpeakerState:
 
         state = SynthState()
         seed_speaker_state(state, default_us_paul_spd())
-        # Paul: azgain=60, apgain=55, afgain=55 (from p_us_vdf1.c).
-        assert state.avgain == amptable[60]
-        assert state.APgain == amptable[55]
-        assert state.AFgain == amptable[55]
+        # Paul: azgain=65 (GV), apgain=70 (GH), afgain=70 (GF) from the
+        # non-_8 paul row in p_us_vdf_dectalk43.c.
+        assert state.avgain == amptable[65]
+        assert state.APgain == amptable[70]
+        assert state.AFgain == amptable[70]
 
     def test_seeds_paul_fnscale_unity(self) -> None:
         """Paul's HS=100 → fnscale=4096 (Q12 unity)."""
