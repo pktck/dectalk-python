@@ -93,6 +93,57 @@ _STRESS_DIGIT_TO_MARKER: dict[str, int] = {
 }
 
 
+def _promote_sole_secondary_stress(arpabet_words: list[list[str]]) -> list[list[str]]:
+    """Promote a word's secondary stress to primary when it has no primary.
+
+    Issue #224. The bundled lexicon is CMUdict-derived; CMUdict marks the
+    main-stressed syllable of a sizeable set of words with the **secondary**
+    stress digit ``2`` and no primary ``1`` at all — e.g. ``quick`` =
+    ``K W IH2 K``, ``brown`` = ``B R AW2 N``, ``red`` = ``R EH2 D``,
+    ``about`` = ``AH0 B AW2 T``, ``between`` = ``B AH0 T W IY2 N``. The
+    C front-end instead runs the DECtalk source dictionary ``dtalk_us.dic``,
+    which marks the strongest syllable of every such word as **primary**,
+    backed by ``ph_sort.c``'s invariant that "any phrase must have one
+    primary stress" (revision 0011, line 48; the ``find_syll_to_stress``
+    fallback at lines 1286-1293 promotes the most-recent ``S2`` to ``S1``
+    when a breath group reaches its terminator with zero primaries).
+
+    Direct C-oracle dumps of ``allofeats[]`` confirm the effect: ``quick``,
+    ``brown``, ``red``, ``about``, ``between``, ``black`` all carry exactly
+    one ``FSTRESS_1`` and **no** ``FSTRESS_2`` in the stream the C engine
+    hands to ``phinton``. Emitting ``S2`` instead leaves ``phinton`` Rule 2
+    firing the weaker secondary-stress impulse (male target 61 dHz vs the
+    primary's 81 dHz; ``_US_F0_*STRESS_LEVEL`` in :mod:`dectalk.ph.phinton`)
+    and never tripping Rule 1's hat rise on these syllables — flattening the
+    F0 contour (issue #224, couples with #220).
+
+    The transform is intentionally narrow and mirrors ``dtalk_us.dic`` /
+    ``ph_sort.c`` rather than reclassifying stress wholesale:
+
+    * It fires **only** for words that carry at least one ``2``-stressed
+      phone and **no** ``1``-stressed phone. Words with an existing primary
+      (``computer`` = ``... UW1 ...``, ``present`` = ``... EH1 ...``,
+      ``baseball`` = ``EY1 ... AO2 ...``) are left untouched, so genuine
+      secondary stresses that coexist with a primary keep their ``S2``.
+    * Every ``2`` in such a word becomes ``1``. Across the full bundled
+      US lexicon (13.8 K entries) only 104 words match the gate, and **none**
+      of them carry more than one ``2``, so each promoted word ends up with
+      exactly one primary stress — no over-promotion.
+
+    Returns a new word list; input groups are not mutated in place.
+    """
+    promoted: list[list[str]] = []
+    for word in arpabet_words:
+        digits = {name[-1] for name in word if name and name[-1].isdigit()}
+        if "2" in digits and "1" not in digits:
+            promoted.append(
+                [f"{name[:-1]}1" if name and name[-1] == "2" else name for name in word]
+            )
+        else:
+            promoted.append(list(word))
+    return promoted
+
+
 def _arpabet_to_us_offset(name: str) -> int | None:
     """Map an ARPABET symbol to the US allophone enum offset (0-70).
 
@@ -236,6 +287,14 @@ def _arpabet_words_to_symbols(
         :data:`~dectalk.ph.dph_t.DphT.nsymbtot` before calling
         :func:`all_phsort`.
     """
+    # Promote a word's sole secondary stress to primary when it carries no
+    # primary at all — mirrors ``dtalk_us.dic`` / ``ph_sort.c``'s "every
+    # phrase must have one primary stress" so content words the CMUdict-
+    # derived lexicon marks ``S2`` (quick, brown, red, about, between, ...)
+    # emit ``S1`` like the C engine, restoring phinton's stronger stress
+    # impulse + hat rise (issue #224).
+    arpabet_words = _promote_sole_secondary_stress(arpabet_words)
+
     symbols: list[int] = []
     # Leading GEN_SIL phoneme: ``ph_task.c`` lines 437-439 seed
     # ``symbols[0] = GEN_SIL`` before the LTS layer appends words.
