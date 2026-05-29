@@ -56,7 +56,9 @@ def test_spell_it_matches_c_source() -> None:
 
 def test_spell_constants_match_ls_defs_h() -> None:
     """``SPELL_BEGIN`` / ``SPELL_END`` numeric values match ``ls_defs.h``."""
-    ls_defs = Path("/tmp/dectalk-src/src/dapi/src/lts/ls_defs.h").read_text(encoding="latin-1")
+    ls_defs = (
+        Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/lts/ls_defs.h"
+    ).read_text(encoding="latin-1")
     m_end = re.search(r"#define\s+SPELL_END\s+(0x[0-9a-fA-F]+)", ls_defs)
     m_begin = re.search(r"#define\s+SPELL_BEGIN\s+(0x[0-9a-fA-F]+)", ls_defs)
     assert m_end is not None and m_begin is not None
