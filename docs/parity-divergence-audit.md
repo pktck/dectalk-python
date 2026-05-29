@@ -1918,3 +1918,254 @@ PY
 
 Authored-by: Claude:claude-opus-4-7
 
+## Update 2026-05-27 — 500-prompt FULL+VTM1 sample
+
+### Headline finding
+
+On a stratified 500-prompt sample from the 133K-prompt verifier corpus
+(`tests/parity/_corpus.py`), pure-Python `dectalk.to_wav` under
+`DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 DECTALK_USE_VTM1=1`
+produces **0 / 500 (0.0%) bit-exact** outputs vs the C binary.
+
+This contradicts the earlier informal claim that the 5-prompt baseline
+(`hello world`, `hi.`, `hello!`, `test.`, `one two three.`) is
+"bit-exact" under FULL+VTM1. Re-measured on dev HEAD `036b94b`, those
+five prompts have **matching sample counts** but **divergent audio
+content** — e.g. `hello world` differs at 10 060 / 13 845 samples
+with peak |Δ|=30 654 (full int16 range). The earlier diagnostic
+focused on envelope/length and missed that the body content itself
+diverges. PR #214's commit message correctly summarised "FULL+VTM1
+closes 95% of the hlsyn-UI=110 gap (8265 → 426 samples on hello
+world) but +426 samples drift remains"; "bit-exact" was an over-claim
+elsewhere.
+
+**Recommendation: do NOT flip the `_speak_via_python` default to
+FULL+VTM1 yet.** The structural body-content divergence is large
+enough to make the default-flip premature.
+
+### Sample design
+
+500 prompts drawn from `_corpus.py` (133 637 total) with
+`random.Random(42)` and stratified targets:
+
+| Category | Target | Sampled | Notes |
+|---|---|---|---|
+| `question` | 5 | 5 | all 5 corpus members |
+| `exclamation` | 2 | 1 | corpus has only 1 with `!` (no inline cmd) |
+| `inline_cmd` | 11 | 11 | all |
+| `has_number` | 18 | 15 | all (3 fall into other cats) |
+| `all_caps_run` | 31 | 30 | nearly all 3+-letter all-caps |
+| `long` (>10 words) | 60 | 60 | from 110 |
+| `single_word` | 60 | 60 | from 1 529 |
+| `multi_clause` (`,` or `;`) | 60 | 60 | from 1 100 |
+| `plain` (rest) | balance | 258 | from 132 518 |
+| **Total** | **500** | **500** | |
+
+(`exclamation`/`phoneme_mode` categorisation is mutually exclusive
+with `inline_cmd`; the lone `[:phoneme on]`-style prompts didn't make
+it into the 500 because the corpus has none.)
+
+### Bit-exact / |Δ| distribution
+
+```
+bit-exact:    0 / 500 (0.0%)
+errors:       0
+|delta_samples|:  p50=426   p90=3337   p99=9088   max=18531   mean=1177
+```
+
+`|Δ|` histogram (samples):
+
+| range | count |
+|---|---|
+| 0 (sample-count match, bytes differ) | 78 |
+| [1, 10) | 0 |
+| [10, 100) | 37 |
+| [100, 500) | 167 |
+| [500, 1000) | 72 |
+| [1000, 5000) | 125 |
+| [5000, 10000) | 17 |
+| [10000, 50000) | 4 |
+| [50000, ∞) | 0 |
+
+### Per-category divergence (signed Δsamples)
+
+| cat | n | mean Δ | min Δ | max Δ | median Δ | % exact |
+|---|---|---|---|---|---|---|
+| `all_caps_run` | 30 | -4033 | -8236 | 0 | -3905 | 0.0 |
+| `exclamation` | 1 | 0 | 0 | 0 | 0 | 0.0 |
+| `has_number` | 15 | -4165 | -18531 | +1491 | -284 | 0.0 |
+| `inline_cmd` | 11 | -97 | -994 | +213 | 0 | 0.0 |
+| `long` | 60 | -57 | -1207 | +994 | -284 | 0.0 |
+| `multi_clause` | 60 | -3297 | -8804 | -1491 | -3266 | 0.0 |
+| `plain` | 258 | -68 | -1917 | +2627 | -71 | 0.0 |
+| `question` | 5 | -3635 | -10721 | 0 | -1207 | 0.0 |
+| `single_word` | 60 | +107 | -4686 | +1562 | 0 | 0.0 |
+
+Sign convention: negative means Python is shorter than C.
+
+### Top 5 failure patterns (ranked by impact)
+
+#### 1. Decimal numbers — Python emits **0 samples**
+
+```
+"0.5"  → C=18531  P=0       Δ=-18531
+"2.5"  → C=17324  P=0       Δ=-17324
+```
+
+`0.5` / `2.5` produce **completely silent** output from the Python
+pipeline. C expands them as "zero point five" / "two point five"
+(~18 K samples each); Python evidently sees the decimal as
+non-pronounceable and drops the segment entirely. This is a
+top-impact bug in `kernel/numbers.py` or upstream tokenisation —
+probably the cleanest single-fix in the audit.
+
+#### 2. Spelled-out 3-letter acronyms — Python ~50% shorter
+
+```
+"GDP" → C=14839 P= 6603  Δ=-8236
+"BBC" → C=14626 P= 6603  Δ=-8023
+"PPE" → C=14271 P= 6248  Δ=-8023
+"LCD" → C=14271 P= 6390  Δ=-7881
+"JFK" → C=15336 P= 7668  Δ=-7668
+"NBC", "GPS", "PDF", "RPM"   all  Δ ∈ [-7500, -7200]
+```
+
+C's `say -a GDP` spells out "G D P" (~3 phoneme groups + inter-letter
+pauses ≈ 14 800 samples). Python's spell-out emits the letters back-
+to-back without the inter-letter pause, so each prompt under-runs by
+~2 600 samples per letter (~3 letters × 2 600). 4-letter acronyms
+that happen to look like words (`NASA`, `HIV`, `SUV`, `LED`, `VIP`)
+have Δ=0 — those are sample-count-equal but byte-divergent, so the
+spell-out path is being skipped for them, but the as-word
+pronunciation also doesn't match C.
+
+#### 3. Multi-clause (comma-separated) — uniformly ~3 K samples short
+
+```
+"chairs, tables, lamps, and rugs"  → Δ=-8804
+"to start with, the foundation..."  → Δ=-1491 to -3500 (typical)
+median over 60 prompts:  Δ=-3266
+```
+
+Every multi-clause prompt in the 60-sample bucket is **negative**
+(Python shorter), median -3266. The pattern is consistent with
+under-emitting the inter-clause pause: each comma in C produces a
+COMMA pause-phoneme (~700-1500 samples); Python's clause-split
+mechanism inserts a much shorter pad. With typical prompts having
+2-4 commas, the cumulative shortfall is 2-6 K samples.
+
+#### 4. Long numeric strings and version strings
+
+```
+"DECtalk version 6.2.0"  → C=32660 P=15549  Δ=-17111
+"1234567890"             → C=74905 P=65817  Δ= -9088
+"999"                    → C=22436 P=21371  Δ= -1065
+```
+
+`DECtalk version 6.2.0` loses half its samples because the version
+string `6.2.0` apparently produces near-zero Python output (similar
+mechanism to the bare `0.5` / `2.5` decimal failure). `1234567890`
+loses 9 K samples — likely the long-number parser collapses some
+digit groups that C reads separately, or per-digit pause is again
+missing.
+
+#### 5. Questions with multiple clauses
+
+```
+"hello! how are you?"         → C=25702 P=14981  Δ=-10721
+"wait... what just happened?"  → C=26909 P=21513  Δ= -5396
+"what?"                       → Δ=-1207
+"how?"                        → Δ=0      (sample-eq, byte-different)
+"what time is it?"             → Δ=-852
+```
+
+Single-word `how?` matches sample count exactly (but not bytes —
+the question intonation contour itself differs). Multi-clause
+questions cumulatively under-run due to overlap with pattern #3
+(missing inter-clause pad) plus the question contour.
+
+### Failure patterns of the bulk corpus (`plain`, 258 prompts)
+
+The 258 "plain" prompts (no punctuation other than terminal period,
+no inline cmds, no numbers, no all-caps) have median |Δ|=426
+samples, with the bulk of the distribution in `[100, 1000)`:
+
+| range | count | % of plain |
+|---|---|---|
+| sample-eq (Δ=0) | 0 | 0.0 |
+| [10, 100) | 17 | 6.6 |
+| [100, 500) | 134 | 51.9 |
+| [500, 1000) | 56 | 21.7 |
+| [1000, 5000) | 51 | 19.8 |
+
+This is the same per-phone duration drift documented in the
+2026-05-26 update. The FULL+VTM1 path has the right *envelope shape*
+on plain prompts (Δ centred around -70 samples) but the body content
+still differs at every sample — i.e. the formant tracks, F0 contour,
+and frame durations are all off by single-digit-percent amounts that
+compound across the audio.
+
+### Recommendation (acceptance criterion check)
+
+The task acceptance criteria were:
+
+- "If <5% bit-exact → flip is premature, hunt the top failure
+  pattern" → **0% < 5%, flip is premature.**
+- "If >50% bit-exact and worst-case |Δ| bounded → flip and document
+  the bound" → not applicable.
+
+**Verdict: keep `_speak_via_python` on the approximate sequencer by
+default.** FULL+VTM1 is not closer to the binary on the broad corpus
+— it's structurally similar in envelope but bit-divergent in body
+content, while the approximate path at least produces intelligible
+audio with a well-understood envelope drift bounded by the
+`UI=110`-rounding analysis in the previous audit.
+
+### Priority order for the next agent (ranked by impact)
+
+1. **Decimal number expansion (`"0.5"`, `"2.5"`, `"6.2.0"`)** —
+   currently emits 0 samples. Probably a single regex/tokeniser fix
+   in `kernel/numbers.py`; covers 3 of the top-15 worst deltas and
+   any version-string parsing.
+2. **3-letter acronym spell-out** — port the inter-letter pause logic
+   from C's `udic_us` spell-out path. Closes the
+   ~50% under-run on BBC/GDP/PPE/LCD/JFK/NBC/GPS/PDF/RPM and 20+
+   similar acronyms. Estimated impact: ~7 500 samples per affected
+   prompt × ~25 corpus members.
+3. **Multi-clause comma pause** — match C's COMMA-phoneme duration
+   when expanding comma boundaries. Closes the median -3266 sample
+   gap across 1 100 multi-clause prompts (0.8 % of corpus, but
+   sample-distance-weighted impact is large).
+4. **PH-stage body content** — even when envelopes match, audio
+   content differs at every sample. This is the structural multi-week
+   work flagged in `docs/PLAN.md` Phase E (`ph_timng`, `ph_inton*`).
+   No single fix; only worth attacking after #1-3 give us a
+   "bit-exact on simple cases" baseline that this work can chip away
+   at.
+5. **Question intonation** — even single-word `how?` is sample-count
+   equal but byte-divergent. The question contour is wrong even
+   though its duration is right. Lower priority than the bulk-impact
+   items above.
+
+### Raw data
+
+The 500-row TSV (cat / exact / Δ / bin/py sample counts / text) is
+written to `tests/parity/_full_vtm1_sample_results.tsv` and a JSON
+summary to `tests/parity/_full_vtm1_sample_summary.json` by the
+reproducer script. These are gitignored measurement artefacts; the
+human-facing numbers are above.
+
+### Reproducer (2026-05-27)
+
+```bash
+export AGENT_SLUG=measure-full-vtm1-2026-05-27
+eval "$(scripts/agent_oracle_env.sh)"
+scripts/setup_c_oracle.sh
+uv run python scripts/measure_full_vtm1_sample.py
+```
+
+Total wall-clock: ~80 s (500 × ~160 ms per prompt: ~50 ms C-binary,
+~80 ms warm Python FULL+VTM1, ~30 ms WAV I/O + WAV parse).
+
+Authored-by: Claude:claude-opus-4-7
+
