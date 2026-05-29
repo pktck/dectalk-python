@@ -697,15 +697,19 @@ def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsi
     # these from ``curspdef[]`` once per voice change; without the seeds
     # the breathy-voice B1 modifier ``frac4mul(B1, 0)`` zeros OUT_B1 on
     # every frame (issue #148 / frame-parity audit §2). ``f0_dep_tilt``
-    # is held over from the FAKE_HLSYN tilt formula -- on the HLSYN
-    # production build (our target) OUT_TLT is forced to 0 in phdraw
-    # (the ``#else`` branch at ph_draw.c lines 743-746) so the seed has
-    # no effect on tilt, but kept for parity with the C state. Paul's
-    # ``paul_8`` SPDEF row in ``p_us_vdf1.c`` lines 130/150 supplies:
+    # feeds the source-spectral-tilt formula in ``phdraw``: on the US
+    # build (HLSYN / CHANGES_AFTER_V43 undefined) the active branch at
+    # ``ph_draw.c`` lines 617-742 computes ``OUT_TLT`` as
+    # ``(12 - frac4mul(1400 - f0, f0_dep_tilt)) + (spdeftltoff - 6)``
+    # clamped to [0, 31] (issue #226). ``spdeftltoff`` is left at the
+    # DphT default of 0 because Paul's ``SM`` (smoothness) is 0, and C's
+    # ``ph_vset.c`` line 625 computes ``spdeftltoff = (SM * 25) / 100``.
+    # Paul's ``paul_8`` SPDEF row in ``p_us_vdf1.c`` lines 126/150 supplies:
     #
     # - ``FT = 73`` → ``f0_dep_tilt = 73`` (Q12-style multiplier on the
-    #   ``(f0 - 900)`` MALE / ``(1400 - f0)`` FEMALE tilt-vs-f0 slope in
-    #   ``ph_draw.c`` lines 640-651).
+    #   ``(1400 - f0)`` tilt-vs-f0 slope; the ``(f0 - 900)`` MALE variant
+    #   at ``ph_draw.c`` lines 640-643 is ``#if HLSYN||CHANGES_AFTER_V43``
+    #   dead on this build).
     # - ``BR = 0`` → ``spdefb1off = (0*0)>>1 + 4096 = 4096`` (Q12 unity;
     #   ``ph_draw.c`` line 417 multiplies parstochip[OUT_B1] by this so
     #   any non-unity value scales the first-formant bandwidth — at 4096
