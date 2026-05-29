@@ -309,6 +309,14 @@ def split_sentences(text: str) -> list[tuple[str, bool]]:
     intonation can be detected. Returned tuples are
     ``(sentence_text, is_question)``.
 
+    A ``.`` that is immediately flanked by digits (e.g. the points in
+    ``3.14`` or the version string ``6.2.0``) is a decimal / version
+    separator, **not** a sentence terminator, so it does not split. This
+    keeps numeric tokens intact for the downstream tokeniser, which reads
+    a dotted decimal as one word (issue #216); splitting them would feed
+    ``3.`` and ``14`` to the synthesiser as separate clauses and badly
+    over-render the prompt (issue #218 COMMIT 2 regression guard).
+
     Empty / whitespace-only inputs yield ``[]``. Text with no sentence
     punctuation is returned as a single statement.
 
@@ -320,13 +328,24 @@ def split_sentences(text: str) -> list[tuple[str, bool]]:
     """
     out: list[tuple[str, bool]] = []
     buf: list[str] = []
-    for ch in text:
+    for i, ch in enumerate(text):
         buf.append(ch)
-        if ch in ".?!":
-            sentence = "".join(buf).strip()
-            if sentence:
-                out.append((sentence, ch == "?"))
-            buf = []
+        if ch not in ".?!":
+            continue
+        # A period between two digits is a decimal point / version-number
+        # separator, not a sentence boundary — keep accumulating.
+        if (
+            ch == "."
+            and i > 0
+            and text[i - 1].isdigit()
+            and i + 1 < len(text)
+            and text[i + 1].isdigit()
+        ):
+            continue
+        sentence = "".join(buf).strip()
+        if sentence:
+            out.append((sentence, ch == "?"))
+        buf = []
     tail = "".join(buf).strip()
     if tail:
         out.append((tail, False))

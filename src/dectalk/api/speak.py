@@ -494,15 +494,42 @@ def _speak_via_python_full(
             )
             continue
 
-        chunk = _render_clause_full(
-            seg.body,
-            rate=seg.state.rate,
-            voice=seg_voice,
-            lang=lang,
-            lts_fallback=lts_fallback,
-        )
-        if chunk.size:
-            chunks.append(chunk)
+        # Split the segment body into individual sentences and render
+        # each as its own declination clause (issue #218 COMMIT 2). The
+        # C kernel processes one ``.`` / ``!`` / ``?`` terminated segment
+        # per ``phclause()`` call, so each sentence gets a fresh F0
+        # reset (phinton baseline), its own leading-silence prefix, and
+        # its own sentence-final long pause -- whereas a single
+        # ``_render_clause_full`` over the whole body renders them as one
+        # continuous declination contour and collapses the inter-sentence
+        # silence. Measured against the C oracle, concatenating the
+        # per-sentence renders matches ``say -a`` to within ~1 frame
+        # (``hello. world.``: C 21016 / Py-sum 20945). Comma / semicolon
+        # clauses do NOT split here -- ``split_sentences`` only breaks on
+        # sentence terminators, so a comma-only body like ``one, two,
+        # three.`` stays a single clause (its internal pauses are handled
+        # by the boundary-feature fix-up in ``_render_clause_full``).
+        #
+        # ``split_sentences`` returns the whole body unchanged as a single
+        # element when there is no internal sentence terminator, so this
+        # is byte-identical to the previous single-call path for ordinary
+        # one-sentence prompts.
+        sentences = split_sentences(seg.body)
+        if not sentences:
+            # Body with no speakable content (e.g. whitespace only):
+            # fall back to rendering it directly so behaviour matches the
+            # pre-split path for degenerate inputs.
+            sentences = [(seg.body, False)]
+        for sentence_text, _is_question in sentences:
+            chunk = _render_clause_full(
+                sentence_text,
+                rate=seg.state.rate,
+                voice=seg_voice,
+                lang=lang,
+                lts_fallback=lts_fallback,
+            )
+            if chunk.size:
+                chunks.append(chunk)
 
     if not chunks:
         return np.zeros(0, dtype=np.int16)
