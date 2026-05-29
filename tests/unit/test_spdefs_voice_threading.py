@@ -48,11 +48,13 @@ def test_voice_tuple_to_spdefs_paul() -> None:
     """Paul's row maps to an Spdefs with documented field values."""
     s = voice_tuple_to_spdefs(voice_paul)
     assert isinstance(s, Spdefs)
-    # SEX=MALE, AP=100, PR=100, AS=100, QU=40, HR=18, SR=32 -- the
-    # values that used to be hardcoded in _render_clause_full.
+    # SEX=MALE, AP=122, PR=100, AS=100, QU=40, HR=18, SR=32 -- the
+    # values that used to be hardcoded in _render_clause_full. AP is
+    # 122 to match the shipped 4.3 voice table (p_us_vdf_dectalk43.c),
+    # which the C oracle's ~120 Hz baseline F0 confirms (issue #220).
     assert s.sex == 1
     assert s.assertiveness == 100
-    assert s.average_pitch == 100
+    assert s.average_pitch == 122
     assert s.pitch_range == 100
     assert s.quickness == 40
     assert s.hat_rise == 18
@@ -199,7 +201,9 @@ def test_render_clause_paul_matches_legacy_scalars(monkeypatch: pytest.MonkeyPat
     assert dph_t.scale_str_rise == 32  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 100 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 40  # type: ignore[attr-defined]
-    assert dph_t.f0minimum == (100 - 12) * 10  # type: ignore[attr-defined]
+    # AP=122 (shipped 4.3 table, issue #220 fault 1) -> f0minimum rises
+    # from (100-12)*10 to (122-12)*10.
+    assert dph_t.f0minimum == (122 - 12) * 10  # type: ignore[attr-defined]
     assert dph_t.f0scalefac == 100 * 41  # type: ignore[attr-defined]
 
 
