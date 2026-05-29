@@ -258,11 +258,13 @@ def test_setloc_happy_path_us_s_iy_writes_bouval(
     # Filter passed and a non-zero locus entry exists for S+sontyx=1.
     assert rc == 1
 
-    # us_plocu[41] == 82 (the IY locus block for /S/). Then F1 stride
-    # is 0, so the triplet is us_maleloc[82..84] == (310, 40, ...).
-    assert us_plocu[int(USPhoneme.S)] == 82
-    locus_freq = us_maleloc[82]
-    prcnt = us_maleloc[83]
+    # us_plocu[41] == 73 (the /S/ FRONT-block locus pointer) under the
+    # active 57-strided ROM. F1 has sontyx stride 0, so the triplet is
+    # us_maleloc[73..75] == (310, 40, 40).
+    s_locus_ptr = us_plocu[int(USPhoneme.S)]
+    assert s_locus_ptr == 73
+    locus_freq = us_maleloc[s_locus_ptr]
+    prcnt = us_maleloc[s_locus_ptr + 1]
     # bouval = locus + muldv(prcnt, curval - locus, 100)
     #        = 310 + ((40 * (700 - 310)) / 100) under integer arithmetic.
     expected_delta = (prcnt * (fake_curval - locus_freq)) // 100
