@@ -139,6 +139,33 @@ def speech_waveform_generator(
     variabpars = state.parambuff  # alias; OUT_AP is at parambuff[1]
 
     # Speaker-def-just-loaded silence latch (lines 383-398).
+    #
+    # The C source latch (vtm1.c:383-398) is ``if(ldspdef>=1){ldspdef++;
+    # zero amps;} if(ldspdef>=3) ldspdef=-1;`` whose ``1->2->3->-1``
+    # trajectory zeroes exactly two leading frames. The shipped
+    # ``libtts_us.so`` binary, however, holds **three** leading frames as
+    # real silence: on ``hello world`` the byte-exact oracle's first
+    # non-zero sample is 213 (frame 3), so frames 0/1/2 are silent. This
+    # is verifiable two ways: (1) the byte-identical CAPI path
+    # (``test_binary_wav_parity``, 1065/1065) renders 213, and (2) issue
+    # #157's independent leading-zero audit measured the same C lead=213
+    # for ``hello world`` / ``the quick brown fox`` / ``hello``. Feeding
+    # the oracle's OWN ``vtm_frames.dump`` parambuff (frame 2 carries a
+    # live ``OUT_AP``=53 aspiration cell) back through this synth still
+    # diverged at sample 142 = start of frame 2, isolating the off-by-one
+    # to this latch rather than to param generation (issue #263/#266).
+    #
+    # Reconciliation with #157: the PH driver in
+    # ``api/speak.py::_speak_via_python_full`` correctly discards the
+    # ``send_pars`` ``initpardelay==0`` seed frame (the #157 leading-bleed
+    # fix, which keeps the emitted sample count exact at 13845). That
+    # discard is the right behaviour and is preserved; *not* discarding it
+    # both regresses the sample count (+71) and fails to silence frame 2.
+    # The missing third silent frame lives here in the synth latch, so we
+    # extend the reset threshold (``>=3`` -> ``>=4``), giving a
+    # ``1->2->3->4->-1`` trajectory that zeroes frames 0/1/2 to match the
+    # binary. Each silenced leading frame is 71 samples of byte parity
+    # (extends the ``hello world`` prefix 142 -> 213).
     if state.ldspdef >= 1:
         state.ldspdef += 1
         variabpars[OUT_AV + 1] = 0
@@ -150,7 +177,7 @@ def speech_waveform_generator(
         variabpars[OUT_A6 + 1] = 0
         variabpars[OUT_AB + 1] = 0
         state.avlin = 0
-    if state.ldspdef >= 3:
+    if state.ldspdef >= 4:
         state.ldspdef = -1
 
     # T0 read-in with sample-rate scaling (lines 417-438).
