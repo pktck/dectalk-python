@@ -57,7 +57,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from dectalk.include.all_phon_counts import MAX_PHONES
 from dectalk.include.phoneme_codes import (
+    COMMA,
     EXCLAIM,
     PERIOD,
     PFUSA,
@@ -67,6 +69,7 @@ from dectalk.include.phoneme_codes import (
     WBOUND,
     USPhoneme,
 )
+from dectalk.include.phoneme_stream import parse_phoneme_stream
 from dectalk.ph.all_phsort import all_phsort
 from dectalk.ph.us_phalloph import us_phalloph
 
@@ -424,4 +427,117 @@ def phalloph2(
     us_phalloph(phTTS)
 
 
-__all__ = ["phalloph2"]
+# Clause/sentence terminators that already close a DECtalk symbol stream;
+# when the byte-exact stream ends in one of these, no implicit PERIOD is
+# appended (mirrors the C kernel, where a trailing ``.`` / ``?`` / ``!`` /
+# ``,`` already terminates the clause).
+_CLAUSE_TERMINATORS: frozenset[int] = frozenset({COMMA, PERIOD, QUEST, EXCLAIM})
+
+
+def _dectalk_stream_to_symbols(
+    raw: bytes,
+    *,
+    default_terminator: int = PERIOD,
+) -> tuple[list[int], int]:
+    """Convert a byte-exact DECtalk ASCII phoneme stream to a ``symbols[]`` array.
+
+    ``raw`` is the output of
+    :func:`dectalk.api.speak.text_to_dectalk_phonemes` — byte-identical to
+    the C library's ``convert_to_phonemes``. :func:`parse_phoneme_stream`
+    decodes its fixed-width 2-byte slots into the numeric phoneme / control
+    codes the C kernel's LTS stage hands to ``phsort``; this helper then
+    assembles them into the packed ``symbols[]`` stream
+    :func:`all_phsort` consumes:
+
+    1. A leading ``GEN_SIL`` phone + ``WBOUND`` — the per-clause
+       ``ph_task.c`` lines 437-439 bootstrap (``symbols[0] = GEN_SIL``)
+       that supplies the ~213-sample leading silence; mirrors
+       :func:`_arpabet_words_to_symbols`.
+    2. Each allophone code (``< MAX_PHONES``) shifted into the US font
+       (``(PFUSA << 8) | code``) so ``make_phone`` recovers the font from
+       the high byte; control codes (``>= MAX_PHONES``: ``S1`` / ``S2`` /
+       ``WBOUND`` / ``MBOUND`` / ``SBOUND`` / ``PPSTART`` / ``VPSTART`` /
+       ``RELSTART`` / ``COMMA`` / ``PERIOD`` / ``QUEST`` / ``EXCLAIM`` /
+       ``SPECIALWORD`` / …) pass through unchanged — ``all_phsort``
+       dispatches on them directly.
+    3. A trailing ``default_terminator`` (``PERIOD`` by default) when the
+       stream does not already end in a clause/sentence marker — the
+       implicit end-of-text period the C kernel applies to unpunctuated
+       input.
+
+    Unlike :func:`_arpabet_words_to_symbols`, the punctuation / phrase
+    markers (``COMMA`` / ``PERIOD`` / ``VPSTART`` / ``MBOUND`` / …) are
+    already present in ``raw`` and flow straight through, so
+    ``all_phsort`` generates the internal ``GEN_SIL`` phones and sets the
+    ``FSENTENDS`` / clause-boundary features natively — no caller-side
+    boundary-feature fix-up is needed.
+
+    Returns:
+        ``(symbols, nsymbtot)`` — the populated stream and its length.
+    """
+    tokens = parse_phoneme_stream(raw)
+    symbols: list[int] = [(PFUSA << 8) | int(USPhoneme.SIL), WBOUND]
+    for tok in tokens:
+        if tok.code < MAX_PHONES:
+            symbols.append((PFUSA << 8) | tok.code)
+        else:
+            symbols.append(tok.code)
+    if symbols[-1] not in _CLAUSE_TERMINATORS:
+        symbols.append(default_terminator)
+    return symbols, len(symbols)
+
+
+def phalloph2_from_dectalk(phTTS: TtsHandle, raw: bytes) -> None:
+    """Drive ``phsort + phalloph`` from a byte-exact DECtalk phoneme stream.
+
+    Byte-exact counterpart to :func:`phalloph2`. Where :func:`phalloph2`
+    re-encodes per-word ARPABET groups (which routes the synth path through
+    an approximate per-word lexicon/LTS lookup), this consumes the
+    byte-identical stream produced by
+    :func:`dectalk.api.speak.text_to_dectalk_phonemes` — the same stream
+    the C library emits from ``convert_to_phonemes``. The allophone stream
+    therefore inherits the faithful phonemes, letter-by-letter spell-out,
+    digit-expansion prosody, vowel reductions, and punctuation / phrase
+    markers instead of the divergent approximate transcription
+    (issues #217 / #225 / #237 / #238).
+
+    The caller must, exactly as for :func:`phalloph2`, have run
+    :func:`dectalk.ph.init_phclause.init_phclause`, set
+    :data:`~dectalk.ph.dph_t.DphT.pSTphsettar`, and set
+    :data:`~dectalk.kernel.ksd_t.KsdT.lang_curr` to
+    :data:`~dectalk.kernel.lang_codes.LANG_english`.
+
+    Args:
+        phTTS: TTS handle with ``p_ph_thread_data`` (DphT) and
+            ``p_kernel_share_data`` (KsdT) populated.
+        raw: DECtalk-native ASCII phoneme bytes (the
+            ``text_to_dectalk_phonemes`` output for one clause). The
+            sentence/clause terminator is read from the stream itself, so
+            question / exclamation intonation needs no separate flag.
+    """
+    from dectalk.ph.dph_t import DphT  # noqa: PLC0415
+
+    p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
+
+    # 1. Decode the byte-exact stream into a packed symbols[] array.
+    symbols, nsymbtot = _dectalk_stream_to_symbols(raw)
+    p_dph_t.symbols = list(symbols)
+    p_dph_t.nsymbtot = nsymbtot
+
+    # 2. Reallocate phonemes[] / sentstruc[] / user_durs[] / user_f0[] as
+    # INDEPENDENT buffers — Python's init_phclause aliases them to
+    # allophons[] / allofeats[] / allodurs[] / f0tar[], which us_phalloph
+    # would otherwise clobber as it walks the phoneme stream (see the
+    # matching note in phalloph2).
+    buf_size = max(nsymbtot + _SYMBOLS_RESERVE, 256)
+    p_dph_t.phonemes = [0] * buf_size
+    p_dph_t.sentstruc = [0] * buf_size
+    p_dph_t.user_durs = [0] * buf_size
+    p_dph_t.user_f0 = [0] * buf_size
+
+    # 3. Run the PH-sort + allophonic-substitution chain.
+    all_phsort(phTTS)
+    us_phalloph(phTTS)
+
+
+__all__ = ["phalloph2", "phalloph2_from_dectalk"]
