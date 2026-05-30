@@ -43,7 +43,7 @@ from dectalk.kernel.text import Token, TokenKind, tokenize
 from dectalk.lts import lts
 from dectalk.lts.homo_disambig import HOMOGRAPH_FC_BITS, disambiguate
 from dectalk.nt.audio import write_wav
-from dectalk.ph.prosody import looks_like_exclamation, looks_like_question, split_sentences
+from dectalk.ph.prosody import split_sentences
 from dectalk.ph.sequencer import synthesize_phonemes
 
 # Forward-declared imports for the experimental full pipeline. These
@@ -536,7 +536,7 @@ def _speak_via_python_full(
     return np.concatenate(chunks)
 
 
-def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsically long
+def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically long
     text: str,
     *,
     rate: float,
@@ -568,61 +568,25 @@ def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsi
     # documented C voice-table values rather than Paul's defaults.
     spdefs = spdefs_for_voice(_voice_name_for_spdefs(voice))
 
-    # 1. Text -> ARPABET phonemes via the existing approximate path.
-    # Capture the per-word grouping (rather than a flat phone list) so
-    # ph_setallofeats below can attach FWBNEXT to the last syllabic
-    # allophone of each non-final word and FPERNEXT|FSENTENDS to the
-    # final word -- without those boundary markers, phinton's nextwrdbou
-    # / nextphrbou lookahead never resolves and Rule 4 (final fall)
-    # never fires (issue #63).
-    arpabet_words, pause_chars = _tokens_to_phoneme_words(
-        tokenize(text),
-        lang=lang,
-        lts_fallback=lts_fallback,
-        # Spell out all-caps 2-4-letter acronyms (BBC -> B-B-C) instead of
-        # running LTS on the raw token, mirroring text_to_dectalk_phonemes
-        # (issue #217). The decision is made on the original text's case
-        # before the tokenizer folds it.
-        spell_out=_acronym_spell_out_words(text),
-    )
-    # A trailing PAUSE_LONG / PAUSE_SHORT token (sentence-final ``.`` /
-    # ``!`` / ``?``) was lowered into a synthetic ``["SIL"]`` word by
-    # ``_tokens_to_phoneme_words``. The PH-stage chain below
-    # (:func:`phalloph2`) already emits the trailing GEN_SIL via its
-    # ``is_sentence_final`` PERIOD marker. Leaving the synthetic SIL
-    # word in place causes ``all_phsort`` to emit TWO trailing GEN_SIL
-    # phones instead of one — visible as an extra ``allodurs[-2]=1``
-    # slot ahead of the long-pause slot in the per-allophone duration
-    # trace. The C oracle on ``hi.`` produces ``nallotot=4`` while the
-    # Python pipeline produces ``nallotot=5`` until this entry is
-    # stripped.  Detect that case and drop the synthetic pause word so
-    # the trailing-SIL count matches C. ``pause_chars`` is kept aligned
-    # so the remaining entries map 1:1 onto the *internal* GEN_SILs that
-    # step 4a-quater flags below (issue #218).
-    while arpabet_words and arpabet_words[-1] == ["SIL"]:
-        arpabet_words.pop()
-        pause_chars.pop()
-    # Ordered punctuation chars for the surviving (internal) ``["SIL"]``
-    # pause words. These line up 1:1, in stream order, with the internal
-    # GEN_SIL allophones ``phalloph2`` emits — used by step 4a-quater to
-    # set the matching boundary feature on the preceding allophone.
-    internal_pause_chars = [
-        ch for word, ch in zip(arpabet_words, pause_chars, strict=True) if word == ["SIL"]
-    ]
-    arpabet_phones = [name for word in arpabet_words for name in word]
-    if not arpabet_phones:
+    # 1. Text -> the byte-exact DECtalk phoneme stream. This is the same
+    # ASCII stream the LTS+dic oracle path emits — byte-identical to the C
+    # library's ``convert_to_phonemes`` across the parity corpus. Routing
+    # the synth path through it (instead of the approximate per-word
+    # ``_tokens_to_phoneme_words`` -> ``lts()`` lookup it used before)
+    # means the audio inherits the *faithful* phoneme stream: spelled-out
+    # acronyms (``BBC`` -> ``b' iy b' iy s' iy``, #217), digit-expansion
+    # prosody (the ``) eh n d`` "and" + comma pauses, #225 / #238), the
+    # correct vowel reductions (IH -> IX / AH -> AX) and syllabic
+    # EL/EN/IR, and no spurious cross-word sibilant insertions (#237). The
+    # stream's embedded punctuation / phrase markers (``COMMA`` / ``PERIOD``
+    # / ``VPSTART`` / ``MBOUND`` / …) flow straight into ``phsort`` exactly
+    # as the C kernel's ``symbols[]`` stream does, so ``all_phsort``
+    # generates the internal ``GEN_SIL`` phones and clause-boundary
+    # features natively — superseding the hand-rolled boundary-feature
+    # fix-ups this function used to need (#218).
+    raw_phonemes = text_to_dectalk_phonemes(text, lang=lang, lts_fallback=lts_fallback)
+    if not raw_phonemes:
         return np.zeros(0, dtype=np.int16)
-
-    # 2. We no longer build the allophone stream by hand here. The
-    # ``phalloph2`` chain (see step 4a below) consumes the ARPABET
-    # word groups directly, encodes them into a DECtalk
-    # ``symbols[]`` stream, and runs the real ``phsort`` +
-    # ``us_phalloph`` chain to populate ``allophons[]`` /
-    # ``allofeats[]`` (issue #69). The unused ARPABET-flat list and
-    # the leading/trailing GEN_SIL sentinels are produced by that
-    # chain instead. Keep ``arpabet_phones`` accessible for any
-    # diagnostic / fallback paths.
-    _ = arpabet_phones  # retained for diagnostic introspection
 
     # 3. Build engine state.
     # Map rate (multiplier; 1.0 == _DEFAULT_WPM nominal, 2.0 == half-
@@ -752,119 +716,36 @@ def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsi
     # arrays as it walks the symbol stream.
     init_phclause(p_dph_t)
 
-    # 4a. Run the full ``phsort + us_phalloph`` chain (issue #69 --
-    # replaces the ``ph_setallofeats`` stop-gap from PR #66). Encodes
-    # the ARPABET word groups into a DECtalk ``symbols[]`` stream
-    # (US allophone codes + WBOUND / S1 / S2 / PERIOD markers), then
-    # runs:
+    # 4a. Run the byte-exact ``phsort + us_phalloph`` chain. Decodes the
+    # DECtalk ASCII stream from step 1 into the packed ``symbols[]`` array
+    # and runs:
     #
     #   - ``all_phsort`` (``ph_sort.c`` lines 428-1712) -- walks the
-    #     symbol stream emitting ``phonemes[]`` / ``sentstruc[]``
-    #     with the full per-phone feature word.
-    #   - ``us_phalloph`` (``ph_aloph1.c`` lines 444-1546) -- applies
-    #     the US-English allophonic-substitution rules and writes
-    #     through to ``allophons[]`` / ``allofeats[]`` (setting
-    #     ``nallotot``). The chain also handles the leading-silence
-    #     prefix and trailing-PERIOD silence pad that the C kernel
-    #     wires in ``ph_task.c`` lines 437-439.
+    #     symbol stream emitting ``phonemes[]`` / ``sentstruc[]`` with the
+    #     full per-phone feature word.
+    #   - ``us_phalloph`` (``ph_aloph1.c`` lines 444-1546) -- applies the
+    #     US-English allophonic-substitution rules and writes through to
+    #     ``allophons[]`` / ``allofeats[]`` (setting ``nallotot``),
+    #     including the leading-silence prefix and trailing-PERIOD silence
+    #     pad (``ph_task.c`` lines 437-439).
     #
-    # ``FBOUNDARY`` / ``FPERNEXT`` / ``FSENTENDS`` are also imported here
-    # because the trailing-silence pad fix below (issue #72) OR-clears
-    # FBOUNDARY then OR-s FPERNEXT|FSENTENDS onto ``allofeats[nallotot-2]``
-    # so ``us_phtiming`` Rule 1 picks the long ``nfperiod + perpause``
-    # pause instead of the 15-frame default.
-    from dectalk.ph.feature_bits import (  # noqa: PLC0415
-        FBOUNDARY,
-        FCBNEXT,
-        FPERNEXT,
-        FSENTENDS,
-    )
-    from dectalk.ph.us_phalloph2 import phalloph2  # noqa: PLC0415
-    from dectalk.ph.utterance_constants import GEN_SIL  # noqa: PLC0415
+    # Because ``raw_phonemes`` already carries the C kernel's punctuation /
+    # phrase / boundary markers (``COMMA`` / ``PERIOD`` / ``QUEST`` /
+    # ``EXCLAIM`` / ``VPSTART`` / ``MBOUND`` / …), ``all_phsort`` emits the
+    # internal + trailing ``GEN_SIL`` phones and sets the ``FSENTENDS`` /
+    # clause-boundary features itself — exactly as it does for the C
+    # kernel's own ``symbols[]`` stream. The hand-rolled boundary-feature
+    # fix-ups this function used to need (the former issue #72 / #218
+    # ``nallotot-2`` and internal-``GEN_SIL`` passes) are therefore gone:
+    # the markers do it natively. A clause-final ``!`` arrives as an
+    # ``EXCLAIM`` marker, still driving ``all_phsort``'s
+    # ``raise_last_stress`` hook (issue #212); a yes/no ``?`` arrives as a
+    # ``QUEST`` marker, still setting the question clausetype ``phinton``
+    # reads for rising intonation. Both are encoded in the stream, so no
+    # separate sentence-type flag is needed.
+    from dectalk.ph.us_phalloph2 import phalloph2_from_dectalk  # noqa: PLC0415
 
-    # Detect sentence-terminal punctuation from the clause body so the
-    # PH-stage chain emits the matching ``QUEST`` / ``EXCLAIM`` /
-    # ``PERIOD`` symbol. ``!`` propagates as ``EXCLAIM``, which drives
-    # ``all_phsort``'s ``raise_last_stress`` hook (C ``ph_sort.c``
-    # lines 1311-1314) -- promoting the last ``S1`` to ``SEMPH`` /
-    # ``FEMPHASIS`` so ``us_phtiming`` Rule 8 adds +60 ms per
-    # emphasised syllable (issue #212).
-    is_question_clause = looks_like_question(text)
-    is_exclamation_clause = (not is_question_clause) and looks_like_exclamation(text)
-    phalloph2(
-        handle,
-        arpabet_words,
-        is_sentence_final=True,
-        is_question=is_question_clause,
-        is_exclamation=is_exclamation_clause,
-    )
-    nallotot = p_dph_t.nallotot
-
-    # 4a-bis. End-of-clause sentence-boundary marker on the allophone
-    # immediately before the trailing GEN_SIL sentinel (issue #72).
-    #
-    # ``ph_setallofeats`` attaches ``FPERNEXT | FSENTENDS`` to the last
-    # *syllabic* of the final word — what ``phinton`` needs to fire its
-    # Rule 4 (final fall) on the right vowel. But ``us_phtiming``'s
-    # Rule 1 (clause-final long pause, ``p_us_tim.c`` lines 309-322)
-    # reads ``struclas = allofeats[nphon-1]`` and tests ``(struclas &
-    # FBOUNDARY) & FSENTENDS`` to decide whether to substitute the long
-    # ``nfperiod + perpause`` pause for the default 15-frame minimum.
-    # That predicate requires the marker to be on the allophone IMMEDIATELY
-    # before the trailing SIL — typically a word-final consonant, not the
-    # last syllabic.
-    #
-    # In the C source, ``ph_aloph2.c::make_out_phonol`` (line 1869)
-    # copies ``curr_outstruc`` — derived from ``sentstruc[]`` which
-    # propagates the parser's ``add_feature(FSENTENDS, NEXTPHONE)``
-    # marker through each word-final phone — into ``allofeats[]``. The
-    # net effect is that *every* allophone in the sentence-final word
-    # carries the sentence-end marker, so the trailing SIL's preceding
-    # allophone always has FSENTENDS regardless of whether it's a vowel
-    # or a consonant. We approximate that by ORing the marker onto the
-    # allophone at ``nallotot-2`` (the last entry before the trailing
-    # SIL sentinel at ``nallotot-1``).
-    if nallotot >= 2:  # noqa: PLR2004 — at least 1 real phone + trailing SIL sentinel
-        p_dph_t.allofeats[nallotot - 2] &= ~FBOUNDARY
-        p_dph_t.allofeats[nallotot - 2] |= FPERNEXT | FSENTENDS
-
-    # 4a-quater. Internal-pause boundary markers (issue #218).
-    #
-    # The same ``us_phtiming`` Rule 1 predicate that gates the trailing
-    # long pause (above) also gates *internal* pauses: at each internal
-    # ``GEN_SIL`` it reads ``struclas = allofeats[nphon-1]`` and only
-    # substitutes a comma pause (``nfcomma + compause + asperation`` ~
-    # 12 frames) when ``(struclas & FBOUNDARY) == FCBNEXT`` or a
-    # sentence pause (``nfperiod + perpause + asperation`` ~ 65 frames)
-    # when ``(struclas & FBOUNDARY) & FSENTENDS``. Otherwise the pause
-    # floors to ``NF7MS`` (1 frame).
-    #
-    # In the C source the parser's ``add_feature(F*NEXT, NEXTPHONE)`` for
-    # each punctuation mark propagates the boundary class through
-    # ``sentstruc[]`` onto the word-final phone preceding the silence
-    # (``ph_aloph2.c::make_out_phonol`` line 1869 copies it into
-    # ``allofeats[]``). The Python front-end instead lowers each punctuation
-    # mark into a standalone ``["SIL"]`` pause word, so ``phalloph2`` emits
-    # the GEN_SIL with only the default word boundary (``FWBNEXT``) on the
-    # preceding allophone. We restore the correct class here, mirroring the
-    # ``nallotot-2`` final-phone fix-up above: walk ``allophons[]`` for the
-    # internal GEN_SILs (every ``GEN_SIL`` except the leading sentinel at
-    # index 0 and the trailing sentinel at ``nallotot-1``) and OR the
-    # boundary that matches ``internal_pause_chars`` — ``FCBNEXT`` for the
-    # comma class (``,`` / ``;`` / ``:``), ``FSENTENDS | FPERNEXT`` for the
-    # sentence-terminal class (``.`` / ``!`` / ``?``).
-    sentence_terminal = {".", "!", "?"}
-    pause_idx = 0
-    for i in range(1, nallotot - 1):
-        if p_dph_t.allophons[i] != GEN_SIL:
-            continue
-        ch = internal_pause_chars[pause_idx] if pause_idx < len(internal_pause_chars) else ","
-        pause_idx += 1
-        p_dph_t.allofeats[i - 1] &= ~FBOUNDARY
-        if ch in sentence_terminal:
-            p_dph_t.allofeats[i - 1] |= FPERNEXT | FSENTENDS
-        else:
-            p_dph_t.allofeats[i - 1] |= FCBNEXT
+    phalloph2_from_dectalk(handle, raw_phonemes)
 
     # 4a-ter. Per-clause pause-length defaults from ``phclause()``
     # lines 247-255 of ``ph_claus.c`` (English branch). These are
@@ -2657,73 +2538,6 @@ def _tokens_to_phonemes(
         elif token.kind in (TokenKind.PAUSE_SHORT, TokenKind.PAUSE_LONG):
             phonemes.append("SIL")
     return phonemes
-
-
-def _tokens_to_phoneme_words(
-    tokens: Iterable[Token],
-    *,
-    lang: str,
-    lts_fallback: bool,
-    spell_out: set[str] | None = None,
-) -> tuple[list[list[str]], list[str]]:
-    """Internal helper: tokenise into per-word ARPABET groups.
-
-    Variant of :func:`_tokens_to_phonemes` that preserves the per-word
-    grouping. Used by ``_speak_via_python_full`` to thread word-
-    boundary information into ``ph_setallofeats`` so it can attach
-    :data:`~dectalk.ph.feature_bits.FWBNEXT` /
-    :data:`~dectalk.ph.feature_bits.FPERNEXT` to the right allophones.
-
-    Pause tokens (``PAUSE_SHORT`` / ``PAUSE_LONG``) become single-
-    element groups (``["SIL"]``); empty word groups (lookup returned
-    an empty phoneme list -- unusual) are dropped so they don't
-    confuse the word-counting in ``ph_setallofeats``.
-
-    ``spell_out`` (from :func:`_acronym_spell_out_words`) names the
-    upper-cased acronym tokens to render letter-by-letter. Each spelled
-    letter becomes its own word group so ``ph_setallofeats`` treats the
-    letters as separate words — matching the C oracle's per-letter word
-    boundaries for spelled acronyms (``BBC`` -> ``[[B,IY1],[B,IY1],[S,IY1]]``).
-
-    Returns:
-        ``(words, pause_chars)`` — the per-word ARPABET groups and a
-        parallel list whose entry is the punctuation character that
-        produced each ``["SIL"]`` pause word (``"."`` / ``"!"`` / ``"?"``
-        / ``","`` / ``";"`` / ``":"``) and the empty string for ordinary
-        word groups. ``_render_clause_full`` uses ``pause_chars`` to set
-        the matching boundary feature (FCBNEXT for comma-class, FSENTENDS
-        for sentence-terminal) on the allophone preceding each *internal*
-        GEN_SIL (issue #218); without it ``us_phtiming`` Rule 1 floors the
-        pause to one frame.
-    """
-    words: list[list[str]] = []
-    pause_chars: list[str] = []
-    for token in tokens:
-        if token.kind is TokenKind.WORD:
-            if spell_out is not None and token.text in spell_out:
-                for letter in token.text:
-                    group = list(_LETTER_NAMES.get(letter, [letter]))
-                    if group:
-                        words.append(group)
-                        pause_chars.append("")
-                continue
-            phones = lookup(token.text, lang=lang)
-            if phones is None:
-                if not lts_fallback:
-                    raise UnknownWordError(f"word {token.text!r} is not in the {lang} lexicon.")
-                phones = lts(token.text)
-            phones_list = list(phones)
-            if phones_list:
-                words.append(phones_list)
-                pause_chars.append("")
-        elif token.kind in (TokenKind.PAUSE_SHORT, TokenKind.PAUSE_LONG):
-            words.append(["SIL"])
-            # ``Token.text`` carries the actual punctuation character that
-            # triggered the pause (set by ``_strip_trailing_punct``); fall
-            # back to a representative char if it was synthesised without one.
-            default = "." if token.kind is TokenKind.PAUSE_LONG else ","
-            pause_chars.append(token.text or default)
-    return words, pause_chars
 
 
 # Re-export the approximate-path symbols so existing imports still resolve.
