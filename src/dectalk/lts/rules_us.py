@@ -145,6 +145,18 @@ _VOWEL_RULES: Final[tuple[_Rule, ...]] = (
     _Rule("IR", "", "", ("ER",)),
     _Rule("OR", "", "", ("AO", "R")),
     _Rule("UR", "", "", ("ER",)),
+    # Word-final lone ``A`` in a single-vowel (monosyllabic) word is the
+    # open back vowel ``AA``: the C oracle renders ``pa`` / ``ta`` / ``ka``
+    # / ``spa`` / ``bra`` / ``la`` / ``ma`` with ``aa`` (e.g. ``pa`` ->
+    # ``p aa``), not the default short ``AE``. Anchored at word end with a
+    # purely-consonantal left context (``^[^AEIOUY]+``) so it fires ONLY
+    # when ``A`` is the word's sole vowel — polysyllabic word-final ``a``
+    # (``comma`` / ``data`` / ``sofa``) is an unstressed schwa whose
+    # prefix contains a vowel, so it does not match here and continues to
+    # fall through to the default ``AE`` (its schwa reduction is a
+    # separate, un-fixed issue). Mirrors the analogous word-final ``I``
+    # long-vowel rule below.
+    _Rule("A", "^[^AEIOUY]+", "$", ("AA",)),
     # Default short vowels.
     _Rule("A", "", "", ("AE",)),
     _Rule("E", "", "", ("EH",)),
