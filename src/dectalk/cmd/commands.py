@@ -31,7 +31,15 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from typing import Final
 
+from dectalk.cmd.option_tables import define_options
+
 _Handler = Callable[["SpeechState", list[str]], "SpeechState"]
+
+# Design-voice parameter keywords. ``[:dv XX YY ...]`` (a.k.a. the
+# ``[:define <field> <value>]`` form) assigns speaker-definition
+# parameters (``ap`` = average pitch, ``hs`` = head size, ...) rather than
+# selecting a preset; see :data:`dectalk.cmd.option_tables.define_options`.
+_DV_PARAM_KEYWORDS: Final[frozenset[str]] = frozenset(define_options)
 
 # Default words-per-minute used as the reference point for
 # ``[:rate N]``. Matches DECtalk's documented default
@@ -122,9 +130,29 @@ def _apply_command(state: SpeechState, body: str) -> SpeechState:
 
 
 def _cmd_dv(state: SpeechState, args: list[str]) -> SpeechState:
-    """Handle ``[:dv NAME]`` / ``[:name NAME]``."""
+    """Handle ``[:dv ...]`` / ``[:name NAME]``.
+
+    Two forms share the ``dv`` keyword:
+
+    - ``[:dv NAME]`` — select a built-in voice preset (``paul``..``willy``).
+    - ``[:dv XX YY ...]`` — *design voice*: assign speaker-definition
+      parameters (``ap`` = average pitch, ``hs`` = head size, ...; see
+      :data:`dectalk.cmd.option_tables.define_options`).
+
+    The parameter form must not be mistaken for a preset name: doing so
+    stored e.g. ``"ap"`` as the active voice and crashed the renderer at
+    ``get_preset`` (issue #241). Recognise the parameter form by its
+    leading option keyword and leave the voice unchanged. The individual
+    parameters are not yet applied to the speaker definition — that is a
+    follow-on; the important behaviour here is not crashing.
+    """
     if not args:
         return state
+    if args[0].lower() in _DV_PARAM_KEYWORDS:
+        # Parameter (design-voice) form: ``<field> <value>`` pairs, not a
+        # preset. Not yet simulated — leave state unchanged.
+        return state
+    # Preset-name form: select a built-in voice.
     return replace(state, voice=args[0].lower())
 
 
