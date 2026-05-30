@@ -196,20 +196,23 @@ def _summarize(label: str, series: list[float]) -> str:
     )
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Phase E (audio bit-parity) -- after the ph_inton0.c / ph_drwt01.c "
-        "F0 re-port the per-clause dynamic range now tracks the C oracle "
-        "(Python std ~12-17 Hz vs C ~15-22 Hz, was ~3-7 Hz), but a ~20 Hz "
-        "baseline offset remains: Paul average_pitch is 100 vs C's 122 "
-        "(#220 Fault 1, voice_definitions.py) which is outside the F0 "
-        "subsystem. The per-frame max-abs delta stays above MAX_ABS_HZ "
-        "until that AP baseline lands. See issues #220 / #149."
-    ),
-)
+# Prompts whose per-frame F0 is now byte-exact against the C oracle.
+# After the #261 F0-dynamics fixes (``size_hat_rise = HR * 10`` and the
+# ``f0basefall = BF * 10`` baseline-declination seed in ph_vset.c) the
+# Python contour is frame-identical to the oracle on these prompts
+# (mean |Δ| == 0.0 Hz across every voiced frame). They are pinned as a
+# hard parity assertion. ``the quick brown fox`` still diverges, but
+# *not* on the F0 contour: its first ~145 frames match exactly, then a
+# frame-count drift (Python 258 vs C 279 voiced frames) from an
+# un-ported timing detail shifts the alignment. That divergence is a
+# duration/timing issue, not an F0-dynamics one, so it stays xfail.
+_FRAME_EXACT_PROMPTS: frozenset[str] = frozenset({"hello world", "testing one two three"})
+
+
 @pytest.mark.parametrize("prompt", _PROMPTS, ids=lambda p: p.replace(" ", "_"))
-def test_per_frame_out_t0_within_tolerance(capi: CAPI, prompt: str) -> None:
+def test_per_frame_out_t0_within_tolerance(
+    capi: CAPI, prompt: str, request: pytest.FixtureRequest
+) -> None:
     """Per-frame OUT_T0 from Python must agree with the C oracle within MAX_ABS_HZ.
 
     The C oracle and the Python full-pipeline driver run independently;
@@ -222,7 +225,27 @@ def test_per_frame_out_t0_within_tolerance(capi: CAPI, prompt: str) -> None:
     max of each series plus the index and magnitude of the worst
     per-frame divergence so future work can target the right phoneme
     window.
+
+    Prompts in :data:`_FRAME_EXACT_PROMPTS` are byte-exact after the
+    #261 F0-dynamics fixes and are asserted to ``MAX_ABS_HZ``. The
+    remaining prompt(s) diverge on frame count (a timing detail, not the
+    F0 contour) and stay xfail until the duration port lands.
     """
+    if prompt not in _FRAME_EXACT_PROMPTS:
+        request.applymarker(
+            pytest.mark.xfail(
+                strict=False,
+                reason=(
+                    "Phase E (audio bit-parity) -- the F0 contour matches the "
+                    "oracle frame-for-frame on its leading frames, but a "
+                    "frame-count drift (Python emits fewer voiced frames than "
+                    "C) from an un-ported timing detail shifts the alignment "
+                    "tail. This is a duration/timing gap, not an F0-dynamics "
+                    "one. See issues #220 / #149."
+                ),
+            )
+        )
+
     c_series = _c_oracle_f0_series(capi, prompt)
     py_series = _python_f0_series(prompt)
 

@@ -655,16 +655,39 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     p_dph_t.f0_lp_filter = 1500 + 15 * spdefs.quickness
     p_dph_t.f0minimum = spdefs.average_pitch * 10
     p_dph_t.f0scalefac = spdefs.pitch_range * 41
-    # Hat-rise / stress-rise scalars. ``phinton`` Rule 1 (ph_inton.c
-    # line 376) reads ``pDph_t->size_hat_rise`` for the hat-pattern F0
-    # rise amplitude; Rule 2 (line 459) scales the stress-impulse height
-    # by ``pDph_t->scale_str_rise``. Both are direct copies of the SPDEF
-    # ``HR`` and ``SR`` fields (per-voice row in ``p_us_vdf_dectalk43.c``
-    # -- Paul: HR=18, SR=32; Betty: HR=0, SR=20; Harry: HR=20, SR=30;
-    # Frank: HR=20, SR=22). Without these the per-frame OUT_T0 clamps
-    # at f0minimum +/- flutter (issue #94 / #122 F0 contour follow-up).
-    p_dph_t.size_hat_rise = spdefs.hat_rise
+    # Hat-rise / stress-rise scalars. ``phinton`` Rule 1 reads
+    # ``pDph_t->size_hat_rise`` for the hat-pattern F0 rise amplitude
+    # (the STEP injected into ``tarhat``); Rule 2 scales the
+    # stress-impulse height by ``pDph_t->scale_str_rise``. The C
+    # derivation in ``ph_vset.c`` lines 611-612 is **not** a bare copy:
+    #
+    #   pDph_t->size_hat_rise  = curspdef[SPD_HR] * 10;  // HR Hz -> Hz*10
+    #   pDph_t->scale_str_rise = curspdef[SPD_SR];       // SR -> mult. fac
+    #
+    # ``size_hat_rise`` carries the ``* 10`` (HR is stored in Hz but the
+    # F0 contour runs in Hz*10), so Paul's HR=18 becomes **180**, not 18.
+    # Omitting the ``* 10`` flattened the hat rise to a tenth of its
+    # amplitude -- a major contributor to the ~0.7x per-frame F0
+    # range/std compression (issue #261). ``scale_str_rise`` is a bare
+    # SR copy (it is a multiplier consumed by ``muldv(SR, targf0, 32)``
+    # in Rule 2), so it carries no ``* 10``.
+    # (Per-voice SPDEF rows in ``p_us_vdf_dectalk43.c`` -- Paul: HR=18,
+    # SR=32; Betty: HR=14, SR=20; Harry: HR=20, SR=30; Frank: HR=20,
+    # SR=22.)
+    p_dph_t.size_hat_rise = spdefs.hat_rise * 10
     p_dph_t.scale_str_rise = spdefs.stress_rise
+    # Baseline F0 fall. ``ph_vset.c`` line 620 derives
+    # ``pDph_t->f0basefall = curspdef[SPD_BF] * 10`` (BF in Hz -> Hz*10).
+    # ``pht0draw`` hard-init splits it about the 107 Hz nominal centre:
+    # ``f0beginfall = 1070 + (f0basefall >> 1)`` and
+    # ``f0endfall = 1070 - (f0basefall >> 1)`` (ph_drwt01.c:2417-2418),
+    # so the clause's baseline declines from ``beginfall`` toward
+    # ``endfall`` at 0.1 Hz/frame. For Paul (BF=18) this is 180 -> a
+    # ~18 Hz total declination span (1160 -> 980 deciHz). Left unset the
+    # field defaulted to 0, collapsing ``beginfall == endfall == 1070``
+    # so the baseline never declined -- the contour was flat across the
+    # clause, the other half of the ~0.7x F0 range compression (#261).
+    p_dph_t.f0basefall = spdefs.baseline_fall * 10
     # Assertiveness: SPD AS (final F0-fall, % of full fall) scaled to the
     # Q12-style multiplier ``phinton`` Rules 3/4/6 pass to ``frac4mul`` on
     # the rule's f0fall / targf0 magnitude. The C bridge in ``phram.c``
