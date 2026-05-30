@@ -95,7 +95,7 @@ def test_active_filter_is_not_single_pole() -> None:
 # --- Python recurrence tests ------------------------------------------------
 
 
-def _make_state(f0_lp_filter: int = 1536, baseline: int = 1070) -> DphT:
+def _make_state(f0_lp_filter: int = 1536, baseline: int = 1070, tarseg1: int = 0) -> DphT:
     """A DphT wired with the hard-init filter coefficients + primed memories."""
     state = DphT()
     st = DphSettarSt()
@@ -106,7 +106,7 @@ def _make_state(f0_lp_filter: int = 1536, baseline: int = 1070) -> DphT:
     # Filter memories primed to the declination baseline.
     st.f0las1 = baseline << F0SHFT
     st.f0las2 = baseline << F0SHFT
-    st.tarseg1 = 0
+    st.tarseg1 = tarseg1
     state.pSTphsettar = st
     return state
 
@@ -158,8 +158,7 @@ def test_tarseg1_lifts_second_pole() -> None:
         filter_commands(base, 1070)
     base_f0 = base.f0
 
-    lifted = _make_state(baseline=1070)
-    lifted.pSTphsettar.tarseg1 = 50  # type: ignore[union-attr]
+    lifted = _make_state(baseline=1070, tarseg1=50)
     for _ in range(60):
         filter_commands(lifted, 1070)
     assert lifted.f0 > base_f0
