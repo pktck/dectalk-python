@@ -59,6 +59,23 @@ def test_numbers_are_spoken_as_words() -> None:
     assert text == ["YEAR", "TWO", "THOUSAND", "TWENTY", "FOUR"]
 
 
+def test_standalone_symbols_are_spoken_as_words() -> None:
+    """Whole-token symbols are pronounced, not dropped (issue #244)."""
+    assert tokenize("a = b") == [
+        Token(TokenKind.WORD, "A"),
+        Token(TokenKind.WORD, "EQUALS"),
+        Token(TokenKind.WORD, "B"),
+    ]
+    assert [t.text for t in tokenize("you & me")] == ["YOU", "AND", "ME"]
+    assert [t.text for t in tokenize("one + two")] == ["ONE", "PLUS", "TWO"]
+    assert [t.text for t in tokenize("hello / world")] == ["HELLO", "SLASH", "WORLD"]
+
+
+def test_symbol_embedded_in_word_is_not_remapped() -> None:
+    """A symbol inside a token (``AT&T``) is left intact, not split (issue #244)."""
+    assert tokenize("AT&T") == [Token(TokenKind.WORD, "AT&T")]
+
+
 def test_small_number_in_text() -> None:
     tokens = tokenize("17")
     assert [t.text for t in tokens] == ["SEVENTEEN"]

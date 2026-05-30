@@ -36,6 +36,23 @@ _CLAUSE_PUNCT: Final[frozenset[str]] = frozenset(
     {",", ";", ":", "—", "–"}  # noqa: RUF001 - intentional Unicode punctuation
 )
 
+# Standalone symbol tokens that the C front end pronounces as words
+# (issue #244). Without this map a whitespace-delimited symbol token
+# (``a = b``) was stripped to the empty string and silently dropped,
+# whereas C speaks "a equals b". Only whole-token symbols are mapped;
+# symbols embedded in a word (``AT&T``, ``100%``) are left untouched.
+# Words are upper-case to match the bundled lexicon. Verified against the
+# C oracle's phoneme stream (e.g. ``&`` -> "and", not "ampersand").
+_SYMBOL_WORDS: Final[dict[str, tuple[str, ...]]] = {
+    "&": ("AND",),
+    "%": ("PERCENT",),
+    "@": ("AT",),
+    "+": ("PLUS",),
+    "=": ("EQUALS",),
+    "*": ("ASTERISK",),
+    "/": ("SLASH",),
+}
+
 
 class TokenKind(Enum):
     """Categorisation of a normalised token."""
@@ -89,6 +106,15 @@ def _normalize_token(raw: str) -> Iterable[Token]:
     url_words = try_url(raw)
     if url_words is not None:
         for w in url_words:
+            yield Token(TokenKind.WORD, w)
+        return
+
+    # A whole-token symbol (``&``, ``%``, ``=`` ...) is spoken as a word
+    # by C; emit that word instead of letting the punctuation-strip below
+    # delete it (issue #244).
+    symbol_words = _SYMBOL_WORDS.get(raw)
+    if symbol_words is not None:
+        for w in symbol_words:
             yield Token(TokenKind.WORD, w)
         return
 
