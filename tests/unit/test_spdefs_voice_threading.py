@@ -2,12 +2,18 @@
 
 Issue #164. Before this work, the orchestrator in
 :func:`dectalk.api.speak._render_clause_full` hardcoded Paul's
-voice-table values (``size_hat_rise=18``, ``scale_str_rise=32``,
+voice-table values (``size_hat_rise=180``, ``scale_str_rise=32``,
 ``assertiveness=100*41``, ``f0_lp_filter=1500+15*40``,
 ``f0minimum=AP*10``, ``f0scalefac=100*41``) so non-Paul voices
 were synthesised with Paul's intonation envelope. The Spdefs threading
 loads the per-voice row from :mod:`dectalk.ph.voice_definitions` and
 seeds ``DphT`` with the documented C voice-table scalars.
+
+Note the engine-state scalars carry the C ``ph_vset.c`` unit
+conversions: ``size_hat_rise = HR * 10`` (line 611) and
+``f0basefall = BF * 10`` (line 620). The raw :class:`Spdefs` fields
+(``hat_rise``, ``baseline_fall``) hold the un-scaled SPDEF Hz values;
+the ``* 10`` is applied when seeding ``DphT`` (issue #261).
 
 The tests below exercise four representative voices:
 
@@ -197,8 +203,15 @@ def test_render_clause_paul_matches_legacy_scalars(monkeypatch: pytest.MonkeyPat
     produces for Paul.
     """
     dph_t = _capture_dpht_after_init(None, monkeypatch)
-    assert dph_t.size_hat_rise == 18  # type: ignore[attr-defined]
+    # size_hat_rise carries the ``* 10`` from ph_vset.c:611 (HR Hz ->
+    # Hz*10): Paul HR=18 -> 180. Omitting it flattened the hat rise to a
+    # tenth, compressing per-frame F0 range/std (issue #261).
+    assert dph_t.size_hat_rise == 18 * 10  # type: ignore[attr-defined]
     assert dph_t.scale_str_rise == 32  # type: ignore[attr-defined]
+    # f0basefall = BF * 10 (ph_vset.c:620): Paul BF=18 -> 180, driving the
+    # pht0draw baseline declination (1160 -> 980 deciHz). Left unset the
+    # baseline never fell (issue #261).
+    assert dph_t.f0basefall == 18 * 10  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 100 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 40  # type: ignore[attr-defined]
     # AP=122 (shipped 4.3 table, issue #220 fault 1) -> f0minimum = AP*10.
@@ -212,9 +225,10 @@ def test_render_clause_paul_matches_legacy_scalars(monkeypatch: pytest.MonkeyPat
 def test_render_clause_betty_uses_betty_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
     """Betty (female, AP=208) gets her documented C voice-table values."""
     dph_t = _capture_dpht_after_init("betty", monkeypatch)
-    # HR=14, SR=20, AS=35, QU=55, AP=208, PR=240 from voice_betty.
-    assert dph_t.size_hat_rise == 14  # type: ignore[attr-defined]
+    # HR=14, SR=20, AS=35, QU=55, AP=208, PR=240, BF=0 from voice_betty.
+    assert dph_t.size_hat_rise == 14 * 10  # type: ignore[attr-defined]
     assert dph_t.scale_str_rise == 20  # type: ignore[attr-defined]
+    assert dph_t.f0basefall == 0 * 10  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 35 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 55  # type: ignore[attr-defined]
     assert dph_t.f0minimum == 208 * 10  # type: ignore[attr-defined]
@@ -224,9 +238,10 @@ def test_render_clause_betty_uses_betty_scalars(monkeypatch: pytest.MonkeyPatch)
 def test_render_clause_harry_uses_harry_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
     """Harry (male, AP=89) gets his documented C voice-table values."""
     dph_t = _capture_dpht_after_init("harry", monkeypatch)
-    # HR=20, SR=30, AS=100, QU=10, AP=89, PR=80 from voice_harry.
-    assert dph_t.size_hat_rise == 20  # type: ignore[attr-defined]
+    # HR=20, SR=30, AS=100, QU=10, AP=89, PR=80, BF=9 from voice_harry.
+    assert dph_t.size_hat_rise == 20 * 10  # type: ignore[attr-defined]
     assert dph_t.scale_str_rise == 30  # type: ignore[attr-defined]
+    assert dph_t.f0basefall == 9 * 10  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 100 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 10  # type: ignore[attr-defined]
     assert dph_t.f0minimum == 89 * 10  # type: ignore[attr-defined]
@@ -236,9 +251,10 @@ def test_render_clause_harry_uses_harry_scalars(monkeypatch: pytest.MonkeyPatch)
 def test_render_clause_frank_uses_frank_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
     """Frank (male, AP=155) gets his documented C voice-table values."""
     dph_t = _capture_dpht_after_init("frank", monkeypatch)
-    # HR=20, SR=22, AS=65, QU=0, AP=155, PR=90 from voice_frank.
-    assert dph_t.size_hat_rise == 20  # type: ignore[attr-defined]
+    # HR=20, SR=22, AS=65, QU=0, AP=155, PR=90, BF=9 from voice_frank.
+    assert dph_t.size_hat_rise == 20 * 10  # type: ignore[attr-defined]
     assert dph_t.scale_str_rise == 22  # type: ignore[attr-defined]
+    assert dph_t.f0basefall == 9 * 10  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 65 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 0  # type: ignore[attr-defined]
     assert dph_t.f0minimum == 155 * 10  # type: ignore[attr-defined]
