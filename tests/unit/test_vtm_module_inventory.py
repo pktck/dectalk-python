@@ -101,6 +101,20 @@ _DEFERRED: dict[str, str] = {
     # ---- playtone.c -- DTMF / sine-pair tone injection. ---------------
 }
 
+# Static diagnostic helpers injected into ``vtmiont.c`` by the parity
+# patch ``tests/parity/c_patches/0006-vtm-frame-out-t0-dump.patch``. They
+# write the per-frame ``vtm_frames.dump`` consumed by the #149 / #261
+# per-frame-F0 parity test -- test-only instrumentation, not DECtalk
+# synthesis functions, so there is intentionally no Python port. They are
+# present only when ``DECTALK_SRC`` points at a *patched* oracle tree
+# (the standard ``setup_c_oracle.sh`` output, and local ``dev_check``);
+# excluded from the inventory so a patched source doesn't read as a
+# missing port. Not added to ``_DEFERRED`` because that list is validated
+# against the *unpatched* function set (these names are absent there).
+_PATCH_INJECTED_FUNCS: frozenset[str] = frozenset(
+    {"_dectalk_dump_vtm_frames_open", "_dectalk_dump_vtm_frame"}
+)
+
 
 # --------------------------------------------------------------------------
 # Helpers.
@@ -367,7 +381,7 @@ def test_every_linux_active_vtm_function_has_python_port() -> None:
     c_funcs = _enumerate_all_c_functions()
     assert c_funcs, "expected to find at least one function definition across VTM files"
     py_syms = _enumerate_python_vtm_symbols()
-    missing = c_funcs - py_syms - set(_DEFERRED.keys())
+    missing = c_funcs - py_syms - set(_DEFERRED.keys()) - _PATCH_INJECTED_FUNCS
     assert not missing, (
         f"Missing Python ports for VTM-module C functions: "
         f"{sorted(missing)}. Either port them, or add to _DEFERRED with a reason."
