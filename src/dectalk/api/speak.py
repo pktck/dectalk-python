@@ -185,7 +185,12 @@ def _resolve_voice(voice: str | VoicePreset | None) -> VoicePreset | None:
         return None
     if isinstance(voice, VoicePreset):
         return voice
-    return get_preset(voice)
+    try:
+        return get_preset(voice)
+    except KeyError:
+        # Unknown voice name (e.g. a malformed ``[:dv]`` body) — fall back
+        # to the default voice rather than aborting the render (issue #241).
+        return None
 
 
 def _voice_name_for_spdefs(voice: str | VoicePreset | None) -> str | None:

@@ -32,6 +32,22 @@ def test_name_alias_for_dv() -> None:
     assert segs[0].state.voice == "betty"
 
 
+def test_dv_parameter_form_does_not_set_voice() -> None:
+    """``[:dv XX YY]`` design-voice params must not be read as a preset name.
+
+    Regression for issue #241: ``[:dv ap 200]`` stored ``"ap"`` as the
+    active voice, which later crashed the renderer at ``get_preset``. The
+    parameter form (leading option keyword from
+    :data:`dectalk.cmd.option_tables.define_options`) must leave the voice
+    unchanged, while the ``[:dv NAME]`` preset form still selects a voice.
+    """
+    for body in ("[:dv ap 200] hi", "[:dv hs 120] hi", "[:dv sx 1] hi"):
+        segs = parse(body)
+        assert segs[0].state.voice is None, body
+    # The preset-name form is unaffected.
+    assert parse("[:dv harry] hi")[0].state.voice == "harry"
+
+
 def test_rate_is_absolute_wpm() -> None:
     """``[:rate N]`` is absolute WPM (matching the C binary), not a percentage.
 
