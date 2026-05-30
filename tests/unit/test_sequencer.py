@@ -36,6 +36,21 @@ def test_single_vowel_produces_audio() -> None:
     assert int(np.max(np.abs(out))) > 0
 
 
+def test_unknown_codes_are_skipped_not_raised() -> None:
+    """Unrecognised tokens are skipped instead of raising (issue #248).
+
+    The ``[:phoneme on]`` path can pass DECtalk *phonemic* notation
+    (e.g. ``hxeh4loh]``) rather than ARPABET; such a token must not abort
+    the render with ``KeyError``.
+    """
+    # A lone DECtalk-phonemic blob -> nothing recognised -> empty, no raise.
+    assert synthesize_phonemes(["hxeh4loh]"]).shape == (0,)
+    # Valid tokens still render even when an unknown token is interleaved.
+    good = synthesize_phonemes(["HH", "AH", "L", "OW"])
+    mixed = synthesize_phonemes(["HH", "AH", "BOGUS]", "L", "OW"])
+    assert mixed.size == good.size  # the bogus token is dropped, not rendered
+
+
 def test_hello_word_synthesizes_at_expected_duration() -> None:
     """HH+AH+L+OW should produce ~0.4-0.6 s of audio at default rate."""
     out = synthesize_phonemes(["HH", "AH", "L", "OW"])
