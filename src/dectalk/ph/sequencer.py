@@ -26,7 +26,7 @@ from dectalk.data.voices import VoicePreset
 from dectalk.hlsyn.llsyn import LLFrame, LLSynth, Speaker
 from dectalk.hlsyn.synthesize import ll_synthesize
 from dectalk.hlsyn.vowels import default_speaker
-from dectalk.include.phonemes import get_phoneme
+from dectalk.include.phonemes import get_phoneme, is_known_phoneme
 from dectalk.ph.phoneme_frames import get_frames
 from dectalk.ph.prosody import duration_factors, f0_contour
 
@@ -177,7 +177,14 @@ def synthesize_phonemes(
     else:
         spkr = default_speaker()
 
-    code_list = [c for c in codes if c.strip()]
+    # Drop blanks and any token that isn't a recognised ARPABET symbol.
+    # The ``[:phoneme on]`` path can hand us DECtalk *phonemic* notation
+    # (e.g. ``hxeh4loh]``) rather than space-separated ARPABET; without
+    # this filter such a token reaches ``get_phoneme`` and raises
+    # ``KeyError``, aborting the whole render (issue #248). Skipping
+    # unknown tokens keeps the renderer robust (full DECtalk-phonemic
+    # parsing for byte-parity is a separate follow-on).
+    code_list = [c for c in codes if c.strip() and is_known_phoneme(c)]
     if not code_list:
         return np.zeros(0, dtype=np.int16)
 

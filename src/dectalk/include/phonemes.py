@@ -170,3 +170,14 @@ def get_phoneme(code: str) -> Phoneme:
     """
     upper = code.upper().rstrip("012")
     return PHONEMES[upper]
+
+
+def is_known_phoneme(code: str) -> bool:
+    """Return True if ``code`` is a recognised ARPABET symbol.
+
+    Uses the same normalisation as :func:`get_phoneme` (case-insensitive,
+    trailing ``0``/``1``/``2`` stress digit stripped). Lets callers skip
+    unrecognised tokens instead of having :func:`get_phoneme` raise
+    ``KeyError`` mid-synthesis.
+    """
+    return code.upper().rstrip("012") in PHONEMES

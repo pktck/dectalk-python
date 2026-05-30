@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from dectalk.include.phonemes import PHONEMES, PhonemeKind, get_phoneme
+from dectalk.include.phonemes import PHONEMES, PhonemeKind, get_phoneme, is_known_phoneme
 
 
 def test_inventory_covers_canonical_arpabet() -> None:
@@ -79,6 +79,14 @@ def test_get_phoneme_is_case_insensitive() -> None:
 def test_get_phoneme_raises_for_unknown() -> None:
     with pytest.raises(KeyError):
         get_phoneme("XX")
+
+
+def test_is_known_phoneme() -> None:
+    """``is_known_phoneme`` mirrors ``get_phoneme``'s normalisation (issue #248)."""
+    assert is_known_phoneme("AH")
+    assert is_known_phoneme("ah1")  # case-insensitive + stress digit stripped
+    assert not is_known_phoneme("XX")
+    assert not is_known_phoneme("hxeh4loh]")  # DECtalk phonemic blob, not ARPABET
 
 
 def test_voiced_classification() -> None:
