@@ -4,7 +4,7 @@ Issue #164. Before this work, the orchestrator in
 :func:`dectalk.api.speak._render_clause_full` hardcoded Paul's
 voice-table values (``size_hat_rise=18``, ``scale_str_rise=32``,
 ``assertiveness=100*41``, ``f0_lp_filter=1500+15*40``,
-``f0minimum=(100-12)*10``, ``f0scalefac=100*41``) so non-Paul voices
+``f0minimum=AP*10``, ``f0scalefac=100*41``) so non-Paul voices
 were synthesised with Paul's intonation envelope. The Spdefs threading
 loads the per-voice row from :mod:`dectalk.ph.voice_definitions` and
 seeds ``DphT`` with the documented C voice-table scalars.
@@ -201,9 +201,11 @@ def test_render_clause_paul_matches_legacy_scalars(monkeypatch: pytest.MonkeyPat
     assert dph_t.scale_str_rise == 32  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 100 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 40  # type: ignore[attr-defined]
-    # AP=122 (shipped 4.3 table, issue #220 fault 1) -> f0minimum rises
-    # from (100-12)*10 to (122-12)*10.
-    assert dph_t.f0minimum == (122 - 12) * 10  # type: ignore[attr-defined]
+    # AP=122 (shipped 4.3 table, issue #220 fault 1) -> f0minimum = AP*10.
+    # The ``-12`` "fudge factor" is the HLSYN/CHANGES_AFTER_V43 build
+    # variant (ph_vset.c:615); the oracle is the non-HLSYN build
+    # (ph_vset.c:617 -> AP*10), so f0minimum = 1220, not 1100 (issue #259).
+    assert dph_t.f0minimum == 122 * 10  # type: ignore[attr-defined]
     assert dph_t.f0scalefac == 100 * 41  # type: ignore[attr-defined]
 
 
@@ -215,7 +217,7 @@ def test_render_clause_betty_uses_betty_scalars(monkeypatch: pytest.MonkeyPatch)
     assert dph_t.scale_str_rise == 20  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 35 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 55  # type: ignore[attr-defined]
-    assert dph_t.f0minimum == (208 - 12) * 10  # type: ignore[attr-defined]
+    assert dph_t.f0minimum == 208 * 10  # type: ignore[attr-defined]
     assert dph_t.f0scalefac == 240 * 41  # type: ignore[attr-defined]
 
 
@@ -227,7 +229,7 @@ def test_render_clause_harry_uses_harry_scalars(monkeypatch: pytest.MonkeyPatch)
     assert dph_t.scale_str_rise == 30  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 100 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 10  # type: ignore[attr-defined]
-    assert dph_t.f0minimum == (89 - 12) * 10  # type: ignore[attr-defined]
+    assert dph_t.f0minimum == 89 * 10  # type: ignore[attr-defined]
     assert dph_t.f0scalefac == 80 * 41  # type: ignore[attr-defined]
 
 
@@ -239,7 +241,7 @@ def test_render_clause_frank_uses_frank_scalars(monkeypatch: pytest.MonkeyPatch)
     assert dph_t.scale_str_rise == 22  # type: ignore[attr-defined]
     assert dph_t.assertiveness == 65 * 41  # type: ignore[attr-defined]
     assert dph_t.f0_lp_filter == 1500 + 15 * 0  # type: ignore[attr-defined]
-    assert dph_t.f0minimum == (155 - 12) * 10  # type: ignore[attr-defined]
+    assert dph_t.f0minimum == 155 * 10  # type: ignore[attr-defined]
     assert dph_t.f0scalefac == 90 * 41  # type: ignore[attr-defined]
 
 
