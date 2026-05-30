@@ -1,7 +1,13 @@
-"""Intonation state codes and tuning constants from ph_inton2.c.
+"""Intonation state codes and tuning constants for the active F0 engine.
 
-Translated from ``src/dapi/src/ph/ph_inton2.c``. The constants split
-into three groups:
+The hat-rise phase and clause-type codes are translated from
+``src/dapi/src/ph/ph_inton0.c`` (lines 83-90) — the active
+``ENGLISH_US`` + ``OLD_INTONATION_AND_TIMING`` intonation source. The
+F0-generation mode codes (:data:`NORMAL` .. :data:`TIME_VALUE_SPECIFIED`)
+and the shared ``ZAP`` / ``SAFETY`` constants come from ``viphdefs.h`` /
+``ph_defs.h``.
+
+The constants split into:
 
 - **Hat-rise phase codes** (:data:`BEFORE_HAT_RISE` ..
   :data:`AFTER_NONFINAL_FALL`) — values the intonation engine
@@ -9,9 +15,10 @@ into three groups:
 - **Clause-type codes** (:data:`DONTKNOW` .. :data:`PERIODCLAUSE`) —
   the four clause flavours (unknown / question / verb-phrase /
   period) used to pick the terminal contour.
-- **Delta tuning** (:data:`EMPH_FALL` .. :data:`FINAL_FALL`) —
-  fixed-point F0 deltas (units of 0.1 Hz scaled by a factor) the
-  intonation engine layers onto the declination contour.
+
+The ``DELTA*`` / ``EMPH_FALL`` tuning constants that ``ph_inton1.c`` /
+``ph_inton2.c`` (the NEW-intonation variants) define are *not* part of
+the active ``ph_inton0.c`` engine and are intentionally omitted.
 """
 
 from __future__ import annotations
@@ -45,26 +52,6 @@ VERBPHRASE: Final[int] = 2
 
 PERIODCLAUSE: Final[int] = 3
 """Clause ends in a period — terminal fall."""
-
-# -- F0 delta tuning constants (fixed-point) --------------------------------
-
-EMPH_FALL: Final[int] = 1
-"""Stress-reduce shift applied to emphatically stressed syllables."""
-
-DELTAEMPH_SPEC: Final[int] = 505
-"""Special-case emphatic-stress delta for fast speech."""
-
-DELTAEMPH: Final[int] = 501
-"""Normal emphatic-stress F0 delta."""
-
-DELTARISE: Final[int] = 200
-"""F0 rise for a continuing-cadence syllable."""
-
-DELTAFINAL: Final[int] = 100
-"""F0 delta to remain at the top of a final-cadence rise."""
-
-FINAL_FALL: Final[int] = 1
-"""Stress-reduce shift for the syllable at the top of a final fall."""
 
 # -- F0 generation modes (viphdefs.h) --------------------------------------
 
@@ -106,13 +93,7 @@ __all__ = [
     "AFTER_FINAL_FALL",
     "AFTER_NONFINAL_FALL",
     "BEFORE_HAT_RISE",
-    "DELTAEMPH",
-    "DELTAEMPH_SPEC",
-    "DELTAFINAL",
-    "DELTARISE",
     "DONTKNOW",
-    "EMPH_FALL",
-    "FINAL_FALL",
     "HAT_F0_SIZES_SPECIFIED",
     "HAT_LOCATIONS_SPECIFIED",
     "NORMAL",

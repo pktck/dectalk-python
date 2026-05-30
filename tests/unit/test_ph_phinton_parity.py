@@ -1,14 +1,17 @@
-"""C-source parity test for ``phinton`` against ph_inton2.c.
+"""C-source parity test for ``phinton`` against ph_inton0.c.
 
-Re-parses the C body via regex / brace-depth tracking and asserts the
-US-English intonation engine still exists in the develop branch with
-its expected per-clause structure. The Python translation in
-:mod:`dectalk.ph.phinton` is exercised end-to-end on a synthesised
-silence-only clause to confirm it runs without raising and writes
-non-trivial state to the F0-event arrays.
+The production ``ENGLISH_US`` + ``OLD_INTONATION_AND_TIMING`` build uses
+``ph_inton0.c``, which defines ``phinton`` twice. The first (line ~154)
+is the ``NWSNOAA`` / ``ENGLISH_UK`` variant; the **second** (line ~1325)
+is the active US English one. We extract the second definition for the
+structural assertions and exercise the Python port end-to-end.
 
-Skips cleanly when ``DECTALK_SRC`` / ``/tmp/dectalk-src`` is absent
-for the C-source assertions; the Python behavioural tests always run.
+The active engine is value-encoded: ``make_f0_command`` stores only
+``f0tim`` + ``f0tar`` (no ``f0type``), and the command type lives in the
+``tar`` value (0 = reset, even = STEP, odd = IMPULSE, >= 2000 = user).
+
+Skips the C-source assertions when ``DECTALK_SRC`` / ``/tmp/dectalk-src``
+is absent; the Python behavioural tests always run.
 """
 
 from __future__ import annotations
@@ -22,29 +25,26 @@ import pytest
 
 from dectalk.include.usp_codes import USP_AA, USP_P
 from dectalk.kernel.ksd_t import KsdT
-from dectalk.kernel.lang_codes import LANG_english
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import (
-    FCBNEXT,
     FHAT_BEGINS,
-    FHAT_ENDS,
     FPERNEXT,
     FSTRESS_1,
 )
 from dectalk.ph.inton_constants import NORMAL, PHONE_TARGETS_SPECIFIED, SINGING
-from dectalk.ph.numeric_constants import MALE, NPHON_MAX
+from dectalk.ph.numeric_constants import NPHON_MAX
 from dectalk.ph.phinton import (
-    _US_F0_MPHRASE_POSITION,
-    _US_F0_MSTRESS_LEVEL,
+    _US_F0_PHRASE_POSITION,
+    _US_F0_STRESS_LEVEL,
     phinton,
 )
-from dectalk.ph.phoneme_features import FBURST, FPLOSV
-from dectalk.ph.timing import phone_feature
 from dectalk.ph.tts_handle import TtsHandle
-from dectalk.ph.utterance_constants import COMMACLAUSE, DECLARATIVE, GEN_SIL, QUESTION
+from dectalk.ph.utterance_constants import GEN_SIL
 
-_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_inton2.c"
+_SRC = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src"))
+_C_FILE = _SRC / "src/dapi/src/ph/ph_inton0.c"
+_ROM_FILE = _SRC / "src/dapi/src/ph/p_us_rom_dectalk_1996m_43f.c"
 
 _c_skip = pytest.mark.skipif(
     not _C_FILE.is_file(),
@@ -52,8 +52,25 @@ _c_skip = pytest.mark.skipif(
 )
 
 
-def _read_inton2_c() -> str:
-    return _C_FILE.read_bytes().replace(b"\r", b"").decode("latin-1")
+def _read(path: Path) -> str:
+    return path.read_bytes().replace(b"\r", b"").decode("latin-1")
+
+
+def _extract_active_phinton() -> str:
+    """Return the body of the *second* (active US English) phinton."""
+    text = _read(_C_FILE)
+    headers = list(re.finditer(r"void\s+phinton\s*\(\s*LPTTS_HANDLE_T\s+\w+\s*\)\s*\{", text))
+    assert len(headers) >= 2, f"expected two phinton definitions, found {len(headers)}"
+    start = headers[-1].end() - 1  # the '{'
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start + 1 : i]
+    raise AssertionError("unterminated phinton body")
 
 
 # -- C-source structural assertions ----------------------------------------
@@ -62,105 +79,72 @@ def _read_inton2_c() -> str:
 @_c_skip
 def test_signature_matches_c() -> None:
     """C signature: ``void phinton(LPTTS_HANDLE_T phTTS)``."""
-    text = _read_inton2_c()
-    assert re.search(r"\bvoid\s+phinton\s*\(\s*LPTTS_HANDLE_T\s+\w+\s*\)", text)
+    assert re.search(r"\bvoid\s+phinton\s*\(\s*LPTTS_HANDLE_T\s+\w+\s*\)", _read(_C_FILE))
 
 
 @_c_skip
-def test_body_unpacks_kernel_share_data() -> None:
-    """Source contains ``pKsd_t = phTTS->pKernelShareData`` in phinton's region."""
-    text = _read_inton2_c()
-    assert re.search(r"PKSD_T\s+\w+\s*=\s*phTTS\s*->\s*pKernelShareData", text)
+def test_active_body_uses_single_stress_and_phrase_tables() -> None:
+    """Rule 2 indexes ``us_f0_stress_level`` + ``us_f0_phrase_position``."""
+    body = _extract_active_phinton()
+    assert "us_f0_stress_level[stresscur]" in body.replace(" ", "")
+    assert "us_f0_phrase_position[" in body
+    # The HLSYN per-gender tables are NOT referenced in the active engine.
+    assert "f0_mstress_level" not in body
+    assert "f0_fstress_level" not in body
 
 
 @_c_skip
-def test_body_unpacks_ph_thread_data() -> None:
-    """Source contains ``pDph_t = phTTS->pPHThreadData`` in phinton's region."""
-    text = _read_inton2_c()
-    assert re.search(r"PDPH_T\s+\w+\s*=\s*phTTS\s*->\s*pPHThreadData", text)
+def test_active_body_hardcodes_q_and_comma_gestures() -> None:
+    """Q-gestures 181/251 and comma gestures 71/101 are literals in the body."""
+    body = _extract_active_phinton()
+    assert re.search(r"make_f0_command\s*\(\s*pDph_t\s*,\s*4\s*,\s*181\b", body)
+    assert re.search(r"make_f0_command\s*\(\s*pDph_t\s*,\s*4\s*,\s*251\b", body)
+    assert re.search(r"make_f0_command\s*\(\s*pDph_t\s*,\s*6\s*,\s*181\b", body)
+    assert re.search(r"make_f0_command\s*\(\s*pDph_t\s*,\s*4\s*,\s*71\b", body)
 
 
 @_c_skip
-def test_body_declares_intonation_state_locals() -> None:
-    """Source declares MAX_NRISES / F0_FINAL_FALL / F0_GLOTTALIZE locals."""
-    text = _read_inton2_c()
-    for name in (
-        "MAX_NRISES",
-        "F0_FINAL_FALL",
-        "F0_NON_FINAL_FALL",
-        "F0_GLOTTALIZE",
-    ):
-        assert name in text, f"missing local declaration for {name}"
+def test_active_body_calls_make_f0_command_without_type() -> None:
+    """make_f0_command is called in the 6-arg (no-``type``) form.
+
+    The active calls pass ``(pDph_t, rulenumber, tar, delay, length,
+    &cumdur)``; the second positional arg is a small rule number, not a
+    ``type`` enum.
+    """
+    body = _extract_active_phinton()
+    calls = re.findall(r"make_f0_command\s*\(\s*pDph_t\s*,\s*([A-Za-z0-9_+\- ]+?)\s*,", body)
+    assert calls, "no make_f0_command calls found"
+    # Every second-arg is a rule number (0..8) or a bare integer — never a
+    # STEP/IMPULSE/GLIDE/USER type token.
+    for second in calls:
+        assert not re.search(r"STEP|IMPULSE|GLIDE|GLOTTAL|USER|F0_RESET", second), (
+            f"unexpected type token in make_f0_command call: {second!r}"
+        )
 
 
 @_c_skip
-def test_body_references_stress_level_tables() -> None:
-    """Source references the per-language stress-level tables."""
-    text = _read_inton2_c()
-    assert "f0_mstress_level" in text
-    assert "f0_fstress_level" in text
-    assert "f0_mphrase_position" in text
-    assert "f0_fphrase_position" in text
+def test_active_body_has_schwa_insertion() -> None:
+    """Rule 9 inserts a USP_AX/USP_IX schwa with an NF25MS duration."""
+    body = _extract_active_phinton()
+    assert "USP_AX" in body
+    assert "USP_IX" in body
+    assert re.search(r"allodurs\s*\[\s*nphon\s*\+\s*1\s*\]\s*=\s*NF25MS", body)
 
 
-@_c_skip
-def test_body_has_emphasis_and_rise_constants() -> None:
-    """Source defines EMPH_FALL / DELTARISE / FINAL_FALL macro-style constants."""
-    text = _read_inton2_c()
-    assert re.search(r"#\s*define\s+EMPH_FALL", text)
-    assert re.search(r"#\s*define\s+DELTARISE", text)
-    assert re.search(r"#\s*define\s+FINAL_FALL", text)
+@pytest.mark.skipif(not _ROM_FILE.is_file(), reason="active voice ROM not available")
+def test_table_values_match_active_rom() -> None:
+    """The Python F0 tables match p_us_rom_dectalk_1996m_43f.c."""
+    text = _read(_ROM_FILE)
 
+    def _parse(name: str) -> tuple[int, ...]:
+        m = re.search(rf"{name}\s*\[\s*\]\s*=\s*\{{([^}}]+)\}}", text)
+        assert m is not None, f"{name} not found in active ROM"
+        return tuple(
+            int(v.strip()) for v in m.group(1).split(",") if v.strip().lstrip("-").isdigit()
+        )
 
-@_c_skip
-def test_function_is_very_long() -> None:
-    """The phinton body is very large (~2080-line C function)."""
-    text = _read_inton2_c()
-    decl = re.search(r"\bvoid\s+phinton\s*\(\s*LPTTS_HANDLE_T\s+\w+\s*\)", text)
-    assert decl is not None
-    assert text.count("\n") > 800, "ph_inton2.c is unexpectedly short"
-
-
-@_c_skip
-def test_us_phrase_position_table_values_match_python() -> None:
-    """C source's ``us_f0_mphrase_position[]`` matches the Python tuple."""
-    text = _read_inton2_c()
-    # Find the non-POETRY definition.
-    match = re.search(
-        r"us_f0_mphrase_position\s*\[\s*\]\s*=\s*\{([^}]+)\}",
-        text,
-    )
-    assert match is not None
-    values = tuple(int(v.strip()) for v in match.group(1).split(",") if v.strip().isdigit())
-    # First match in file is the POETRY-guarded variant; second is the
-    # active one. Walk both candidates and confirm one matches.
-    all_matches = re.findall(
-        r"us_f0_mphrase_position\s*\[\s*\]\s*=\s*\{([^}]+)\}",
-        text,
-    )
-    parsed = [
-        tuple(int(v.strip()) for v in m.split(",") if v.strip().lstrip("-").isdigit())
-        for m in all_matches
-    ]
-    assert _US_F0_MPHRASE_POSITION in parsed, (
-        f"Python US m-phrase table {_US_F0_MPHRASE_POSITION} not found in C candidates {parsed}"
-    )
-    del values  # silence linter
-
-
-@_c_skip
-def test_us_stress_level_table_values_match_python() -> None:
-    """C source's ``us_f0_mstress_level[] = {1,81,61,161}`` matches Python."""
-    text = _read_inton2_c()
-    match = re.search(
-        r"us_f0_mstress_level\s*\[\s*\]\s*=\s*\{([^}]+)\}",
-        text,
-    )
-    assert match is not None
-    parsed = tuple(
-        int(v.strip()) for v in match.group(1).split(",") if v.strip().lstrip("-").isdigit()
-    )
-    assert parsed == _US_F0_MSTRESS_LEVEL
+    assert _parse("us_f0_stress_level") == _US_F0_STRESS_LEVEL
+    assert _parse("us_f0_phrase_position") == _US_F0_PHRASE_POSITION
 
 
 # -- Python behavioural tests ----------------------------------------------
@@ -175,35 +159,26 @@ def _make_handle(
 ) -> TtsHandle:
     """Build a minimally-populated TtsHandle ready for ``phinton``."""
     ksd = KsdT()
-    ksd.lang_curr = LANG_english
-
     dph = DphT()
-    settar = DphSettarSt()
-    dph.pSTphsettar = settar
+    dph.pSTphsettar = DphSettarSt()
 
     n = len(allophons)
-    # Pad arrays out to NPHON_MAX so the engine's lookahead is safe.
     pad = NPHON_MAX + 8 - n
     dph.allophons = list(allophons) + [GEN_SIL] * pad
     dph.allofeats = list(allofeats) if allofeats is not None else [0] * n
     dph.allofeats += [0] * (NPHON_MAX + 8 - len(dph.allofeats))
     dph.allodurs = list(allodurs) + [0] * pad
-    dph.alloopenq = [0] * (NPHON_MAX + 8)
     dph.user_f0 = list(user_f0) if user_f0 is not None else [0] * (NPHON_MAX + 8)
     dph.user_offset = [0] * (NPHON_MAX + 8)
     dph.f0tar = [0] * NPHON_MAX
-    dph.f0type = [0] * NPHON_MAX
-    dph.f0length = [0] * NPHON_MAX
     dph.f0tim = [0] * NPHON_MAX
 
     dph.nallotot = n
     dph.f0mode = NORMAL
-    dph.clausetype = DECLARATIVE
-    dph.malfem = MALE
-    dph.assertiveness = 4096  # full strength (frac4mul: x>>12 -> >>0).
-    dph.scale_str_rise = 32  # identity in muldv(temp, x, 32).
+    dph.assertiveness = 4096  # frac4mul(x, 4096) == x (Q12 unity).
+    dph.scale_str_rise = 32  # muldv(32, x, 32) == x.
     dph.size_hat_rise = 100
-    dph.number_words = 3
+    dph.cbsymbol = 0
 
     handle = TtsHandle()
     handle.p_kernel_share_data = ksd
@@ -212,48 +187,34 @@ def _make_handle(
 
 
 def test_phinton_runs_on_silence_only_clause() -> None:
-    """A silence-only clause runs end-to-end without raising."""
+    """A silence-only clause runs end-to-end and queues no F0 events."""
     handle = _make_handle(allophons=[GEN_SIL, GEN_SIL], allodurs=[5, 5])
     phinton(handle)
     dph = cast(DphT, handle.p_ph_thread_data)
-    # tcumdur accumulator counts the first phone (nphon == 0 path).
-    assert dph.tcumdur >= 5
-    # Open-quotient gets touched for each visited phone -- the exact
-    # value depends on the +FVOICD/+FOBST flags on GEN_SIL, but it
-    # should always land in the (30, 50, 70) trio that phinton emits.
-    assert dph.alloopenq[0] in (30, 50, 70)
-    # No F0 events get queued for an all-silence clause.
     assert dph.nf0tot == 0
+    assert dph.tcumdur >= 5
 
 
-def test_phinton_writes_f0tim_for_stressed_clause() -> None:
-    """A stressed vowel followed by a period emits at least one F0 event."""
-    # 4-phone clause: [GEN_SIL, USP_P, USP_AA(stressed,hat-begins/ends,
-    # period-next), GEN_SIL]. The stressed-vowel slot triggers Rules
-    # 1 (hat rise), 2 (stress impulse), 3 (hat fall), and 6
-    # (final-fall glottalisation).
+def test_phinton_emits_stress_impulse_value_encoded() -> None:
+    """A stressed vowel queues the value-encoded stress IMPULSE (odd tar)."""
     allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
     allodurs = [10, 8, 20, 10]
-    allofeats = [
-        0,
-        0,
-        FSTRESS_1 | FHAT_BEGINS | FHAT_ENDS | FPERNEXT,
-        FPERNEXT,
-    ]
-    handle = _make_handle(
-        allophons=allophons,
-        allodurs=allodurs,
-        allofeats=allofeats,
-    )
+    allofeats = [0, 0, FSTRESS_1 | FPERNEXT, FPERNEXT]
+    handle = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats)
     phinton(handle)
     dph = cast(DphT, handle.p_ph_thread_data)
-    # nf0tot should advance — at least one stress IMPULSE got queued.
-    assert dph.nf0tot > 0, "phinton produced no F0 events for stressed clause"
-    # f0tim entries are non-negative frame-deltas.
+
+    assert dph.nf0tot > 0
+    queued = dph.f0tar[: dph.nf0tot]
+    # Rule 2: tar = us_f0_stress_level[1] + us_f0_phrase_position[0] = 71 + 210
+    # = 281 (scale_str_rise == 32 is identity), forced odd -> IMPULSE.
+    expected = _US_F0_STRESS_LEVEL[1] + _US_F0_PHRASE_POSITION[0]
+    assert expected == 281
+    assert expected in queued, f"stress impulse {expected} not queued: {queued}"
+    assert expected & 0o1, "stress impulse must be odd (IMPULSE-encoded)"
+    # All f0tim deltas are non-negative.
     for i in range(dph.nf0tot):
         assert dph.f0tim[i] >= 0
-    # tcumdur was advanced for the audible phones (skips trailing sil).
-    assert dph.tcumdur > 0
 
 
 def test_phinton_resets_state_at_clause_start() -> None:
@@ -262,11 +223,9 @@ def test_phinton_resets_state_at_clause_start() -> None:
     dph = cast(DphT, handle.p_ph_thread_data)
     settar = cast(DphSettarSt, dph.pSTphsettar)
 
-    # Prime state with bogus values.
     dph.nf0tot = 99
     dph.had_hatbegin = 1
     dph.had_hatend = 1
-    dph.prevtargf0 = 12345
     settar.hatsize = 999
 
     phinton(handle)
@@ -274,283 +233,40 @@ def test_phinton_resets_state_at_clause_start() -> None:
     assert dph.nf0tot == 0
     assert dph.had_hatbegin == 0
     assert dph.had_hatend == 0
-    assert dph.prevtargf0 == -1
     assert settar.hatsize == 0
 
 
 def test_phinton_inserts_dummy_schwa_after_clause_final_plosive() -> None:
     """A final plosive followed by silence triggers dummy-vowel insertion."""
-    # Verify USP_P is +FPLOSV +FBURST in the feature table.
-    feat = phone_feature(USP_P)
-    assert feat & FPLOSV
-    assert feat & FBURST
-
-    allophons = [GEN_SIL, USP_P, GEN_SIL]
-    allodurs = [5, 8, 5]
-    handle = _make_handle(allophons=allophons, allodurs=allodurs)
+    handle = _make_handle(allophons=[GEN_SIL, USP_P, GEN_SIL], allodurs=[5, 8, 5])
     phinton(handle)
     dph = cast(DphT, handle.p_ph_thread_data)
     # A schwa got inserted: nallotot grew by 1.
     assert dph.nallotot == 4
 
 
-# -- Rule 4 nesting (issue #50) --------------------------------------------
-#
-# Rule 4 (the comma-impulse pair / interrogative gesture, ph_inton2.c
-# lines 1499-1590) is nested inside the ``if (had_hatend)`` block --
-# brace-tracking proves this in :func:`test_rule4_is_inside_had_hatend_block`.
-# A prior revision of the Python port lifted Rule 4 to the syllable-
-# loop scope, which made it fire on every FCBNEXT phone whether or not
-# a hat-fall was pending. The behavioural tests below exercise both
-# paths to make sure the regression doesn't reappear.
-
-
-@_c_skip
-def test_rule4_is_inside_had_hatend_block() -> None:
-    """ph_inton2.c Rule 4 lives inside the depth-5 ``had_hatend`` block.
-
-    Walks the source brace-by-brace and asserts the Rule 4 comment
-    marker is at the same brace-depth as the ``had_hatend = 0``
-    assignment at the top of Rule 3's body. A prior revision of the
-    Python port lifted Rule 4 out to the loop scope, which made the
-    comma-impulse pair fire on every FCBNEXT phone whether or not a
-    hat-fall was pending.
-    """
-    text = _read_inton2_c()
-    lines = text.split("\n")
-    depth = 0
-    rule4_depth: int | None = None
-    # Find the inner ``had_hatend = 0`` assignment (the one at the top
-    # of Rule 3's body, NOT the per-clause init assignment that lives
-    # before the main loop).
-    rule3_clear_depth: int | None = None
-    seen_rule3_comment = False
-
-    for line in lines:
-        cleaned = re.sub(r"//.*", "", line)
-        cleaned = re.sub(r"/\*.*?\*/", "", cleaned)
-        cleaned = re.sub(r'".*?"', '""', cleaned)
-        cleaned = re.sub(r"'.*?'", "''", cleaned)
-        depth += cleaned.count("{") - cleaned.count("}")
-        if "Rule 3:" in line:
-            seen_rule3_comment = True
-        if (
-            seen_rule3_comment
-            and rule3_clear_depth is None
-            and "had_hatend=0" in cleaned.replace(" ", "")
-        ):
-            rule3_clear_depth = depth
-        if rule4_depth is None and "Rule 4:" in line:
-            rule4_depth = depth
-
-    assert rule3_clear_depth is not None, "Rule 3's had_hatend = 0 assignment not found"
-    assert rule4_depth is not None, "Rule 4 comment marker not found"
-    assert rule4_depth == rule3_clear_depth, (
-        f"Rule 4 should be at depth {rule3_clear_depth} (inside had_hatend), "
-        f"but was at depth {rule4_depth}. A prior revision of the port "
-        f"lifted Rule 4 out of the had_hatend block -- see issue #50."
-    )
-
-
-def test_rule4_comma_impulse_only_fires_with_had_hatend() -> None:
-    """Rule 4 (comma-impulse pair) is gated by ``had_hatend``.
-
-    Builds two interrogative-clause traces with FCBNEXT on the stressed
-    vowel. In the first, the vowel lacks FHAT_ENDS so ``had_hatend``
-    never gets set -- Rule 4 should NOT fire and ``delta_special``
-    should remain at its init value of 0. In the second, FHAT_ENDS is
-    set so ``had_hatend`` is armed when the FCBNEXT vowel runs --
-    Rule 4 fires and ``delta_special`` is set to -50.
-    """
-    allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
-    allodurs = [10, 8, 20, 10]
-
-    # ---- without FHAT_ENDS: had_hatend never set, Rule 4 must NOT fire.
-    allofeats_no_hat = [0, 0, FSTRESS_1 | FCBNEXT, 0]
-    h1 = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats_no_hat)
-    d1 = cast(DphT, h1.p_ph_thread_data)
-    d1.clausetype = QUESTION  # so the C's rule4_a (!= DECLARATIVE) condition flips on.
-    phinton(h1)
-    # delta_special stays at the per-clause init value (0). The Rule 4
-    # comma-pair would set it to -50 if it had fired.
-    assert d1.delta_special == 0, (
-        "Rule 4 fired without had_hatend being armed -- "
-        "the comma-impulse pair leaked out of the had_hatend block."
-    )
-
-    # ---- with FHAT_ENDS: had_hatend gets armed, Rule 4 fires.
-    allofeats_with_hat = [0, 0, FSTRESS_1 | FHAT_ENDS | FCBNEXT, 0]
-    h2 = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats_with_hat)
-    d2 = cast(DphT, h2.p_ph_thread_data)
-    d2.clausetype = QUESTION
-    phinton(h2)
-    assert d2.delta_special == -50, (
-        "Rule 4 didn't fire on FCBNEXT|FHAT_ENDS stressed vowel in a "
-        "non-declarative clause -- the comma-impulse pair was suppressed."
-    )
-    # commacnt incremented once by Rule 4's comma branch.
-    assert d2.commacnt >= 1
-
-
-def test_rule4_question_branch_clears_had_hatend() -> None:
-    """When the stressed vowel is FQUENEXT and had_hatend, Rule 4 fires
-    but the FQUENEXT inner branch leaves ``delta_special`` at 0.
-
-    The Spanish / LA / German question-impulse calls are skipped on
-    the US path; this test verifies we still walk into the Rule 3/4
-    block (proving had_hatend got cleared by it).
-    """
-    from dectalk.ph.feature_bits import FQUENEXT  # noqa: PLC0415
-
-    allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
-    allodurs = [10, 8, 20, 10]
-    allofeats = [0, 0, FSTRESS_1 | FHAT_ENDS | FQUENEXT, 0]
+def test_phinton_hat_rise_is_even_step_encoded() -> None:
+    """Rule 1 hat-rise queues an even (STEP-encoded) tar."""
+    allophons = [GEN_SIL, USP_AA, GEN_SIL]
+    allodurs = [10, 20, 10]
+    # +FHAT_BEGINS on the syllabic vowel arms the hat rise.
+    allofeats = [0, FHAT_BEGINS, 0]
     handle = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats)
-    dph = cast(DphT, handle.p_ph_thread_data)
-    dph.clausetype = QUESTION  # rule4_b matches regardless of clausetype.
     phinton(handle)
-    # Rule 3 cleared had_hatend (proves we entered the block).
-    assert dph.had_hatend == 0
-    # Rule 3 set had_in_phrase_final.
-    assert dph.had_in_phrase_final == 1
-    # Rule 3 emitted a GLIDE event (type code 5 from utterance_constants.GLIDE).
-    from dectalk.ph.utterance_constants import GLIDE  # noqa: PLC0415
-
-    glide_events = [i for i in range(dph.nf0tot) if dph.f0type[i] == GLIDE]
-    assert glide_events, "Rule 3 did not emit a GLIDE F0 event"
-
-
-def test_rule4_commaclause_clausetype_triggers_comma_fall() -> None:
-    """COMMACLAUSE clausetype enters the ENGLISH_US Rule 3 comma branch.
-
-    The C source guards the Rule 3 comma-fall on
-    ``((struccur & FBOUNDARY) == FCBNEXT) || (clausetype == COMMACLAUSE)``.
-    Without the COMMACLAUSE branch we'd take the default AFTER_FINAL_FALL
-    path and the GLIDE target would use ``F0_FINAL_FALL >> 1`` (= 275)
-    instead of ``F0_COMMA_FALL`` (= 120). We verify the comma-fall
-    branch by reading the Rule 3 GLIDE event's target.
-    """
-    from dectalk.ph.phinton import _F0_COMMA_FALL  # noqa: PLC0415
-    from dectalk.ph.utterance_constants import GLIDE  # noqa: PLC0415
-
-    allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
-    allodurs = [10, 8, 20, 10]
-    # No FCBNEXT in the feature bits -- only clausetype is COMMACLAUSE.
-    allofeats = [0, 0, FSTRESS_1 | FHAT_ENDS, 0]
-    handle = _make_handle(allophons=allophons, allodurs=allodurs, allofeats=allofeats)
     dph = cast(DphT, handle.p_ph_thread_data)
-    dph.clausetype = COMMACLAUSE
-    phinton(handle)
-    # Rule 3 cleared had_hatend (proves we entered the block).
-    assert dph.had_hatend == 0
-    # Pull the GLIDE event Rule 3 emits and verify its target encodes
-    # the F0_COMMA_FALL path. Target is -(f0fall + hatsize); hatsize
-    # is 0 here because there was no FHAT_BEGINS on a prior phone.
-    # frac4mul(F0_COMMA_FALL, 4096 (=Q12 unity)) == F0_COMMA_FALL.
-    glide_targets = [
-        dph.f0tar[i] for i in range(dph.nf0tot) if dph.f0type[i] == GLIDE and dph.f0tar[i] < 0
-    ]
-    assert glide_targets, "no Rule 3 GLIDE event found"
-    # The first (and only) downward GLIDE is the Rule 3 hat-fall.
-    assert glide_targets[0] == -_F0_COMMA_FALL, (
-        f"expected GLIDE target -F0_COMMA_FALL ({-_F0_COMMA_FALL}), "
-        f"got {glide_targets[0]} (COMMACLAUSE path not taken?)"
-    )
+    assert dph.nf0tot > 0
+    # The hat-rise step is size_hat_rise (100) made even+nonzero: 100 & 0o37776
+    # | 0o2 == 102. Even -> STEP-encoded.
+    queued = dph.f0tar[: dph.nf0tot]
+    assert 102 in queued, f"hat-rise STEP 102 not queued: {queued}"
+    assert 102 % 2 == 0
 
 
-# -- Rule 0 ``goto skiprules`` semantics (issue #73) -----------------------
-#
-# ph_inton2.c line 895 executes ``goto skiprules`` inside the
-# ``if (f0mode == PHONE_TARGETS_SPECIFIED || SINGING)`` branch. The label
-# at line 1944 sits BEFORE Rule 9's dummy-schwa insertion (line 1971),
-# so Rule 9 still runs in those F0 modes. A prior revision of the port
-# (PR #56 / issue #50) used ``continue`` here, which silently dropped
-# Rule 9 for user-specified F0 and singing clauses. The tests below
-# pin the corrected goto-fallthrough behaviour.
-
-
-@_c_skip
-def test_rule0_goto_target_lives_before_rule9() -> None:
-    """The ``skiprules:`` label sits above Rule 9's dummy-schwa block.
-
-    Brace-tracking proves: the label is at function scope and Rule 9
-    fires for all f0modes, not just NORMAL / HAT_F0_SIZES_SPECIFIED.
-    """
-    text = _read_inton2_c()
-    # The label literal.
-    label_match = re.search(r"^\s*skiprules\s*:", text, flags=re.MULTILINE)
-    assert label_match is not None, "skiprules: label not found in ph_inton2.c"
-    label_line = text[: label_match.start()].count("\n")
-
-    # Rule 9 marker: ``Rule 9: Add short schwa vowel`` comment.
-    rule9_match = re.search(r"Rule 9: Add short schwa", text)
-    assert rule9_match is not None, "Rule 9 comment marker not found"
-    rule9_line = text[: rule9_match.start()].count("\n")
-
-    # ``goto skiprules`` inside Rule 0's block (the first occurrence).
-    goto_match = re.search(r"goto\s+skiprules\s*;", text)
-    assert goto_match is not None, "no ``goto skiprules`` found in source"
-    goto_line = text[: goto_match.start()].count("\n")
-
-    assert goto_line < label_line < rule9_line, (
-        f"expected goto({goto_line}) < skiprules:({label_line}) < Rule 9({rule9_line}); "
-        f"label should be reached from the goto AND fall through to Rule 9."
-    )
-
-
-def test_phinton_inserts_schwa_in_phone_targets_mode() -> None:
-    """Rule 0 ``goto skiprules`` mirror still runs Rule 9 (issue #73).
-
-    With ``f0mode = PHONE_TARGETS_SPECIFIED`` the C source skips
-    Rules 1-7 but executes the trailing cumdur update and Rule 9's
-    dummy-schwa insertion. A prior ``continue``-based shortcut in
-    the Python port dropped Rule 9 here.
-    """
-    # USP_P is +FPLOSV +FBURST -- triggers Rule 9.
-    allophons = [GEN_SIL, USP_P, GEN_SIL]
-    allodurs = [5, 8, 5]
-    handle = _make_handle(allophons=allophons, allodurs=allodurs)
-    dph = cast(DphT, handle.p_ph_thread_data)
-    dph.f0mode = PHONE_TARGETS_SPECIFIED
-    phinton(handle)
-    # nallotot should have grown by 1 (schwa appended at position 2).
-    assert dph.nallotot == 4, (
-        f"PHONE_TARGETS_SPECIFIED dropped Rule 9: nallotot={dph.nallotot}, expected 4"
-    )
-
-
-def test_phinton_inserts_schwa_in_singing_mode() -> None:
-    """Same regression as ``test_phinton_inserts_schwa_in_phone_targets_mode``
-    but exercising the SINGING branch of Rule 0's ``goto skiprules``.
-    """
-    allophons = [GEN_SIL, USP_P, GEN_SIL]
-    allodurs = [5, 8, 5]
-    handle = _make_handle(allophons=allophons, allodurs=allodurs)
-    dph = cast(DphT, handle.p_ph_thread_data)
-    dph.f0mode = SINGING
-    phinton(handle)
-    assert dph.nallotot == 4, f"SINGING dropped Rule 9: nallotot={dph.nallotot}, expected 4"
-
-
-def test_phinton_cumdur_advances_in_phone_targets_mode() -> None:
-    """Rule 0 ``goto skiprules`` still bumps cumdur / tcumdur.
-
-    The skiprules tail (ph_inton2.c lines 1946-1958) updates ``cumdur``
-    and ``tcumdur`` regardless of f0mode. Verify the Python mirror
-    preserves the tcumdur accumulator advance.
-    """
-    allophons = [GEN_SIL, USP_P, USP_AA, GEN_SIL]
-    allodurs = [10, 8, 20, 10]
-    handle = _make_handle(allophons=allophons, allodurs=allodurs)
-    dph = cast(DphT, handle.p_ph_thread_data)
-    dph.f0mode = PHONE_TARGETS_SPECIFIED
-    # Pre-populate user_f0 so Rule 0 emits at least one USER command.
-    assert dph.user_f0 is not None
-    dph.user_f0[2] = 50
-    phinton(handle)
-    # tcumdur covers the audible (non-final-silence) phones.
-    assert dph.tcumdur >= 10 + 8 + 20, (
-        f"PHONE_TARGETS_SPECIFIED tcumdur={dph.tcumdur}, expected >= 38"
-    )
-    # The Rule 0 USER command landed in the f0 event queue.
-    assert dph.nf0tot >= 1
+def test_phinton_runs_rule9_in_phone_targets_mode() -> None:
+    """Rule 0 ``goto skiprules`` still runs Rule 9 (schwa) in user-F0 modes."""
+    for mode in (PHONE_TARGETS_SPECIFIED, SINGING):
+        handle = _make_handle(allophons=[GEN_SIL, USP_P, GEN_SIL], allodurs=[5, 8, 5])
+        dph = cast(DphT, handle.p_ph_thread_data)
+        dph.f0mode = mode
+        phinton(handle)
+        assert dph.nallotot == 4, f"mode {mode} dropped Rule 9: nallotot={dph.nallotot}"

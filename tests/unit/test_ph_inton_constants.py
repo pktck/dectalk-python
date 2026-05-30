@@ -1,4 +1,4 @@
-"""Verify ph_inton2.c hat-rise / clause / delta constants."""
+"""Verify the active ph_inton0.c hat-rise / clause codes + shared f0 modes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 
 from dectalk.ph import inton_constants as ic
 
-_C_SOURCE: Path = Path("/tmp/dectalk-src/src/dapi/src/ph/ph_inton2.c")
+_C_SOURCE: Path = Path("/tmp/dectalk-src/src/dapi/src/ph/ph_inton0.c")
 
 
 def _parse_define(name: str) -> int | None:
@@ -37,7 +37,7 @@ def _parse_define(name: str) -> int | None:
     ],
 )
 def test_hat_rise_phases(py_attr: str, c_name: str, expected: int) -> None:
-    """Four hat-rise phase codes 0..3 match ph_inton2.c."""
+    """Four hat-rise phase codes 0..3 match ph_inton0.c."""
     assert _parse_define(c_name) == expected
     assert getattr(ic, py_attr) == expected
 
@@ -53,27 +53,15 @@ def test_hat_rise_phases(py_attr: str, c_name: str, expected: int) -> None:
     ],
 )
 def test_clause_types(py_attr: str, c_name: str, expected: int) -> None:
-    """Four clause-type codes 0..3 match ph_inton2.c."""
+    """Four clause-type codes 0..3 match ph_inton0.c."""
     assert _parse_define(c_name) == expected
     assert getattr(ic, py_attr) == expected
 
 
-@pytest.mark.skipif(not _C_SOURCE.exists(), reason="C source not available")
-@pytest.mark.parametrize(
-    ("py_attr", "c_name", "expected"),
-    [
-        ("EMPH_FALL", "EMPH_FALL", 1),
-        ("DELTAEMPH_SPEC", "DELTAEMPH_SPEC", 505),
-        ("DELTAEMPH", "DELTAEMPH", 501),
-        ("DELTARISE", "DELTARISE", 200),
-        ("DELTAFINAL", "DELTAFINAL", 100),
-        ("FINAL_FALL", "FINAL_FALL", 1),
-    ],
-)
-def test_delta_tuning(py_attr: str, c_name: str, expected: int) -> None:
-    """F0 delta tuning constants match ph_inton2.c."""
-    assert _parse_define(c_name) == expected
-    assert getattr(ic, py_attr) == expected
+def test_delta_constants_are_absent() -> None:
+    """The ph_inton1/2.c NEW-intonation deltas are not part of the module."""
+    for name in ("EMPH_FALL", "DELTAEMPH", "DELTAEMPH_SPEC", "DELTARISE", "DELTAFINAL"):
+        assert not hasattr(ic, name), f"{name} should be omitted (ph_inton1/2.c-only)"
 
 
 def test_hat_phases_dense_set() -> None:
@@ -100,10 +88,11 @@ def test_f0_modes() -> None:
     assert ic.HAT_F0_SIZES_SPECIFIED == 3
     assert ic.SINGING == 4
     assert ic.PHONE_TARGETS_SPECIFIED == 5
+    assert ic.TIME_VALUE_SPECIFIED == 6
 
 
 def test_zap_values() -> None:
-    """``ZAPF`` and ``ZAPB`` are both 6000 (non-MSDOS / HLSYN build)."""
+    """``ZAPF`` and ``ZAPB`` are both 6000 (non-MSDOS build)."""
     assert ic.ZAPF == 6000
     assert ic.ZAPB == 6000
 
