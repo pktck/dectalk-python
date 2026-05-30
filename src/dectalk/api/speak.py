@@ -627,14 +627,33 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # here (it's the canonical vtm seed) and assert/observe the
     # equivalent on Spdefs in the parity tests.
     p_dph_t.malfem = _us_paul_spd.sex
-    # F0 parameters derived from speaker definition (ph_vset.c lines 610-619).
+    # F0 parameters derived from speaker definition (ph_vset.c
+    # ``setspdef``, lines 610-619).
     # f0_lp_filter = 1500 + 15 * QU       (QU = quickness, % of max)
-    # f0minimum   = (AP - 12) * 10        (AP = average pitch, Hz)
+    # f0minimum   = AP * 10               (AP = average pitch, Hz)
     # f0scalefac  = PR * 41               (PR = pitch range, %)
-    # All three now thread through the per-voice :class:`Spdefs` so
-    # non-Paul voices pick up their documented C voice-table scalars.
+    # ``f0minimum`` has TWO build variants in the C source (issue #259):
+    #
+    #   #if defined(HLSYN) || defined(CHANGES_AFTER_V43)
+    #       f0minimum = (curspdef[SPD_AP] - 12) * 10;   // ph_vset.c:615
+    #   #else
+    #       f0minimum = (curspdef[SPD_AP])     * 10;    // ph_vset.c:617
+    #   #endif
+    #
+    # The shipped/oracle library is built from ``dectalkf.h`` which
+    # ``#include``s ``dectalkf_klsyn.h`` (the ``dectalkf_hlsyn.h`` line is
+    # commented out) and defines NEITHER ``HLSYN`` nor ``CHANGES_AFTER_V43``
+    # anywhere in the tree — so the ACTIVE branch is the plain
+    # ``AP * 10`` (line 617). The ``-12`` "fudge factor to keep it
+    # similiar to 260" only applies to the HLSYN/post-v43 build. Using
+    # the ``-12`` here drove the rendered mean F0 ~20 Hz low (Py ~100 vs
+    # C ~122 Hz on ``hello world``) — this is the byte-exact unlock after
+    # the #257 F0-dynamics re-port. ``f0scalefac = PR * 41`` is identical
+    # in both branches (line 619), so it is unchanged.
+    # All three thread through the per-voice :class:`Spdefs` so non-Paul
+    # voices pick up their documented C voice-table scalars.
     p_dph_t.f0_lp_filter = 1500 + 15 * spdefs.quickness
-    p_dph_t.f0minimum = (spdefs.average_pitch - 12) * 10
+    p_dph_t.f0minimum = spdefs.average_pitch * 10
     p_dph_t.f0scalefac = spdefs.pitch_range * 41
     # Hat-rise / stress-rise scalars. ``phinton`` Rule 1 (ph_inton.c
     # line 376) reads ``pDph_t->size_hat_rise`` for the hat-pattern F0

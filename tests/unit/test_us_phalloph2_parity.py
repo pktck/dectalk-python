@@ -392,7 +392,7 @@ def test_phalloph2_phinton_emits_nonzero_nf0tot() -> None:
     p_dph_t.fnscale = spd.fnscale
     p_dph_t.malfem = spd.sex
     p_dph_t.f0_lp_filter = 1500 + 15 * 40  # QU=40
-    p_dph_t.f0minimum = (100 - 12) * 10  # AP=100
+    p_dph_t.f0minimum = 122 * 10  # AP=122 (non-HLSYN build, ph_vset.c:617)
     p_dph_t.f0scalefac = 100 * 41  # PR=100
 
     arpabet_words = [["HH", "AH0", "L", "OW1"], ["W", "ER1", "L", "D"]]
