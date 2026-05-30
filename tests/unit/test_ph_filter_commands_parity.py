@@ -1,12 +1,17 @@
-"""C-source parity test for ``filter_commands`` against ph_drwt02.c.
+"""C-source parity test for ``filter_commands`` against ph_drwt01.c.
 
-Re-parses the C body and asserts:
+The pure-Python build targets the production ``libtts_us.so`` config
+(``ENGLISH_US`` + ``OLD_INTONATION_AND_TIMING``, ``HLSYN`` undefined),
+whose F0 contour generator is ``ph_drwt01.c`` — *not* the HLSYN
+``ph_drwt02.c`` the port originally followed. ``ph_drwt01.c`` defines
+``filter_commands`` twice: the first (line ~2102) is the
+``NWSNOAA`` / ``ENGLISH_UK`` variant, the second (line ~3221) is the
+active one. We extract the **second** definition.
 
-- The function signature matches ``static void filter_commands(PDPH_T, short f0in)``.
-- The single active statement is ``pDph_t->f0 += (f0in - pDph_t->f0) >> 2``.
-- All other filter logic (cascaded two-pole IIR) is commented out
-  and therefore inactive — guards against an accidental "uncomment"
-  by a future translator.
+The active filter is a cascaded **two-pole** critically-damped IIR — the
+dominant F0 dynamic-range driver — not the single-pole
+``f0 += (f0in - f0) >> 2`` smoother of the HLSYN build. This test pins
+that structure and the Python port's recurrence.
 
 Skips cleanly when ``DECTALK_SRC`` / ``/tmp/dectalk-src`` is absent.
 """
@@ -19,10 +24,14 @@ from pathlib import Path
 
 import pytest
 
+from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.filter_commands import filter_commands
+from dectalk.ph.getcosine import F0SHFT
+from dectalk.ph.math_helpers import mlsh1
+from dectalk.ph.numeric_constants import FRAC_ONE
 
-_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / ("src/dapi/src/ph/ph_drwt02.c")
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_drwt01.c"
 
 pytestmark = pytest.mark.skipif(
     not _C_FILE.is_file(),
@@ -30,99 +39,154 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _read_drwt02_c() -> str:
+def _read_drwt01_c() -> str:
     return _C_FILE.read_bytes().replace(b"\r", b"").decode("latin-1")
 
 
-def _extract_body() -> str:
-    text = _read_drwt02_c()
-    match = re.search(
-        r"static\s+void\s+filter_commands\s*\([^)]*\)\s*\{(.+?)^\}",
-        text,
-        re.DOTALL | re.MULTILINE,
+def _extract_active_body() -> str:
+    """Return the body of the *second* (active US English) filter_commands."""
+    text = _read_drwt01_c()
+    matches = list(
+        re.finditer(
+            r"static\s+void\s+filter_commands\s*\([^)]*\)\s*\{(.+?)^\}",
+            text,
+            re.DOTALL | re.MULTILINE,
+        )
     )
-    assert match is not None, "filter_commands() not found in ph_drwt02.c"
-    return match.group(1)
+    assert len(matches) >= 2, (
+        f"expected two filter_commands definitions in ph_drwt01.c, found {len(matches)}"
+    )
+    return matches[-1].group(1)
 
 
 def test_signature_matches_c() -> None:
     """Signature is ``static void filter_commands(PDPH_T, short f0in)``."""
-    text = _read_drwt02_c()
+    text = _read_drwt01_c()
     sig = re.search(
-        r"static\s+void\s+filter_commands\s*\(\s*PDPH_T\s+\w+\s*,"
-        r"\s*short\s+f0in\s*\)",
+        r"static\s+void\s+filter_commands\s*\(\s*PDPH_T\s+\w+\s*,\s*short\s+f0in\s*\)",
         text,
     )
     assert sig is not None
 
 
-def test_active_statement_is_first_order_smoother() -> None:
-    """The only active statement is ``pDph_t->f0 += (f0in - pDph_t->f0) >> 2;``."""
-    body = _extract_body()
-    # Strip all C comments so only active statements remain.
+def test_active_filter_is_two_pole() -> None:
+    """The active body is the cascaded two-pole IIR (writes f0las1/f0las2)."""
+    body = _extract_active_body()
     stripped = re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL)
     stripped = re.sub(r"//.*", "", stripped)
-    # Strip #if 0 ... #endif blocks (also dead code in the C body).
-    stripped = re.sub(r"#if\s+0.*?#endif", "", stripped, flags=re.DOTALL)
-    # The single active statement must be the smoother.
-    assert re.search(
-        r"pDph_t->f0\s*\+=\s*\(\s*f0in\s*-\s*pDph_t->f0\s*\)\s*>>\s*2\s*;",
-        stripped,
-    )
+    # Both filter memories are written (the two cascaded poles).
+    assert "pDphsettar->f0las1 = f0out1" in stripped
+    assert "pDphsettar->f0las2 = f0out2" in stripped
+    # Second pole folds in the fast segmental gesture tarseg1 << F0SHFT.
+    assert re.search(r"f0out1\s*\+\s*\(\s*pDphsettar->tarseg1\s*<<\s*F0SHFT\s*\)", stripped)
+    # Output: f0 = f0out2 >> F0SHFT; f0prime = f0.
+    assert re.search(r"pDph_t->f0\s*=\s*f0out2\s*>>\s*F0SHFT", stripped)
+    assert re.search(r"pDph_t->f0prime\s*=\s*pDph_t->f0", stripped)
 
 
-def test_no_other_active_f0_writes() -> None:
-    """No active statement writes ``f0las1`` / ``f0las2`` (cascaded-pole code is dead)."""
-    body = _extract_body()
+def test_active_filter_is_not_single_pole() -> None:
+    """Guard against re-introducing the HLSYN single-pole smoother."""
+    body = _extract_active_body()
     stripped = re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL)
     stripped = re.sub(r"//.*", "", stripped)
-    stripped = re.sub(r"#if\s+0.*?#endif", "", stripped, flags=re.DOTALL)
-    # No active assignment to f0las1 or f0las2 (two-pole state).
-    assert "pDphsettar->f0las1" not in stripped
-    assert "pDphsettar->f0las2" not in stripped
+    assert not re.search(r"pDph_t->f0\s*\+=\s*\(\s*f0in\s*-\s*pDph_t->f0\s*\)\s*>>\s*2", stripped)
 
 
-def test_python_no_op_when_f0_equals_f0in() -> None:
-    """Steady state: f0in == f0 → no change."""
+# --- Python recurrence tests ------------------------------------------------
+
+
+def _make_state(f0_lp_filter: int = 1536, baseline: int = 1070) -> DphT:
+    """A DphT wired with the hard-init filter coefficients + primed memories."""
     state = DphT()
-    state.f0 = 200
-    filter_commands(state, 200)
-    assert state.f0 == 200
+    st = DphSettarSt()
+    # Coefficients exactly as pht0draw hard-init sets them (ph_drwt01.c:2433).
+    st.f0a2 = f0_lp_filter
+    st.f0b = FRAC_ONE - f0_lp_filter
+    st.f0a1 = st.f0a2 << F0SHFT
+    # Filter memories primed to the declination baseline.
+    st.f0las1 = baseline << F0SHFT
+    st.f0las2 = baseline << F0SHFT
+    st.tarseg1 = 0
+    state.pSTphsettar = st
+    return state
 
 
-def test_python_first_order_smoother_step() -> None:
-    """Step input: f0=100, f0in=200 → f0 = 100 + (200-100)>>2 = 125."""
+def test_f0prime_tracks_f0() -> None:
+    """The active filter sets ``f0prime = f0`` (no separate f0s recombination)."""
+    state = _make_state()
+    filter_commands(state, 1070)
+    assert state.f0prime == state.f0
+
+
+def test_primed_baseline_holds_steady() -> None:
+    """Memories primed to baseline + f0in == baseline → f0 stays at baseline (±2)."""
+    baseline = 1070
+    state = _make_state(baseline=baseline)
+    for _ in range(50):
+        filter_commands(state, baseline)
+    assert abs(state.f0 - baseline) <= 2
+
+
+def test_converges_to_f0in_from_cold_start() -> None:
+    """From zero memories, a constant f0in pulls f0 up toward f0in (dynamic range)."""
     state = DphT()
-    state.f0 = 100
-    filter_commands(state, 200)
-    assert state.f0 == 125
+    st = DphSettarSt()
+    st.f0a2 = 1536
+    st.f0b = FRAC_ONE - 1536
+    st.f0a1 = st.f0a2 << F0SHFT
+    st.f0las1 = 0
+    st.f0las2 = 0
+    state.pSTphsettar = st
+
+    f0in = 1200
+    first = None
+    for i in range(200):
+        filter_commands(state, f0in)
+        if i == 0:
+            first = state.f0
+    # Cold start begins far below the target, then climbs to ~f0in. Integer
+    # truncation in the two cascaded poles biases the fixed point a few units
+    # below f0in (it never overshoots).
+    assert first is not None and first < f0in // 2
+    assert f0in - 8 <= state.f0 <= f0in
 
 
-def test_python_negative_delta_arithmetic_shift() -> None:
-    """Negative delta: f0=200, f0in=100 → delta=-100, -100>>2=-25 → f0=175."""
-    state = DphT()
-    state.f0 = 200
-    filter_commands(state, 100)
-    # Python's >> on negative ints rounds toward negative infinity,
-    # same as C on two's-complement architectures: -100 >> 2 == -25.
-    assert state.f0 == 175
+def test_tarseg1_lifts_second_pole() -> None:
+    """A non-zero tarseg1 fast-gesture raises the steady-state output."""
+    base = _make_state(baseline=1070)
+    for _ in range(60):
+        filter_commands(base, 1070)
+    base_f0 = base.f0
+
+    lifted = _make_state(baseline=1070)
+    lifted.pSTphsettar.tarseg1 = 50  # type: ignore[union-attr]
+    for _ in range(60):
+        filter_commands(lifted, 1070)
+    assert lifted.f0 > base_f0
 
 
-def test_python_zero_delta_at_zero_input() -> None:
-    """f0=0, f0in=0 → f0 stays 0."""
-    state = DphT()
-    state.f0 = 0
-    filter_commands(state, 0)
-    assert state.f0 == 0
+def test_matches_reference_recurrence() -> None:
+    """Frame-by-frame agreement with an independent transcription of the C body."""
+    state = _make_state(baseline=1070)
+    st = state.pSTphsettar
+    assert isinstance(st, DphSettarSt)
 
+    # Independent reference state.
+    f0a1, f0a2, f0b = st.f0a1, st.f0a2, st.f0b
+    las1 = las2 = 1070 << F0SHFT
+    tarseg1 = 0
 
-def test_python_converges_after_repeated_application() -> None:
-    """Applying repeatedly approaches the input value (geometric decay)."""
-    state = DphT()
-    state.f0 = 0
-    for _ in range(100):
-        filter_commands(state, 100)
-    # Integer arithmetic-shift-right truncates: once ``f0in - f0`` is
-    # less than 4 the smoother stops advancing (delta>>2 == 0). The
-    # asymptote settles a few units below the target.
-    assert 95 <= state.f0 <= 100
+    def _s16(x: int) -> int:
+        x &= 0xFFFF
+        return x - 0x10000 if x & 0x8000 else x
+
+    for f0in in (1070, 1200, 1500, 900, 1070, 2000, 1070):
+        filter_commands(state, f0in)
+        out1 = _s16(mlsh1(f0a1, f0in) + mlsh1(f0b, las1))
+        las1 = out1
+        out2 = _s16(mlsh1(f0a2, out1 + (tarseg1 << F0SHFT)) + mlsh1(f0b, las2))
+        las2 = out2
+        ref_f0 = out2 >> F0SHFT
+        assert state.f0 == ref_f0
+        assert st.f0las1 == las1
+        assert st.f0las2 == las2
