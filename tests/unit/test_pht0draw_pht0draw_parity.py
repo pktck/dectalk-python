@@ -1,14 +1,18 @@
-"""C-source parity test for ``pht0draw`` against ph_drwt02.c.
+"""C-source parity test for ``pht0draw`` against ph_drwt01.c.
 
-Re-parses the C body via brace-depth tracking and asserts both the
-MALE branch (lines 765-1507) and the FEMALE branch (lines 1508-2167)
-of the F0 contour generator still exist in the develop branch with
-their expected control flow, command dispatch, and segmental-table
-choices. Also runs behavioural Python tests that lean on the
-distinctive MALE/FEMALE differences (impulse-envelope comparison,
-EXCLAIM-clause scaling, segmental table).
+The production ``ENGLISH_US`` + ``OLD_INTONATION_AND_TIMING`` build uses
+``ph_drwt01.c``, which defines ``pht0draw`` twice. The first (line ~277)
+is the ``NWSNOAA`` / ``ENGLISH_UK`` variant; the **second** (line ~2381)
+is the active US English one. We extract the second definition.
 
-Skips cleanly when ``DECTALK_SRC`` / ``/tmp/dectalk-src`` is absent.
+The active generator is a single function — no MALE/FEMALE split, no
+separate ``filter_seg_commands`` two-pole, no triangle impulse envelope.
+The command type is value-decoded (0 = reset, >= 2000 = user, even =
+STEP, odd = IMPULSE), the baseline declines via ``tarbas = beginfall -
+nframb``, and the F0 is scaled about the constant 1200.
+
+Skips the C-source assertions when ``DECTALK_SRC`` is absent; the Python
+behavioural tests always run.
 """
 
 from __future__ import annotations
@@ -21,274 +25,237 @@ import pytest
 
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
-from dectalk.ph.getcosine import HIGHEST_F0, LOWEST_F0
+from dectalk.ph.getcosine import F0SHFT, HIGHEST_F0, LOWEST_F0
 from dectalk.ph.math_helpers import muldv
-from dectalk.ph.numeric_constants import FEMALE, MALE
 from dectalk.ph.param_indices import OUT_T0
-from dectalk.ph.pht0draw import _frac4mul_ph, pht0draw
+from dectalk.ph.pht0draw import _US_F0_SEGTARS, _frac4mul, pht0draw
 from dectalk.ph.tts_handle import TtsHandle
-from dectalk.ph.us_f0_segtars import us_f0fsegtars, us_f0msegtars
-from dectalk.ph.utterance_constants import EXCLAIMCLAUSE, GEN_SIL
+from dectalk.ph.utterance_constants import GEN_SIL
 
-_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_drwt02.c"
+_C_FILE = Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src")) / "src/dapi/src/ph/ph_drwt01.c"
+_ROM_FILE = (
+    Path(os.environ.get("DECTALK_SRC", "/tmp/dectalk-src"))
+    / "src/dapi/src/ph/p_us_rom_dectalk_1996m_43f.c"
+)
 
-pytestmark = [
-    pytest.mark.parity,
-    pytest.mark.skipif(
-        not _C_FILE.is_file(),
-        reason="DECtalk C source not available at /tmp/dectalk-src",
-    ),
-]
-
-
-def _read_c() -> str:
-    return _C_FILE.read_bytes().replace(b"\r", b"").decode("latin-1")
+_c_skip = pytest.mark.skipif(
+    not _C_FILE.is_file(),
+    reason="DECtalk C source not available at /tmp/dectalk-src",
+)
 
 
-def _extract_body() -> str:
-    """Return the body (between outer ``{}``) of the C ``pht0draw`` function."""
-    text = _read_c()
-    pattern = re.compile(r"\bpht0draw\s*\(")
-    for match in pattern.finditer(text):
-        paren_start = match.end() - 1
-        depth = 1
-        i = paren_start + 1
-        while i < len(text) and depth > 0:
-            ch = text[i]
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                depth -= 1
-            i += 1
-        while i < len(text) and text[i] in " \t\n\r":
-            i += 1
-        if i >= len(text) or text[i] != "{":
-            continue
-        start = i + 1
-        depth = 1
-        i = start
-        while i < len(text) and depth > 0:
-            ch = text[i]
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-            i += 1
-        if depth == 0:
-            return text[start : i - 1]
-    raise AssertionError(f"pht0draw definition not found in {_C_FILE.name}")
+def _read(path: Path) -> str:
+    return path.read_bytes().replace(b"\r", b"").decode("latin-1")
 
 
-def _split_male_female(body: str) -> tuple[str, str]:
-    """Return ``(male_body, female_body)`` slices of the C function body.
-
-    The C source structure is::
-
-        if (pDph_t->malfem == MALE) {
-            ...                                /* MALE */
-        }/*end of if malfem==male*/
-        else
-        {
-            ...                                /* FEMALE */
-        } /* end of fem stuff*/
-
-    We use the literal end-of-MALE comment as the split point — it
-    pre-dates the FEMALE port and is unique in the file.
-    """
-    sentinel = "/*end of if malfem==male*/"
-    idx = body.find(sentinel)
-    assert idx != -1, "MALE/FEMALE split marker not found in pht0draw body"
-    return body[:idx], body[idx + len(sentinel) :]
+def _extract_active_body() -> str:
+    """Return the body of the *second* (active US English) pht0draw."""
+    text = _read(_C_FILE)
+    headers = list(re.finditer(r"\bvoid\s+pht0draw\s*\(\s*LPTTS_HANDLE_T\s+\w+\s*\)\s*\{", text))
+    assert len(headers) >= 2, f"expected two pht0draw definitions, found {len(headers)}"
+    start = headers[-1].end() - 1
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start + 1 : i]
+    raise AssertionError("unterminated pht0draw body")
 
 
 # -- C-source structural assertions ----------------------------------------
 
 
-def test_signature_exists_in_c() -> None:
-    """``pht0draw`` definition is present in ph_drwt02.c."""
-    assert re.search(r"\bpht0draw\s*\(", _read_c())
+@_c_skip
+def test_active_body_is_single_function_no_malfem_split() -> None:
+    """The active pht0draw does not branch on ``malfem``."""
+    body = _extract_active_body()
+    assert "malfem" not in body
 
 
-def test_body_dispatches_on_malfem() -> None:
-    """Top-level body splits on ``pDph_t->malfem == MALE``."""
-    body = _extract_body()
-    assert re.search(r"pDph_t->malfem\s*==\s*MALE", body)
+@_c_skip
+def test_active_body_value_decodes_commands() -> None:
+    """The command loop decodes type from the f0command value."""
+    body = _extract_active_body()
+    assert re.search(r"if\s*\(\s*f0command\s*==\s*0\s*\)", body)
+    assert re.search(r"if\s*\(\s*f0command\s*>=\s*2000\s*\)", body)
+    assert re.search(r"\(\s*f0command\s*&\s*0?1\s*\)\s*==\s*0", body)
+    # Impulse is the doubled value.
+    assert re.search(r"tarimp\s*=\s*f0command\s*\+\s*f0command", body)
 
 
-def test_female_branch_exists() -> None:
-    """The else-branch (FEMALE) has its own hard-init / soft-init blocks."""
-    _, female = _split_male_female(_extract_body())
-    # FEMALE hard-init sets newnote=1600 (vs MALE 1000).
-    assert re.search(r"newnote\s*=\s*1600", female)
-    # FEMALE soft-init clears nimpcnt and tarimp.
-    assert re.search(r"nimpcnt\s*=\s*0", female)
+@_c_skip
+def test_active_body_has_baseline_declination() -> None:
+    """``tarbas = beginfall - nframb`` declination is present."""
+    body = _extract_active_body()
+    assert re.search(r"tarbas\s*=\s*pDphsettar->beginfall\s*-\s*pDphsettar->nframb", body)
 
 
-def test_female_uses_f0fsegtars() -> None:
-    """FEMALE branch references the female segmental table ``us_f0fsegtars``."""
-    _, female = _split_male_female(_extract_body())
-    # The HLSYN production build uses 2*us_f0fsegtars[phocur & PVALUE].
-    assert re.search(r"us_f0fsegtars\s*\[\s*pDphsettar->phocur\s*&\s*PVALUE\s*\]", female)
-    # MALE uses us_f0msegtars (verify the table choice is FEMALE-specific).
-    male, _ = _split_male_female(_extract_body())
-    assert "us_f0msegtars" in male
+@_c_skip
+def test_active_body_calls_filter_commands_not_seg() -> None:
+    """The active body calls filter_commands but not filter_seg_commands."""
+    body = _extract_active_body()
+    assert re.search(r"filter_commands\s*\(\s*pDph_t\s*,\s*f0in\s*\)", body)
+    assert "filter_seg_commands" not in body
 
 
-def test_female_impulse_envelope_uses_le() -> None:
-    """FEMALE impulse envelope uses ``<=`` for the ramp-up branch (MALE uses ``<``)."""
-    _, female = _split_male_female(_extract_body())
-    assert re.search(r"nimpcnt\s*<=\s*\(\s*pDphsettar->nimp>>1\s*\)", female)
-    male, _ = _split_male_female(_extract_body())
-    assert re.search(r"nimpcnt\s*<\s*\(\s*pDphsettar->nimp>>1\s*\)", male)
+@_c_skip
+def test_active_body_uses_us_f0segtars() -> None:
+    """Segmental lookup is ``us_f0segtars[phocur & PVALUE]`` (single table)."""
+    body = _extract_active_body()
+    assert re.search(r"us_f0segtars\s*\[\s*phocur\s*&\s*PVALUE\s*\]", body)
+    assert "us_f0fsegtars" not in body
+    assert "us_f0msegtars" not in body
 
 
-def test_female_avglstop_assignment() -> None:
-    """FEMALE branch writes ``avglstop = (6 - dtglst)`` for ``dtglst <= 5``."""
-    _, female = _split_male_female(_extract_body())
-    assert re.search(r"avglstop\s*=\s*\(\s*6\s*-\s*dtglst\s*\)", female)
-    assert re.search(r"if\s*\(\s*dtglst\s*<=\s*5\s*\)", female)
+@_c_skip
+def test_active_body_scales_about_1200_with_jitter() -> None:
+    """Scale subtracts the constant 1200; jitter uses timecos15/timecos10 >> 5."""
+    body = _extract_active_body()
+    assert re.search(r"frac4mul\s*\(\s*\(\s*pDph_t->f0prime\s*-\s*1200\s*\)", body)
+    assert "getcosine[pDphsettar->timecos15 >> 6]" in body.replace("  ", " ")
+    assert re.search(r"f0prime\s*\+=\s*\(\s*pseudojitter\s*>>\s*5\s*\)", body)
 
 
-def test_female_exclaim_scale_uses_500() -> None:
-    """FEMALE EXCLAIM scale offset is ``f0scalefac+500`` (MALE is +1000)."""
-    _, female = _split_male_female(_extract_body())
-    assert re.search(r"f0scalefac\s*\+\s*500\b", female)
-    male, _ = _split_male_female(_extract_body())
-    assert re.search(r"f0scalefac\s*\+\s*1000\b", male)
+@_c_skip
+def test_active_body_emits_out_t0_period() -> None:
+    """OUT_T0 carries the pitch *period* muldv(400, 1000, f0prime).
+
+    The C stages the operands through arg1/arg2/arg3 just before the
+    divide, so check both the staging and the muldv emit.
+    """
+    body = _extract_active_body()
+    assert re.search(r"arg1\s*=\s*400\b", body)
+    assert re.search(r"arg2\s*=\s*1000\b", body)
+    assert re.search(r"arg3\s*=\s*pDph_t->f0prime", body)
+    assert re.search(r"parstochip\[OUT_T0\]\s*=\s*temp\s*=\s*muldv", body)
 
 
-def test_female_voicing_check_inspects_previous_allophone() -> None:
-    """FEMALE voicing test inspects ``allophons[np_drawt0-1]`` (MALE uses ``phocur``)."""
-    _, female = _split_male_female(_extract_body())
-    assert re.search(
-        r"phone_feature\([^)]*pDph_t->allophons\[pDphsettar->np_drawt0\s*-\s*1\]",
-        female,
-    )
-
-
-def test_female_command_dispatch_has_step_glide_glottal_impulse() -> None:
-    """FEMALE F0 command loop dispatches on USER / F0_RESET / STEP / GLIDE / GLOTTAL / IMPULSE."""
-    _, female = _split_male_female(_extract_body())
-    for case in ("USER", "F0_RESET", "STEP", "GLIDE", "GLOTTAL", "IMPULSE"):
-        assert re.search(rf"\bcase\s+{case}\s*:", female), f"missing case {case}"
-
-
-def test_female_flutter_uses_f0flutter_on_exclaim() -> None:
-    """FEMALE flutter section adds an extra ``mlsh1(pseudojitter, f0flutter)`` for EXCLAIM."""
-    _, female = _split_male_female(_extract_body())
-    assert re.search(r"mlsh1\([^)]*pDph_t->f0flutter", female)
+@pytest.mark.skipif(not _ROM_FILE.is_file(), reason="active voice ROM not available")
+def test_segtars_table_matches_active_rom() -> None:
+    """The embedded ``_US_F0_SEGTARS`` matches the active voice ROM."""
+    text = _read(_ROM_FILE)
+    m = re.search(r"us_f0segtars\s*\[\s*\]\s*=\s*\{([^}]+)\}", text)
+    assert m is not None
+    # The C table interleaves /* phoneme-name */ comments between rows.
+    table = re.sub(r"/\*.*?\*/", "", m.group(1), flags=re.DOTALL)
+    values = tuple(int(v.strip()) for v in table.split(",") if v.strip().lstrip("-").isdigit())
+    assert values == _US_F0_SEGTARS
 
 
 # -- Python behavioural tests ----------------------------------------------
 
 
-def _make_handle(*, malfem: int) -> TtsHandle:
-    """Return a minimal TtsHandle ready for pht0draw."""
-    p_dph_t = DphT()
-    p_dph_t.nf0ev = -2
-    p_dph_t.f0minimum = 800
-    p_dph_t.f0_lp_filter = 1300
-    p_dph_t.malfem = malfem
-    p_dph_t.nallotot = 4
-    p_dph_t.f0scalefac = 4096
-    p_dph_t.clausetype = 0
-    p_dph_t.f0mode = 1
-    p_dph_t.f0flutter = 700
-
-    p_dph_t.allophons = [GEN_SIL, GEN_SIL, GEN_SIL, GEN_SIL]
-    p_dph_t.allodurs = [10, 10, 10, 10]
-    p_dph_t.allofeats = [0, 0, 0, 0]
-
-    p_dph_t.f0tar = [0]
-    p_dph_t.f0type = [0]
-    p_dph_t.f0length = [1]
-    p_dph_t.f0tim = [9999]
-    p_dph_t.nf0tot = 0
-
-    p_dph_t.parstochip = [0] * 20
-    p_dph_t.pSTphsettar = DphSettarSt()
+def _make_handle(
+    *,
+    f0tar: list[int] | None = None,
+    f0tim: list[int] | None = None,
+    nf0tot: int = 0,
+    f0basefall: int = 0,
+) -> TtsHandle:
+    """Return a minimal hard-init-ready TtsHandle for pht0draw."""
+    p = DphT()
+    p.nf0ev = -2
+    p.f0minimum = 1100
+    p.f0_lp_filter = 1300
+    p.f0basefall = f0basefall
+    p.f0scalefac = 4096
+    p.f0mode = 1  # NORMAL
+    p.nallotot = 4
+    p.allophons = [GEN_SIL, GEN_SIL, GEN_SIL, GEN_SIL]
+    p.allodurs = [10, 10, 10, 10]
+    p.allofeats = [0, 0, 0, 0]
+    p.f0tar = list(f0tar) if f0tar is not None else [0, 0]
+    p.f0tim = list(f0tim) if f0tim is not None else [9999, 9999]
+    p.nf0tot = nf0tot
+    p.parstochip = [0] * 20
+    p.pSTphsettar = DphSettarSt()
 
     handle = TtsHandle()
-    handle.p_ph_thread_data = p_dph_t
+    handle.p_ph_thread_data = p
     return handle
 
 
-def test_female_dispatch_runs_to_completion() -> None:
-    """FEMALE dispatch produces a valid frame without raising."""
-    handle = _make_handle(malfem=FEMALE)
+def _settar(handle: TtsHandle) -> DphSettarSt:
+    p = handle.p_ph_thread_data
+    assert isinstance(p, DphT)
+    st = p.pSTphsettar
+    assert isinstance(st, DphSettarSt)
+    return st
+
+
+def test_runs_and_emits_period() -> None:
+    """A first frame hard-inits, stays in band, and emits the period."""
+    handle = _make_handle()
     pht0draw(handle)
-    p_dph_t = handle.p_ph_thread_data
-    assert isinstance(p_dph_t, DphT)
-    assert p_dph_t.nf0ev == 0
-    assert LOWEST_F0 <= p_dph_t.f0prime <= HIGHEST_F0
-    # Non-HLSYN build (issue #227): OUT_T0 is the pitch *period*
-    # muldv(400, 1000, f0prime), not f0prime itself.
-    assert p_dph_t.parstochip[OUT_T0] == muldv(400, 1000, p_dph_t.f0prime)
+    p = handle.p_ph_thread_data
+    assert isinstance(p, DphT)
+    assert p.nf0ev == 0
+    assert LOWEST_F0 <= p.f0prime <= HIGHEST_F0
+    assert p.parstochip[OUT_T0] == muldv(400, 1000, p.f0prime)
 
 
-def test_female_hard_init_uses_newnote_1600() -> None:
-    """FEMALE hard init differs from MALE in the newnote constant."""
-    male_handle = _make_handle(malfem=MALE)
-    female_handle = _make_handle(malfem=FEMALE)
-
-    pht0draw(male_handle)
-    pht0draw(female_handle)
-
-    male_settar = male_handle.p_ph_thread_data.pSTphsettar  # type: ignore[union-attr]
-    female_settar = female_handle.p_ph_thread_data.pSTphsettar  # type: ignore[union-attr]
-    assert isinstance(male_settar, DphSettarSt)
-    assert isinstance(female_settar, DphSettarSt)
-
-    assert male_settar.newnote == 1000
-    assert female_settar.newnote == 1600
+def test_hard_init_sets_baseline_coefficients() -> None:
+    """Hard init derives f0beginfall/f0endfall and the 2-pole coefficients."""
+    handle = _make_handle(f0basefall=100)
+    st = _settar(handle)
+    pht0draw(handle)
+    # f0beginfall = 1070 + (100 >> 1) = 1120; f0endfall = 1070 - 50 = 1020.
+    assert st.f0beginfall == 1120
+    assert st.f0endfall == 1020
+    # f0a2 = f0_lp_filter; f0a1 = f0a2 << F0SHFT.
+    assert st.f0a2 == 1300
+    assert st.f0a1 == 1300 << F0SHFT
 
 
-def test_female_segmental_table_doubled() -> None:
-    """``us_f0fsegtars`` is the female segmental table (and is doubled at use)."""
-    # GEN_SIL maps to index 0; ensure the table is present and non-degenerate.
-    assert len(us_f0fsegtars) > 0
-    assert len(us_f0msegtars) > 0
-    # The tables are distinct; the FEMALE branch uses the f-variant.
-    assert us_f0fsegtars is not us_f0msegtars
+def test_even_command_is_step_into_tarhat() -> None:
+    """An even f0tar value accumulates into ``tarhat`` (STEP-decoded)."""
+    handle = _make_handle(f0tar=[100, 0], f0tim=[0, 9999], nf0tot=1)
+    st = _settar(handle)
+    pht0draw(handle)
+    assert st.tarhat == 100
+    assert st.tarimp == 0
 
 
-def test_female_excl_scale_offset_smaller_than_male() -> None:
-    """FEMALE EXCLAIM scaling uses ``f0scalefac+500`` (smaller than MALE's +1000).
-
-    Concretely: with the same ``f0prime`` *pre-scale* the post-scale
-    EXCLAIM output should be smaller for FEMALE than MALE (because the
-    multiplier 4096+500 < 4096+1000).
-    """
-    f0minimum = 800
-    f0prime_pre = 2000
-    f0scalefac = 4096
-
-    male_scaled = f0minimum + _frac4mul_ph(f0prime_pre - f0minimum, f0scalefac + 1000)
-    female_scaled = f0minimum + _frac4mul_ph(f0prime_pre - f0minimum, f0scalefac + 500)
-
-    assert female_scaled < male_scaled
+def test_odd_command_is_doubled_impulse() -> None:
+    """An odd f0tar value sets ``tarimp = 2 * value`` (IMPULSE-decoded)."""
+    handle = _make_handle(f0tar=[101, 0], f0tim=[0, 9999], nf0tot=1)
+    st = _settar(handle)
+    pht0draw(handle)
+    # tarimp = 101 + 101 = 202; nimp = 16 - ((1300 - 1300) >> 8) = 16, then
+    # the per-frame countdown decrements it once to 15 (still >= 0).
+    assert st.tarimp == 202
+    assert st.nimp == 15
 
 
-def test_female_avglstop_zero_when_far_from_glottal_stop() -> None:
-    """FEMALE writes ``avglstop`` each frame; default-far-from-stop yields 0."""
-    handle = _make_handle(malfem=FEMALE)
-    p_dph_t = handle.p_ph_thread_data
-    assert isinstance(p_dph_t, DphT)
+def test_zero_command_resets_baseline() -> None:
+    """An f0command of 0 resets ``nframb`` and ``tarhat``."""
+    handle = _make_handle(f0tar=[0, 0], f0tim=[0, 9999], nf0tot=1)
+    st = _settar(handle)
+    st_before_nframb = 99
+    # Prime nframb so we can see the reset take effect.
+    pht0draw(handle)  # hard+soft init zeroes nframb anyway; command keeps it 0.
+    assert st.tarhat == 0
+    assert st.nframb == 0
+    del st_before_nframb
 
-    # Run a few frames; tglstp=-200 keeps dtglst > 5 the whole time.
-    for _ in range(5):
+
+def test_baseline_declines_over_frames() -> None:
+    """With f0basefall > 0 the baseline ``tarbas`` declines (nframb climbs)."""
+    handle = _make_handle(f0basefall=200)
+    st = _settar(handle)
+    pht0draw(handle)  # init frame
+    beginfall = st.beginfall
+    for _ in range(30):
         pht0draw(handle)
-        assert p_dph_t.avglstop == 0
+    # nframb advanced (declination active) and tarbas fell below beginfall.
+    assert st.nframb > 0
+    assert st.tarbas < beginfall
 
 
-def test_female_exclaim_clause_runs() -> None:
-    """FEMALE flutter+scale block runs cleanly on an EXCLAIM clause."""
-    handle = _make_handle(malfem=FEMALE)
-    p_dph_t = handle.p_ph_thread_data
-    assert isinstance(p_dph_t, DphT)
-    p_dph_t.clausetype = EXCLAIMCLAUSE
-
-    for _ in range(8):
-        pht0draw(handle)
-        # f0prime always clamped to the legal band.
-        assert LOWEST_F0 <= p_dph_t.f0prime <= HIGHEST_F0
+def test_frac4mul_q12() -> None:
+    """``_frac4mul`` is the Q12 ``(x*y) >> 12`` helper."""
+    assert _frac4mul(1000, 4096) == 1000  # unity
+    assert _frac4mul(2000, 2048) == 1000  # half

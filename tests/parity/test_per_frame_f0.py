@@ -8,7 +8,7 @@ pinpoint *where* the contour goes wrong; this test captures per-frame
 F0-Hz series, and asserts a tight per-frame max-abs tolerance.
 
 The test is **expected to FAIL** at the time of authoring -- it pins
-the F0-contour divergence so subsequent ph_drwt02 / ph_inton work can
+the F0-contour divergence so subsequent ph_drwt01 / ph_inton0 work can
 be measured against a stable parity oracle. Marked ``xfail`` with
 ``strict=False`` so the suite stays green while the gap is still open;
 once contour parity lands, drop the ``xfail`` mark and tighten the
@@ -125,7 +125,7 @@ def _c_oracle_f0_series(capi: CAPI, text: str) -> list[float]:
         # OUT_T0 == 9, so the value sits at parts[2 + 9] = parts[11].
         out_t0 = int(parts[2 + OUT_T0])
         # Non-HLSYN build: OUT_T0 is the period (samples) produced by
-        # ``muldv(400, 1000, f0prime)`` in ph_drwt02.c. F0_Hz =
+        # ``muldv(400, 1000, f0prime)`` in ph_drwt01.c. F0_Hz =
         # 40000 / period (the muldv factor is 400 * 1000 / 10 deciHz/Hz).
         if out_t0 > 0:
             f0_hz.append(40000.0 / out_t0)
@@ -199,10 +199,13 @@ def _summarize(label: str, series: list[float]) -> str:
 @pytest.mark.xfail(
     strict=False,
     reason=(
-        "Phase E (audio bit-parity) -- Python F0 contour is too flat "
-        "compared with the C oracle (~5-8 Hz vs 20+ Hz per-clause std). "
-        "Pins the gap so ph_inton / ph_drwt02 work can be measured. "
-        "See issue #149."
+        "Phase E (audio bit-parity) -- after the ph_inton0.c / ph_drwt01.c "
+        "F0 re-port the per-clause dynamic range now tracks the C oracle "
+        "(Python std ~12-17 Hz vs C ~15-22 Hz, was ~3-7 Hz), but a ~20 Hz "
+        "baseline offset remains: Paul average_pitch is 100 vs C's 122 "
+        "(#220 Fault 1, voice_definitions.py) which is outside the F0 "
+        "subsystem. The per-frame max-abs delta stays above MAX_ABS_HZ "
+        "until that AP baseline lands. See issues #220 / #149."
     ),
 )
 @pytest.mark.parametrize("prompt", _PROMPTS, ids=lambda p: p.replace(" ", "_"))
