@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import wave
 from collections.abc import Iterable
 from pathlib import Path
@@ -410,6 +411,164 @@ def _build_arpabet_alias() -> dict[str, USPhoneme]:
 _ARPABET_ALIAS: dict[str, USPhoneme] = _build_arpabet_alias()
 
 
+def _split_clause_marks(sentence: str) -> list[str]:
+    """Split *sentence* into comma / ``;`` / ``:`` -delimited sub-clauses.
+
+    The C kernel processes each ``,`` / ``;`` / ``:`` -delimited segment as
+    a separate ``phclause()`` call (COMMACLAUSE; ph_claus.c:109), so the
+    Python front-end mirrors that by rendering each sub-clause on its own.
+
+    The delimiter character is *kept* attached to the left chunk so the
+    tokeniser still emits the pause token and so the non-sentence-final
+    clause is detected. A sentence with no internal ``,;:`` returns a
+    single-element list equal to ``[sentence]`` (byte-identical to the
+    pre-split path). Empty / whitespace-only trailing chunks are dropped.
+    """
+    parts = re.split(r"(?<=[,;:])\s*", sentence)
+    clauses = [p for p in parts if p.strip()]
+    return clauses or [sentence]
+
+
+def _digit_expand(value: int) -> list[Token]:
+    """Expand an integer into DECtalk number ``WORD`` / ``PAUSE`` tokens.
+
+    Mirrors C's digit-string reading: ``four`` / ``forty`` / the teens /
+    ``thousand`` carry de-stress sentinels (which resolve via
+    ``word_phoneme_overrides`` to the exact phoneme stream the C kernel
+    emits in digit-expansion contexts), ``hundred`` inserts an ``"and"``
+    before a following tens/units group, and ``thousand`` / ``million`` /
+    ``billion`` emit an inter-group comma pause. Hoisted to module scope
+    (issue #238) so both the phoneme path (``text_to_dectalk_phonemes``)
+    and the audio path (``_render_clause_full``) share one implementation;
+    it closes over nothing but ``number_to_words`` / ``Token`` /
+    ``TokenKind`` / a local ``teens`` dict.
+    """
+    from dectalk.kernel.numbers import number_to_words  # noqa: PLC0415
+
+    teens = {
+        "THIRTEEN": "__NUM_THIRTEEN__",
+        "FOURTEEN": "__NUM_FOURTEEN__",
+        "FIFTEEN": "__NUM_FIFTEEN__",
+        "SIXTEEN": "__NUM_SIXTEEN__",
+        "SEVENTEEN": "__NUM_SEVENTEEN__",
+        "EIGHTEEN": "__NUM_EIGHTEEN__",
+        "NINETEEN": "__NUM_NINETEEN__",
+    }
+    words = number_to_words(value)
+    out: list[Token] = []
+    for i_w, w in enumerate(words):
+        next_w = words[i_w + 1] if i_w + 1 < len(words) else None
+        if w == "FOUR":
+            out.append(Token(TokenKind.WORD, "__NUM_FOUR__"))
+        elif w == "FORTY":
+            out.append(Token(TokenKind.WORD, "__NUM_FORTY__"))
+        elif w in teens:
+            out.append(Token(TokenKind.WORD, teens[w]))
+        elif w == "THOUSAND":
+            out.append(Token(TokenKind.WORD, "__NUM_THOUSAND__"))
+            if next_w is not None:
+                out.append(Token(TokenKind.PAUSE_SHORT, ","))
+        elif w in ("MILLION", "BILLION"):
+            out.append(Token(TokenKind.WORD, w))
+            if next_w is not None:
+                out.append(Token(TokenKind.PAUSE_SHORT, ","))
+        elif w == "HUNDRED":
+            out.append(Token(TokenKind.WORD, w))
+            if next_w is not None and next_w not in ("THOUSAND", "MILLION", "BILLION"):
+                out.append(Token(TokenKind.WORD, "__NUM_AND__"))
+        else:
+            out.append(Token(TokenKind.WORD, w))
+    return out
+
+
+def _tokenize_with_numbers(  # noqa: PLR0912 — mirrors text_to_dectalk_phonemes's per-chunk dispatch
+    text: str, spell_out_words: set[str] | None = None
+) -> list[Token]:
+    """Tokenise *text*, expanding digit runs / decimals / hyphen compounds.
+
+    Mirrors the digit handling the phoneme path does (issue #238).
+    Bare :func:`tokenize` does *not* digit-expand, so spoken numbers in the
+    audio path used to miss the inter-group commas, ``"and"`` and de-stress
+    that the phoneme path produces. This helper hoists the chunk
+    pre-tokeniser that ``text_to_dectalk_phonemes`` runs inline so both
+    front-ends share one implementation.
+
+    All-caps 2-4 letter tokens are acronyms; when *spell_out_words* is
+    provided they are added to it (mutating the caller's set), matching the
+    phoneme path's behaviour. When it is ``None`` a throwaway set is used so
+    callers that handle acronyms separately (the audio path passes its own
+    ``spell_out`` to ``_tokens_to_phoneme_words``) are unaffected.
+    """
+    from dectalk.kernel.numbers import number_to_words  # noqa: PLC0415
+
+    if spell_out_words is None:
+        spell_out_words = set()
+    _dotted = re.compile(r"^[\d,]+(?:\.\d+)+$")
+    _digits_strict = re.compile(r"^\d[\d,]*$")
+    out_tokens: list[Token] = []
+    for chunk in text.split():
+        # Mimic tokenize's punctuation stripping so we can spot a
+        # digit-only payload like ``5.``, ``(123)`` or ``"42"``.
+        inner = chunk
+        leading: list[str] = []
+        trailing: list[str] = []
+        while inner and not inner[0].isalnum() and inner[0] != "$":
+            leading.append(inner[0])
+            inner = inner[1:]
+        while inner and not inner[-1].isalnum():
+            trailing.insert(0, inner[-1])
+            inner = inner[:-1]
+        _ = leading  # leading-punct ignored (matches tokenize)
+        if inner and _digits_strict.match(inner):
+            out_tokens.extend(_digit_expand(int(inner.replace(",", ""))))
+        elif inner and _dotted.match(inner):
+            parts = inner.split(".")
+            for i_part, part in enumerate(parts):
+                if i_part > 0:
+                    out_tokens.append(Token(TokenKind.WORD, "POINT"))
+                for w in number_to_words(int(part.replace(",", ""))):
+                    out_tokens.append(Token(TokenKind.WORD, w))
+        elif (
+            inner and inner.isalpha() and inner.isupper() and 2 <= len(inner) <= 4  # noqa: PLR2004
+        ):
+            # All-uppercase 2-4 letter token: run the
+            # ``ls_spel_say_it`` decision. If ``say_it`` returns
+            # False (spell it), record the upper-cased token in
+            # ``spell_out_words`` so the main loop's letter-by-letter
+            # path renders it. Otherwise let ``tokenize`` handle it
+            # as a normal word.
+            from dectalk.lts.spell_or_say import say_it  # noqa: PLC0415
+
+            if not say_it(inner):
+                spell_out_words.add(inner)
+            out_tokens.extend(tokenize(chunk))
+            continue
+        elif inner and "-" in inner and not inner.startswith("-"):
+            # Hyphenated compound (``forty-two``, ``self-taught``):
+            # tokenise each part separately so we can insert the
+            # ``#`` syllable-break marker the C source emits in
+            # place of the regular word break.
+            parts = inner.split("-")
+            for i_part, part in enumerate(parts):
+                if i_part > 0:
+                    out_tokens.append(Token(TokenKind.PAUSE_SHORT, "#"))
+                if part:
+                    out_tokens.extend(tokenize(part))
+        else:
+            out_tokens.extend(tokenize(chunk))
+            continue
+        # If the chunk had trailing sentence/clause punct (e.g.
+        # ``101.``), preserve the pause token after the digit
+        # expansion -- this matches tokenize's behaviour.
+        if trailing:
+            last = trailing[-1]
+            if last in (".", "!", "?"):
+                out_tokens.append(Token(TokenKind.PAUSE_LONG, last))
+            elif last in (",", ";", ":"):
+                out_tokens.append(Token(TokenKind.PAUSE_SHORT, last))
+    return out_tokens
+
+
 def _speak_via_python_full(
     text: str,
     rate: float,
@@ -494,26 +653,30 @@ def _speak_via_python_full(
             )
             continue
 
-        # Split the segment body into individual sentences and render
-        # each as its own declination clause (issue #218 COMMIT 2). The
-        # C kernel processes one ``.`` / ``!`` / ``?`` terminated segment
-        # per ``phclause()`` call, so each sentence gets a fresh F0
-        # reset (phinton baseline), its own leading-silence prefix, and
-        # its own sentence-final long pause -- whereas a single
-        # ``_render_clause_full`` over the whole body renders them as one
-        # continuous declination contour and collapses the inter-sentence
-        # silence. Measured against the C oracle, concatenating the
-        # per-sentence renders matches ``say -a`` to within ~1 frame
-        # (``hello. world.``: C 21016 / Py-sum 20945). Comma / semicolon
-        # clauses do NOT split here -- ``split_sentences`` only breaks on
-        # sentence terminators, so a comma-only body like ``one, two,
-        # three.`` stays a single clause (its internal pauses are handled
-        # by the boundary-feature fix-up in ``_render_clause_full``).
+        # Split the segment body into individual sentences, then split each
+        # sentence into comma / ``;`` / ``:`` -delimited sub-clauses, and
+        # render each sub-clause as its own declination clause. The C kernel
+        # processes one ``.`` / ``!`` / ``?`` terminated segment per
+        # ``phclause()`` call AND treats each ``,`` / ``;`` / ``:``
+        # -delimited segment as a separate ``phclause()`` (COMMACLAUSE; see
+        # ph_claus.c:109). So each sentence gets a fresh F0 reset (phinton
+        # baseline), its own leading-silence prefix, and its own
+        # sentence-final long pause; within a sentence, every comma
+        # sub-clause becomes CLAUSE-FINAL so its last word gets Rule-2 final
+        # lengthening and a comma pause (``compause``/``nfcomma``) -- which a
+        # single continuous-contour render would miss. Measured against the
+        # C oracle, concatenating the per-sentence renders matches ``say -a``
+        # to within ~1 frame (``hello. world.``: C 21016 / Py-sum 20945).
         #
-        # ``split_sentences`` returns the whole body unchanged as a single
-        # element when there is no internal sentence terminator, so this
-        # is byte-identical to the previous single-call path for ordinary
-        # one-sentence prompts.
+        # Only the FINAL sub-clause of a sentence is sentence-final (it
+        # carries the real ``.?!`` terminator or end-of-text); earlier
+        # sub-clauses pass ``is_sentence_final=False`` so ``phalloph2`` emits
+        # no trailing terminator marker and ``_render_clause_full`` tags the
+        # clause-final phone with the ``FCBNEXT`` comma boundary class.
+        #
+        # A sentence with no internal ``,;:`` yields exactly one sub-clause
+        # with ``is_sentence_final=True`` -> byte-identical to the previous
+        # single-call path for ordinary one-sentence prompts.
         sentences = split_sentences(seg.body)
         if not sentences:
             # Body with no speakable content (e.g. whitespace only):
@@ -521,15 +684,19 @@ def _speak_via_python_full(
             # pre-split path for degenerate inputs.
             sentences = [(seg.body, False)]
         for sentence_text, _is_question in sentences:
-            chunk = _render_clause_full(
-                sentence_text,
-                rate=seg.state.rate,
-                voice=seg_voice,
-                lang=lang,
-                lts_fallback=lts_fallback,
-            )
-            if chunk.size:
-                chunks.append(chunk)
+            sub_clauses = _split_clause_marks(sentence_text)
+            for sub_i, sub_clause in enumerate(sub_clauses):
+                is_final = sub_i == len(sub_clauses) - 1
+                chunk = _render_clause_full(
+                    sub_clause,
+                    rate=seg.state.rate,
+                    voice=seg_voice,
+                    lang=lang,
+                    lts_fallback=lts_fallback,
+                    is_sentence_final=is_final,
+                )
+                if chunk.size:
+                    chunks.append(chunk)
 
     if not chunks:
         return np.zeros(0, dtype=np.int16)
@@ -543,11 +710,19 @@ def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsi
     voice: str | VoicePreset | None,
     lang: str,
     lts_fallback: bool,
+    is_sentence_final: bool = True,
 ) -> NDArray[np.int16]:
     """Render a single parser segment's body through the full PH pipeline.
 
     Pure ``[:cmd]``-free text. Called by :func:`_speak_via_python_full`
-    once per :class:`~dectalk.cmd.Segment`.
+    once per sub-clause of each :class:`~dectalk.cmd.Segment` sentence.
+
+    ``is_sentence_final`` (default ``True``, preserving the previous
+    behaviour for all existing callers) is ``False`` for a comma / ``;`` /
+    ``:`` -delimited sub-clause that is not the last in its sentence. When
+    ``False`` the PH chain emits no trailing terminator marker and the
+    clause-final phone is tagged with the ``FCBNEXT`` COMMACLAUSE boundary
+    class instead of ``FPERNEXT | FSENTENDS`` (see step 4a-bis below).
     """
     from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
     from dectalk.kernel.lang_codes import LANG_english  # noqa: PLC0415
@@ -576,7 +751,12 @@ def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsi
     # / nextphrbou lookahead never resolves and Rule 4 (final fall)
     # never fires (issue #63).
     arpabet_words, pause_chars = _tokens_to_phoneme_words(
-        tokenize(text),
+        # Digit-expand numbers (``123`` -> ONE HUNDRED AND TWENTY THREE),
+        # dotted decimals and hyphen compounds via the shared helper so the
+        # audio path matches the phoneme path's number reading (issue #238).
+        # Acronym spell-out is handled separately by the ``spell_out`` arg
+        # below, so the helper's own spell_out_words set is left unused here.
+        _tokenize_with_numbers(text),
         lang=lang,
         lts_fallback=lts_fallback,
         # Spell out all-caps 2-4-letter acronyms (BBC -> B-B-C) instead of
@@ -612,6 +792,21 @@ def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsi
     arpabet_phones = [name for word in arpabet_words for name in word]
     if not arpabet_phones:
         return np.zeros(0, dtype=np.int16)
+    # Non-sentence-final (comma / ``;`` / ``:``) clause: ``phalloph2`` only
+    # appends a trailing GEN_SIL via its sentence-end PERIOD / QUEST / EXCLAIM
+    # marker, which is suppressed when ``is_sentence_final`` is False (the
+    # marker is what anchors the clause-final pause). The strip-loop above
+    # just removed the comma's synthetic ``["SIL"]`` pause word, so without
+    # this re-add the comma sub-clause would have NO trailing silence and the
+    # comma pause + Rule-2 final lengthening would vanish. Re-add exactly one
+    # trailing ``["SIL"]`` as the comma-pause anchor: step 4a-bis tags the
+    # phone before it with ``FCBNEXT`` and ``us_phtiming`` Rule 1 then emits
+    # the comma pause (``nfcomma`` / ``compause``). Appended AFTER
+    # ``internal_pause_chars`` is built so the anchor is the clause-final
+    # sentinel (handled by 4a-bis), not an internal pause (4a-quater).
+    if not is_sentence_final:
+        arpabet_words.append(["SIL"])
+        pause_chars.append(",")
 
     # 2. We no longer build the allophone stream by hand here. The
     # ``phalloph2`` chain (see step 4a below) consumes the ARPABET
@@ -794,7 +989,7 @@ def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsi
     phalloph2(
         handle,
         arpabet_words,
-        is_sentence_final=True,
+        is_sentence_final=is_sentence_final,
         is_question=is_question_clause,
         is_exclamation=is_exclamation_clause,
     )
@@ -824,9 +1019,22 @@ def _render_clause_full(  # noqa: PLR0912, PLR0915 — orchestration is intrinsi
     # or a consonant. We approximate that by ORing the marker onto the
     # allophone at ``nallotot-2`` (the last entry before the trailing
     # SIL sentinel at ``nallotot-1``).
+    #
+    # For a sentence-final clause the boundary class is
+    # ``FPERNEXT | FSENTENDS`` (the period / ``!`` / ``?`` class), so
+    # ``us_phtiming`` Rule 1 emits the sentence-final pause (``nfperiod +
+    # perpause``). For a NON-sentence-final comma / ``;`` / ``:`` clause it
+    # is ``FCBNEXT`` instead -- the COMMACLAUSE boundary class (ph_claus.c
+    # line 109): the C kernel renders each comma-delimited segment as its
+    # own ``phclause()`` call, and this boundary class makes Rule 1 use the
+    # comma pause (``compause`` / ``nfcomma``) rather than the period pad,
+    # while still tagging the clause-final phone so Rule 2 lengthens it.
     if nallotot >= 2:  # noqa: PLR2004 — at least 1 real phone + trailing SIL sentinel
         p_dph_t.allofeats[nallotot - 2] &= ~FBOUNDARY
-        p_dph_t.allofeats[nallotot - 2] |= FPERNEXT | FSENTENDS
+        if is_sentence_final:
+            p_dph_t.allofeats[nallotot - 2] |= FPERNEXT | FSENTENDS
+        else:
+            p_dph_t.allofeats[nallotot - 2] |= FCBNEXT
 
     # 4a-quater. Internal-pause boundary markers (issue #218).
     #
@@ -1897,127 +2105,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             # ``[:phoneme on]`` body is already a phoneme stream; skip
             # the LTS path entirely.
             continue
-        import re as _re  # noqa: PLC0415 — local import keeps the helper file-private
-
-        from dectalk.kernel.numbers import number_to_words  # noqa: PLC0415
-
-        # C-faithful kernel-level digit-string expansion. Replaces the
-        # words that read differently when generated from a numeral
-        # (``FOUR`` -> ``__NUM_FOUR__`` for the OR-vowel form,
-        # ``THOUSAND`` -> ``__NUM_THOUSAND__`` for the schwa-N form),
-        # inserts comma pauses between scale groups, and inserts
-        # ``__NUM_AND__`` after a HUNDRED followed by tens/units. The
-        # ``__NUM_*__`` sentinels resolve via ``word_phoneme_overrides``
-        # to the exact phoneme stream the DECtalk C kernel emits for
-        # digit-expansion contexts.
-        def _digit_expand(value: int) -> list[Token]:
-            teens = {
-                "THIRTEEN": "__NUM_THIRTEEN__",
-                "FOURTEEN": "__NUM_FOURTEEN__",
-                "FIFTEEN": "__NUM_FIFTEEN__",
-                "SIXTEEN": "__NUM_SIXTEEN__",
-                "SEVENTEEN": "__NUM_SEVENTEEN__",
-                "EIGHTEEN": "__NUM_EIGHTEEN__",
-                "NINETEEN": "__NUM_NINETEEN__",
-            }
-            words = number_to_words(value)
-            out: list[Token] = []
-            for i_w, w in enumerate(words):
-                next_w = words[i_w + 1] if i_w + 1 < len(words) else None
-                if w == "FOUR":
-                    out.append(Token(TokenKind.WORD, "__NUM_FOUR__"))
-                elif w == "FORTY":
-                    out.append(Token(TokenKind.WORD, "__NUM_FORTY__"))
-                elif w in teens:
-                    out.append(Token(TokenKind.WORD, teens[w]))
-                elif w == "THOUSAND":
-                    out.append(Token(TokenKind.WORD, "__NUM_THOUSAND__"))
-                    if next_w is not None:
-                        out.append(Token(TokenKind.PAUSE_SHORT, ","))
-                elif w in ("MILLION", "BILLION"):
-                    out.append(Token(TokenKind.WORD, w))
-                    if next_w is not None:
-                        out.append(Token(TokenKind.PAUSE_SHORT, ","))
-                elif w == "HUNDRED":
-                    out.append(Token(TokenKind.WORD, w))
-                    if next_w is not None and next_w not in (
-                        "THOUSAND",
-                        "MILLION",
-                        "BILLION",
-                    ):
-                        out.append(Token(TokenKind.WORD, "__NUM_AND__"))
-                else:
-                    out.append(Token(TokenKind.WORD, w))
-            return out
-
-        _dotted = _re.compile(r"^[\d,]+(?:\.\d+)+$")
-        _digits_strict = _re.compile(r"^\d[\d,]*$")
-        # Tokenize with C-faithful digit-string handling: for each
-        # whitespace-delimited chunk, if (after stripping surrounding
-        # punctuation) it's a pure digit-string or dotted decimal,
-        # route through ``_digit_expand`` -- otherwise let
-        # ``kernel.text.tokenize`` handle it.
-        tokens: list[Token] = []
-        for chunk in seg.body.split():
-            # Mimic tokenize's punctuation stripping so we can spot a
-            # digit-only payload like ``5.``, ``(123)`` or ``"42"``.
-            inner = chunk
-            leading: list[str] = []
-            trailing: list[str] = []
-            while inner and not inner[0].isalnum() and inner[0] != "$":
-                leading.append(inner[0])
-                inner = inner[1:]
-            while inner and not inner[-1].isalnum():
-                trailing.insert(0, inner[-1])
-                inner = inner[:-1]
-            _ = leading  # leading-punct ignored (matches tokenize)
-            if inner and _digits_strict.match(inner):
-                tokens.extend(_digit_expand(int(inner.replace(",", ""))))
-            elif inner and _dotted.match(inner):
-                parts = inner.split(".")
-                for i_part, part in enumerate(parts):
-                    if i_part > 0:
-                        tokens.append(Token(TokenKind.WORD, "POINT"))
-                    for w in number_to_words(int(part.replace(",", ""))):
-                        tokens.append(Token(TokenKind.WORD, w))
-            elif (
-                inner and inner.isalpha() and inner.isupper() and 2 <= len(inner) <= 4  # noqa: PLR2004
-            ):
-                # All-uppercase 2-4 letter token: run the
-                # ``ls_spel_say_it`` decision. If ``say_it`` returns
-                # False (spell it), record the upper-cased token in
-                # ``spell_out_words`` so the main loop's letter-by-letter
-                # path renders it. Otherwise let ``tokenize`` handle it
-                # as a normal word.
-                from dectalk.lts.spell_or_say import say_it  # noqa: PLC0415
-
-                if not say_it(inner):
-                    spell_out_words.add(inner)
-                tokens.extend(tokenize(chunk))
-                continue
-            elif inner and "-" in inner and not inner.startswith("-"):
-                # Hyphenated compound (``forty-two``, ``self-taught``):
-                # tokenise each part separately so we can insert the
-                # ``#`` syllable-break marker the C source emits in
-                # place of the regular word break.
-                parts = inner.split("-")
-                for i_part, part in enumerate(parts):
-                    if i_part > 0:
-                        tokens.append(Token(TokenKind.PAUSE_SHORT, "#"))
-                    if part:
-                        tokens.extend(tokenize(part))
-            else:
-                tokens.extend(tokenize(chunk))
-                continue
-            # If the chunk had trailing sentence/clause punct (e.g.
-            # ``101.``), preserve the pause token after the digit
-            # expansion -- this matches tokenize's behaviour.
-            if trailing:
-                last = trailing[-1]
-                if last in (".", "!", "?"):
-                    tokens.append(Token(TokenKind.PAUSE_LONG, last))
-                elif last in (",", ";", ":"):
-                    tokens.append(Token(TokenKind.PAUSE_SHORT, last))
+        # Expand digit runs / dotted decimals / hyphen compounds and
+        # tokenise via the shared module-level helper (issue #238), which
+        # the audio path in ``_render_clause_full`` now uses too so number
+        # expansion is identical across the phoneme and audio front-ends.
+        # ``spell_out_words`` (a set local to this function) is threaded in
+        # so all-caps spell-it acronyms are recorded for the main loop.
+        tokens = _tokenize_with_numbers(seg.body, spell_out_words)
         # Pre-pass B: expand ``Dr.`` -> ``DOCTOR`` / ``Mr.`` -> ``MISTER``
         # / ``Mrs.`` -> ``MISSUS`` etc. when the abbreviation is
         # followed by a name (PAUSE_LONG '.' + WORD pattern). DECtalk's
