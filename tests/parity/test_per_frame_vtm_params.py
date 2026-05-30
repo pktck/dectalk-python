@@ -16,17 +16,31 @@ side + ``lineartilt[]`` LUT on ``OUT_TLT``) before the per-index comparison.
 
 Findings captured at authoring time (issue #263 diagnosis):
 
+* **Headline — the FIRST byte divergence is NOT in parameter generation.**
+  The ``hello world`` WAV is byte-identical for exactly 142 samples (frames
+  0-1 at 71 samples/frame) and first differs at sample 142 = the start of
+  **frame 2**. Feeding the oracle's *own* ``vtm_frames.dump`` parambuff back
+  into the Python VTM1 synth (``pump_frames_via_vtm1``) STILL diverges at
+  sample 142 — so the gap is in the **VTM synthesiser**, not phdraw/gettar.
+  The oracle holds frames 0,1,2 as real silence (first non-zero sample =
+  213 = frame 3) via ``vtm1.c``'s ``ldspdef`` speaker-def silence latch
+  (lines 382-396), but the Python VTM1 path silences only frames 0,1 —
+  an off-by-one. Pre-zeroing the amplitude cells of frame 2 as well extends
+  the byte-identical prefix from 142 → 213. The fix lives in
+  ``dectalk.vtm`` (``speech_waveform_generator`` / ``seed_speaker_state`` /
+  ``pump_frames``), which is outside this issue's phdraw/gettar/make_dip
+  scope, so it is reported for a scoped follow-up rather than fixed here.
 * **Exact already** — ``OUT_B1``, ``OUT_B2``, ``OUT_B3``, ``OUT_FZ``,
   ``OUT_A2``, ``OUT_A3``, ``OUT_A5``, ``OUT_AB`` match the oracle on every
   frame for ``hello world``. This module asserts that as a *regression
-  guard* (the bandwidth-target chain + delay model are verified bit-exact).
-* **Still diverging** — ``OUT_F2`` / ``OUT_F3`` ramp from frame 0 in the
-  Python pipeline while the oracle holds the first-phoneme begin-target
-  flat through the leading silence + voiced onset (frames 0-10); ``OUT_TLT``
-  runs ~10 internal-units low; ``OUT_AP`` and ``OUT_F1`` drift later. These
-  are pinned ``xfail`` so the gap is measurable but the suite stays green.
-  ``OUT_T0`` divergence is owned by ``test_per_frame_f0`` / the F0 files and
-  is deliberately excluded here.
+  guard* (the bandwidth-target chain + send_pars delay model are verified).
+* **Param-gen still diverging** (surfaces once the VTM latch is fixed) —
+  ``OUT_F2`` / ``OUT_F3`` ramp from frame 0 in the Python pipeline while the
+  oracle holds the first-phoneme begin-target flat through the leading
+  silence + voiced onset (frames 0-10); ``OUT_TLT`` runs ~10 internal-units
+  low; ``OUT_AP`` and ``OUT_F1`` drift later. These are pinned ``xfail`` so
+  the gap is measurable but the suite stays green. ``OUT_T0`` divergence is
+  owned by ``test_per_frame_f0`` / the F0 files and is excluded here.
 
 Skips cleanly when the C-oracle artefacts (``$DECTALK_SRC`` source tree +
 ``$DECTALK_BIN`` shipped binary) are missing.
@@ -246,4 +260,83 @@ def test_diverging_vtm_param_pins_gap(capi: CAPI, idx: int, name: str) -> None:
     assert first_div is None, (
         f"{name} first diverges at frame {first_div[0]}: "
         f"oracle={first_div[1]} python={first_div[2]}"
+    )
+
+
+# -- VTM-level isolation (the headline #263 finding) -----------------------
+
+import subprocess  # noqa: E402
+import wave  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+_SAMPLES_PER_FRAME = 71  # uiNumberOfSamplesPerFrame at 11.025 kHz
+# OUT_* amplitude cells the ldspdef silence latch zeroes (vtm1.c 386-394).
+_AMP_CELLS = (_OUT_AP, _OUT_A2, _OUT_A3, 4, _OUT_A5, 6, _OUT_AB, _OUT_AV)
+
+
+def _oracle_wav(text: str) -> np.ndarray:
+    """Render ``text`` via the shipped binary; return int16 PCM."""
+    with tempfile.TemporaryDirectory() as td:
+        wav_path = Path(td) / "ref.wav"
+        subprocess.run(
+            [str(_BIN_ROOT / "say"), "-a", text, "-fo", str(wav_path)],
+            cwd=str(_BIN_ROOT),
+            check=True,
+            capture_output=True,
+        )
+        with wave.open(str(wav_path), "rb") as fh:
+            raw = fh.readframes(fh.getnframes())
+    return np.frombuffer(raw, dtype=np.int16)
+
+
+def _first_diff(a: np.ndarray, b: np.ndarray) -> int:
+    n = min(len(a), len(b))
+    diff = np.nonzero(a[:n] != b[:n])[0]
+    return int(diff[0]) if len(diff) else n
+
+
+def test_python_vtm_diverges_from_oracle_at_frame2_given_identical_parambuff(
+    capi: CAPI,
+) -> None:
+    """The first byte divergence is VTM-internal, not parameter-generation.
+
+    Feed the oracle's *own* per-frame ``parambuff`` (its ``vtm_frames.dump``)
+    straight into the Python VTM1 synth and compare against the oracle WAV.
+    They diverge at sample ``142`` = the start of frame 2: the oracle holds
+    frames 0,1,2 as real silence (first non-zero sample = 213, frame 3) via
+    ``vtm1.c``'s ``ldspdef`` speaker-def silence latch, while the Python path
+    silences only frames 0,1. Because the input parameters are *identical*,
+    this proves the gap is in ``dectalk.vtm`` (the synth), not phdraw/gettar.
+
+    Pre-zeroing the amplitude cells of frame 2 as well restores byte-identity
+    through frame 2, extending the prefix 142 -> 213. That confirms the fix is
+    a one-frame extension of the VTM startup-silence latch.
+    """
+    from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
+
+    oracle_frames = _oracle_frames(capi, _PROMPT)
+    oracle_wav = _oracle_wav(_PROMPT)
+
+    # Sanity: oracle holds the first three frames silent (first audio @ 213).
+    first_audio = int(np.nonzero(oracle_wav)[0][0])
+    assert first_audio == 3 * _SAMPLES_PER_FRAME, (
+        f"expected oracle first-audio at frame 3 (sample 213), got {first_audio}"
+    )
+
+    # Identical parambuff in -> Python VTM still diverges at frame 2.
+    py_raw = np.asarray(pump_frames_via_vtm1([list(f) for f in oracle_frames], None))
+    assert _first_diff(py_raw, oracle_wav) == 2 * _SAMPLES_PER_FRAME, (
+        "expected the Python VTM1 synth to diverge at frame 2 (sample 142) "
+        "even when fed the oracle's own parambuff"
+    )
+
+    # Silencing frame 2's amplitudes too restores parity through frame 2.
+    patched = [list(f) for f in oracle_frames]
+    for cell in _AMP_CELLS:
+        if cell < len(patched[2]):
+            patched[2][cell] = 0
+    py_fixed = np.asarray(pump_frames_via_vtm1(patched, None))
+    assert _first_diff(py_fixed, oracle_wav) >= 3 * _SAMPLES_PER_FRAME, (
+        "silencing frame 2 should extend the byte-identical prefix to frame 3"
     )
