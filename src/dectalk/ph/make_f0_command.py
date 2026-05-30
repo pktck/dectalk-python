@@ -1,20 +1,26 @@
-"""F0 command queueing helper from ph_inton2.c.
+"""F0 command queueing helper from ph_inton0.c.
 
-Translated from ``src/dapi/src/ph/ph_inton2.c`` lines 2041-2081.
+Translated from ``src/dapi/src/ph/ph_inton0.c`` lines 2049-2084 — the
+**second** ``make_f0_command`` definition, active for the production
+``ENGLISH_US`` + ``OLD_INTONATION_AND_TIMING`` build. (The first
+definition at line 1159 is the ``NWSNOAA`` / ``ENGLISH_UK`` variant and
+carries an extra ``type`` parameter.)
 
-:func:`make_f0_command` is the queue-side of the F0 intonation
-gesture pipeline. The intonation engine builds a sequence of F0
-commands (type, target Hz, delay, length) and appends them to
-the running ``f0tim`` / ``f0tar`` / ``f0type`` / ``f0length``
-arrays on the PH thread state.
+Unlike the HLSYN ``ph_inton2.c`` queue helper — which stored four
+parallel arrays (``f0tim`` / ``f0tar`` / ``f0type`` / ``f0length``) — the
+production helper stores **only** ``f0tim`` and ``f0tar``. The command
+*type* is no longer a parameter: it is encoded into the ``tar`` value and
+decoded downstream by ``pht0draw``:
 
-The function tracks elapsed time since the last command via a
-single-cell ``psCumdur`` argument — the caller passes a pointer
-in C; the Python port takes a single-element list ``[int]``.
+- ``tar == 0``     → reset baseline,
+- ``tar >= 2000``  → user note (``set_user_target``),
+- ``tar`` even     → STEP (``tarhat += tar``),
+- ``tar`` odd      → IMPULSE (``tarimp = 2 * tar``).
 
-Each call advances ``nf0tot`` (number of queued commands) until
-it hits the ``NPHON_MAX - 1`` cap; past that, further commands
-are silently dropped.
+The ``rulenumber`` and ``length`` parameters are retained to match the C
+signature (callers pass them positionally) but are otherwise inert here:
+``rulenumber`` feeds only a debug ``printf`` in the C source, and
+``length`` is unused by the production build.
 """
 
 from __future__ import annotations
@@ -22,13 +28,13 @@ from __future__ import annotations
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.numeric_constants import NPHON_MAX
 
-# Lazy-grow the four f0 arrays to NPHON_MAX entries on first call.
+# Lazy-grow the two stored f0 arrays to NPHON_MAX entries on first call.
 _F0_BUF_SIZE: int = NPHON_MAX
 
 
 def _ensure_f0_buffers(p_dph_t: DphT) -> None:
-    """Ensure the four f0 arrays are at least ``NPHON_MAX`` long."""
-    for arr_name in ("f0tim", "f0tar", "f0type", "f0length"):
+    """Ensure ``f0tim`` and ``f0tar`` are at least ``NPHON_MAX`` long."""
+    for arr_name in ("f0tim", "f0tar"):
         arr = getattr(p_dph_t, arr_name)
         if len(arr) < _F0_BUF_SIZE:
             arr.extend([0] * (_F0_BUF_SIZE - len(arr)))
@@ -36,53 +42,44 @@ def _ensure_f0_buffers(p_dph_t: DphT) -> None:
 
 def make_f0_command(
     p_dph_t: DphT,
-    f0_type: int,
     rulenumber: int,
     tar: int,
     delay: int,
     length: int,
     ps_cumdur: list[int],
-    nphon: int,
 ) -> None:
-    """Append one F0 command to ``p_dph_t``'s f0 queue.
+    """Append one F0 command (``f0tim`` + ``f0tar``) to ``p_dph_t``'s queue.
 
     Faithful translation of:
 
     .. code-block:: c
 
-        static void make_f0_command(LPTTS_HANDLE_T phTTS, short type,
-                                    short rulenumber, short tar,
-                                    short delay, short length,
-                                    short *psCumdur, short nphon) {
-            // Clamp negative delay so cumdur stays >= 0.
+        static void make_f0_command (PDPH_T pDph_t, short rulenumber,
+                                     short tar, short delay,
+                                     short length, short *psCumdur) {
             if ((delay + *psCumdur) < 0)
                 delay = -(*psCumdur);
-            // Append command.
-            pDph_t->f0tim[pDph_t->nf0tot]    = *psCumdur + delay;
-            pDph_t->f0tar[pDph_t->nf0tot]    = tar;
-            pDph_t->f0type[pDph_t->nf0tot]   = type;
-            pDph_t->f0length[pDph_t->nf0tot] = length;
-            // Reset elapsed-time counter.
-            *psCumdur = -delay;
-            // Bump count (capped at NPHON_MAX - 1).
+            pDph_t->f0tim[pDph_t->nf0tot] = *psCumdur + delay;
+            pDph_t->f0tar[pDph_t->nf0tot] = tar;
+            *psCumdur = (-delay);
             if (pDph_t->nf0tot < NPHON_MAX - 1)
                 pDph_t->nf0tot++;
         }
 
     Args:
         p_dph_t: PH thread-state instance to mutate.
-        f0_type: F0-command type code (CGesture / QGesture / etc.).
-            Named ``f0_type`` rather than ``type`` to avoid shadowing
-            the Python builtin.
-        rulenumber: Rule index — passed through for debug logging.
-        tar: F0 target in Hz times 10 (deciHz).
+        rulenumber: Originating intonation-rule index. Inert here (debug
+            ``printf`` only in the C source); kept for signature parity.
+        tar: F0 target — also the *type-encoding* value (see module
+            docstring). Stored verbatim in ``f0tar``.
         delay: Frame delay relative to the last command (can be negative;
-            clamped to ``-*ps_cumdur`` if it would underflow).
-        length: Duration of the gesture in frames.
-        ps_cumdur: Single-element list holding the elapsed-frames
-            counter. Updated in-place: set to ``-delay`` after queueing.
-        nphon: Current phoneme index — passed through for debug.
+            clamped to ``-*ps_cumdur`` if it would drive cumdur below 0).
+        length: Gesture length in frames. Inert in the production build;
+            kept for signature parity.
+        ps_cumdur: Single-element list holding the elapsed-frames counter.
+            Updated in place to ``-delay`` after queueing.
     """
+    del rulenumber, length  # Inert in the production build (signature parity).
     _ensure_f0_buffers(p_dph_t)
 
     # Clamp negative delay so cumdur stays >= 0.
@@ -93,8 +90,6 @@ def make_f0_command(
     if 0 <= n < _F0_BUF_SIZE:
         p_dph_t.f0tim[n] = ps_cumdur[0] + delay
         p_dph_t.f0tar[n] = tar
-        p_dph_t.f0type[n] = f0_type
-        p_dph_t.f0length[n] = length
 
     # Reset elapsed-time counter.
     ps_cumdur[0] = -delay
