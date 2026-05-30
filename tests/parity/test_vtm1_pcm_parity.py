@@ -124,3 +124,69 @@ def test_vtm1_pcm_byte_identical_to_oracle(text: str, monkeypatch: pytest.Monkey
     py = _python_vtm1_pcm(text, monkeypatch)
     assert py.size == ref.size, f"length mismatch {py.size} vs {ref.size}"
     np.testing.assert_array_equal(py, ref)
+
+
+# Frame size at the active 11025 Hz build (vtm1.c uiNumberOfSamplesPerFrame).
+_SAMPLES_PER_FRAME = 71
+
+# Prompts whose leading silence is governed entirely by the speaker-def
+# silence latch: a leading GEN_SIL phone followed directly by a voiced
+# onset, so the oracle's first audible sample is the latch boundary at
+# frame 3 (sample 213) with no extra leading silent phones. Prompts that
+# open on a stop closure (e.g. "test") or a different onset accrue extra
+# leading silence from phone timing — a separate barrier — so they are
+# intentionally excluded here (issue #266).
+_LEADING_SILENCE_PROMPTS: tuple[str, ...] = (
+    "hello world",
+    "hello",
+    "hi",
+    "how are you",
+)
+
+
+def _first_audio_sample(pcm: np.ndarray) -> int:
+    """Index of the first non-zero sample, or ``-1`` if all-zero."""
+    nz = np.nonzero(pcm)[0]
+    return int(nz[0]) if nz.size else -1
+
+
+@pytest.mark.parametrize("text", _LEADING_SILENCE_PROMPTS)
+def test_vtm1_leading_silence_matches_oracle(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Python vtm1 leading silence matches the C oracle's, frame-for-frame.
+
+    The shipped ``libtts_us.so`` holds three leading frames as real
+    silence after the speaker-definition packet (``vtm1.c`` ``ldspdef``
+    latch). On ``hello world`` the oracle's first non-zero sample is 213
+    (frame 3); the Python vtm1 path previously emitted aspiration one
+    frame early (first non-zero at 142, frame 2), which was the first
+    byte divergence. This pins the fix as a *parity* assertion — the
+    Python first-audio sample equals the oracle's, and every leading
+    silent frame is byte-identical (all-zero in both) — rather than
+    hard-coding the magic frame index (issue #266).
+    """
+    ref = _binary_pcm_int16(text)
+    py = _python_vtm1_pcm(text, monkeypatch)
+
+    ref_first = _first_audio_sample(ref)
+    py_first = _first_audio_sample(py)
+
+    assert ref_first >= 0, f"oracle produced all-zero PCM for {text!r}"
+    # The Python first-audio sample must match the oracle's exactly: the
+    # leading silence is byte-identical up to (and not past) that point.
+    assert py_first == ref_first, (
+        f"vtm1 leading silence diverges for {text!r}: Python first-audio "
+        f"sample {py_first} (frame {py_first / _SAMPLES_PER_FRAME:.2f}) vs "
+        f"oracle {ref_first} (frame {ref_first / _SAMPLES_PER_FRAME:.2f})"
+    )
+
+    # Every fully-leading silent frame must be all-zero in both streams
+    # (the byte-identical-prefix claim, restricted to the silent region).
+    leading_silent_frames = ref_first // _SAMPLES_PER_FRAME
+    silent_len = leading_silent_frames * _SAMPLES_PER_FRAME
+    np.testing.assert_array_equal(
+        py[:silent_len],
+        ref[:silent_len],
+        err_msg=f"leading silent frames differ for {text!r}",
+    )
+    if silent_len:
+        assert not np.any(py[:silent_len]), f"Python leading frames not silent for {text!r}"
