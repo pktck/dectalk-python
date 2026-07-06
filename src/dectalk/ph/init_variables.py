@@ -167,9 +167,18 @@ def init_variables(phTTS: TtsHandle) -> InitVariablesOut:  # noqa: N803
         out.pholas = GEN_SIL
         if p_dphsettar.initsw == 0:
             # Very first init since engine startup: seed every parameter's
-            # tarend with the beginning target of phone 0.
+            # tarend with the beginning target of phone 0. The C loop
+            # variable IS ``pDphsettar->np`` (``for (pDphsettar->np =
+            # &PF1; ...)``), and ``us_gettar`` derives ``npar`` /
+            # ``par_type`` from it -- so np MUST track the seeded
+            # parameter or every iteration resolves the same stale
+            # slot. (Previously np was left stale here, seeding all
+            # tarend cells with 0 and giving the first clause a
+            # spurious onset ramp -- issue #269, the frame-3 formant
+            # divergence of #268.)
             p_dphsettar.initsw += 1
             for idx in range(F1, TILT + 1):
+                p_dphsettar.np = idx
                 p_dph_t.param[idx].tarend = getbegtar(phTTS, 0)
     else:
         if p_dph_t.nphone > 1:
