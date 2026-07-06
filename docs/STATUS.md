@@ -178,17 +178,23 @@ Python pipeline (`kernel` → `cmd` → `lts` → `ph` → `vtm` → `hlsyn`)
 instead of `dectalk._capi`'s ctypes wrapper around `libtts_us.so`.
 
 Under `DECTALK_DISABLE_CAPI=1` + `DECTALK_FULL_PIPELINE=1` the
-pipeline runs end-to-end and produces audio (no
-`NotImplementedError` on the hot path), but bit-parity is **not yet
-reached**. The PR #60 baseline measured 0/15 corpus prompts at
-bit-parity, with mean |Δsamples| ≈ 5856 (~531 ms) and worst-case
-~1.8 s. The 2026-05-22 F0 contour re-audit (#75, end of
-`docs/parity-divergence-audit.md`) re-measured against dev head
-`c829010` on a 3-prompt micro-corpus: `OUT_T0` std is 5-6 Hz vs C
-oracle 60-83 Hz, sample counts diverge by ~10 K-13 K (Py ~70-80 %
-longer than C). The two next fixes are #121 (wire `us_phalloph` so
-the hat-rise/fall plateau fires) and #122 (load `assertiveness`
-from the SPD chip so Rule 6 final-falls carry magnitude).
+pipeline runs end-to-end and renders through the `vtm1.c`-ported
+`speech_waveform_generator` by default (issue #272) — the same
+synthesiser the shipped `libtts_us.so` uses. This is the
+byte-exact-capable parity path: on `hello world` the default render
+is sample-count-exact vs the C binary (13845 == C), F0 is
+frame-exact, and the leading 213 samples are byte-identical. Full
+byte-parity across the corpus is **not yet reached** — the
+2026-05-27 500-prompt audit at the end of
+`docs/parity-divergence-audit.md` measured 0/500 bit-exact, and the
+remaining gap is body-content divergence, not envelope/length.
+Setting `DECTALK_USE_VTM1=0` restores the legacy hlsyn render — it
+over-runs the C reference uniformly (`hello world`: 21450 vs 13845
+samples) and is retained only as a diagnostic escape hatch after
+causing the #254 misdiagnosis. (History: the PR #60 baseline
+measured 0/15 corpus prompts at bit-parity with mean |Δsamples| ≈
+5856 (~531 ms); the 2026-05-22 F0 re-audit identified #121 /
+#122, both since landed.)
 
 The `_capi` path remains the **hybrid** state: `dectalk.speak()`
 and `dectalk.to_wav()` go through the C library for bit-identical
