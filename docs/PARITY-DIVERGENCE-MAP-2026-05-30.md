@@ -108,9 +108,9 @@ start-values are not.
 
 ## Prompt: `one two three` (number words)
 
-201 packets both sides. Allophones: GEN_SIL(1) W(9) AH(12) N(12) T(14)
-UW(17) T(2)+TX? — (driver runs) …TH(9) R(11) IY(28) GEN_SIL(72); the
-digit-expansion front-end produced identical allophone/duration
+201 packets both sides. Allophones (Python driver, du in frames):
+GEN_SIL(1) W(10) AH(22) N(4) T(11) UW(29) TH(12) R(8) IY(33) GEN_SIL(72);
+the number-word front-end produced identical allophone/duration
 sequences both sides (`OUT_T0` exact; count exact). Exact columns:
 `T0 AV A5 B3 PH2`.
 
@@ -135,9 +135,11 @@ sequences both sides (`OUT_T0` exact; count exact). Exact columns:
 
 ## Prompt: `BBC` (spell-out)
 
-206 packets both sides. Spell-out front-end produced identical
-allophone/duration sequences (`OUT_T0` exact; count exact). Exact
-columns: `T0 AP A2 A3 A4 A5 FZ B1 B2 B3 PH2`.
+206 packets both sides. Allophones (Python driver, du in frames):
+GEN_SIL(1) B(13) IY(26) B(13) IY(26) S(19) IY(37) GEN_SIL(72); the
+spell-out front-end produced identical allophone/duration sequences
+(`OUT_T0` exact; count exact). Exact columns:
+`T0 AP A2 A3 A4 A5 FZ B1 B2 B3 PH2`.
 
 | param | first div. frame | span (n) | magnitude max/mean | phoneme context | suspected generation site | classification |
 |---|---|---|---|---|---|---|
