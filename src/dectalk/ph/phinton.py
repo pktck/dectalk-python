@@ -37,14 +37,16 @@ C bugs / quirks preserved faithfully:
   condition), so the trailing silence shifted right by a schwa
   insertion is still visited.
 
-Pipeline note — ``tcumdur``: the production build accumulates the
-clause's total duration in the timing pass (``p_us_tim0.c``), *not* in
-``phinton``; this second ``phinton`` definition does not touch
-``tcumdur``. The Python ``us_phtiming`` port does not yet accumulate it,
-so ``phdraw`` still depends on ``phinton`` for ``tcumdur``. The
-``cumdur`` (F0-command clock) and ``tcumdur`` (clause duration)
-accumulators are therefore retained here until ``tcumdur`` moves to
-``us_phtiming``.
+Pipeline note — ``tcumdur``: in the active production build tcumdur is
+**never accumulated at all**. ``us_phtiming`` zeroes it per clause
+(p_us_tim0.c line 124) and the only accumulating code lives in
+ph_inton0.c's FIRST ``phinton`` definition (lines 1086 / 1125), which is
+``#if defined NWSNOAA || defined ENGLISH_UK`` — dead here. This second
+definition (the US one) leaves it alone, so downstream consumers see 0:
+``ph_drwt01.c`` clamps ``if (tcumdur == 0) tcumdur = 1`` before its
+baseline division, and ``ph_draw.c``'s ``nframb > tcumdur-92``
+end-of-phrase gates are always-true (#270 audit). Only ``cumdur`` (the
+F0-command clock) is a real accumulator in this function.
 """
 
 # ruff: noqa: N803, N806, PLR0912, PLR0915, PLR1714, PLR1730, PLR2004, SIM102 -- mirror C structure
@@ -397,12 +399,17 @@ def phinton(phTTS: TtsHandle) -> None:
         # Update cumdur to time at end of current phone (ph_inton0.c:1963).
         cumdur[0] += pDph_t.allodurs[nphon]
 
-        # tcumdur accumulator -- retained for the Python pipeline (phdraw
-        # reads it; the active C builds it in p_us_tim0.c, not here).
-        if (
-            nphon <= (pDph_t.nallotot - 1) and nphon > 0 and (pDph_t.allophons[nphon] & 0xFF) != 0
-        ) or nphon == 0:
-            pDph_t.tcumdur += pDph_t.allodurs[nphon]
+        # NO tcumdur accumulation here -- in the active production build
+        # (ENGLISH_US + OLD_INTONATION_AND_TIMING, HLSYN undefined) tcumdur
+        # is zeroed by us_phtiming (p_us_tim0.c line 124) and never
+        # accumulated anywhere: the accumulating code lives in
+        # ph_inton0.c's FIRST phinton definition (lines 1086 / 1125),
+        # which sits inside ``#if defined NWSNOAA || defined ENGLISH_UK``
+        # -- dead on this build. The consumers are written for the zero:
+        # ph_drwt01.c guards ``if (tcumdur == 0) tcumdur = 1`` (lines
+        # 761 / 1550) before dividing by it, and ph_draw.c's
+        # ``nframb > tcumdur-92`` end-of-phrase comparisons are
+        # always-true at 0 (issue #270 audit).
 
         # ---- Rule 9: insert dummy schwa after clause-final plosive ----
         # ph_inton0.c lines 1970-1994 (ENGLISH_US).
@@ -417,7 +424,6 @@ def phinton(phTTS: TtsHandle) -> None:
                 pDph_t.allophons[nphon + 1] = SCHWA2
             pDph_t.allodurs[nphon + 1] = NF25MS
             cumdur[0] += NF25MS
-            pDph_t.tcumdur += pDph_t.allodurs[nphon + 1]
             pDph_t.allofeats[nphon + 1] = pDph_t.allofeats[nphon] | FDUMMY_VOWEL
             pDph_t.nallotot += 1
             nphon += 1  # C does ``nphon++`` to skip the new schwa.
