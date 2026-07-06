@@ -19,6 +19,20 @@ Usage::
     uv run python scripts/build_full_lexicon.py \
         --source /tmp/dectalk-source/src/dapi/src/dic/Dic_us_2002.txt \
         --out src/dectalk/data/lexicon_us_full.txt
+
+.. warning:: **Do not regenerate blindly** — the checked-in
+   ``lexicon_us_full.txt`` carries 34 hand-applied stress corrections
+   (issue #270): the C *runtime* surfaces a different stress class
+   than the raw dictionary text for sole-secondary entries (e.g.
+   ``quick`` / ``brown`` stored with `` ` `` but spoken with primary
+   stress; ``has`` / ``over`` stored with `` ` `` but spoken
+   unstressed). This converter reproduces the raw text, so a
+   regeneration reverts those fixes and reopens the fox-class timing
+   drift. Issue #280 tracks teaching the conversion (or a post-pass)
+   the runtime stress rules; until then, diff any regenerated file
+   against the checked-in one and re-apply the corrections
+   (``git log -p -- src/dectalk/data/lexicon_us_full.txt`` has the
+   authoritative list).
 """
 
 from __future__ import annotations
