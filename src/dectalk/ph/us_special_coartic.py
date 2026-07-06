@@ -1,6 +1,9 @@
 """``us_special_coartic`` -- US English special coarticulation rules.
 
-Translated from ``src/dapi/src/ph/p_us_st1.c`` line 375 (~95 lines).
+Translated from ``src/dapi/src/ph/p_us_st0.c`` line 324 (~95 lines) --
+the variant the active ``ENGLISH_US + OLD_SETTAR`` build compiles.
+The F2 branch was previously dropped on a misread ``#ifndef HLSYN``
+guard (it is ACTIVE on the non-HLSYN build); restored in issue #269.
 
 Called by :func:`getbegtar` and :func:`getendtar` when the current
 segment is a diphthongised vowel and ``par_type == FORM_FREQ``. The
@@ -30,18 +33,30 @@ from __future__ import annotations
 
 from typing import cast
 
-# ruff: noqa: SIM102 -- C-literal magic numbers and nested ifs kept
+# ruff: noqa: SIM102, PLR2004 -- C-literal magic numbers and nested ifs kept
+from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.usp_codes import (
+    USP_AE,
+    USP_AY,
+    USP_IX,
+    USP_IY,
+    USP_LL,
+    USP_LX,
+    USP_OY,
     USP_R,
     USP_RR,
     USP_RX,
+    USP_UW,
     USP_W,
+    USP_YU,
 )
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
+from dectalk.ph.feature_bits import FBOUNDARY, FSTRESS, FVPNEXT
 from dectalk.ph.get_phone import get_phone
-from dectalk.ph.numeric_constants import F3
-from dectalk.ph.phoneme_features import FVOWEL
+from dectalk.ph.numeric_constants import F2, F3
+from dectalk.ph.phoneme_features import FALVEL, FVOWEL
+from dectalk.ph.rom_tables import us_place
 from dectalk.ph.timing import phone_feature
 
 
@@ -75,13 +90,39 @@ def us_special_coartic(p_dph_t: DphT, nfon: int, diphpos: int) -> int:
             if fonlas in (USP_W, USP_R, USP_RX) or fonnex in (USP_W, USP_R, USP_RX):
                 temp = -150
 
-        # F2 target of selected vowels (LX-before, W/L-after, UW raised,
-        # YU fronted, stress effects, and the -400..+400 final clamp)
-        # SKIPPED on the libtts_us.so HLSYN build target: the C source at
-        # p_us_st1.c lines 401-470 wraps the whole block in
-        # ``#ifndef HLSYN``. The HLSyn vocal-tract model in hlframe.c
-        # (un-ported) is the C source's HLSYN replacement.
-
+    # F2 target of selected vowels (p_us_st0.c lines 350-416; active
+    # on the non-HLSYN build -- an earlier port misread the guard
+    # polarity and dropped the whole branch, issue #269).
+    if p_dphsettar.np == F2:
+        # Front vowel F2 target lowered before [LX].
+        if fonnex == USP_LX:
+            if (USP_IY <= foncur <= USP_AE) or foncur == USP_IX:
+                temp = -150
+            if foncur in (USP_AY, USP_OY) and diphpos == 1:
+                temp = -250
+            if foncur in (USP_AY, USP_OY) and diphpos > 1:
+                temp = -350
+        # Front vowel F2 target lowered after [W], [L] (DO ALSO FOR F3
+        # of [W]).
+        if fonlas in (USP_W, USP_LL, USP_LX):
+            if (USP_IY <= foncur <= USP_AE) or foncur == USP_IX:
+                temp = -150  # las and nex effects not cumulative
+        # [UW] F2 target raised adjacent to an alveolar.
+        if foncur == USP_UW:
+            if (us_place[fonlas & PVALUE] & FALVEL) != 0:
+                temp = 200
+        if foncur == USP_UW or (foncur == USP_YU and diphpos > 0):
+            if (us_place[fonnex & PVALUE] & FALVEL) != 0:
+                temp += 200
+        # Effects are greater for unstressed vowels.
+        if (p_dph_t.allofeats[nfon] & FSTRESS) == 0:
+            temp += temp >> 1
+            # Unstressed YU has a fronted U part.
+            if foncur == USP_YU and diphpos > 0:
+                temp = 400
+        # Reduce effects for phrase-final stressed vowels.
+        elif (p_dph_t.allofeats[nfon] & FBOUNDARY) >= FVPNEXT:
+            temp = temp >> 1
         # Maximum change should not be excessive.
         temp = min(temp, 400)
         temp = max(temp, -400)

@@ -141,6 +141,10 @@ def phsettar(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915
             np_param.durlin = p_dph_t.durfon
 
             # 4. General coarticulation for sonor-cons formants.
+            # Active US form (ph_setar.c lines 796-845): the
+            # ``tarnex <= 0`` special case an earlier port carried
+            # here is GERMAN-only (`#ifdef GERMAN`, C 807-811) and is
+            # compiled out of the US build (issue #269).
             if p_dphsettar.par_type == _PARTYPE_FORM_FREQ:
                 p_dphsettar.gencoartic = 0
                 if (struccur & FSTRESS) == 0:
@@ -148,36 +152,24 @@ def phsettar(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912, PLR0915
                     if p_dphsettar.np == F2:
                         p_dphsettar.gencoartic = N25PRCNT
 
-                if np_param.tarnex <= 0:
-                    p_dph_t.arg1 = np_param.tarlas - np_param.tarcur
-                else:
-                    p_dph_t.arg1 = ((np_param.tarlas + np_param.tarnex) >> 1) - np_param.tarcur
-
+                p_dph_t.arg1 = ((np_param.tarlas + np_param.tarnex) >> 1) - np_param.tarcur
                 p_dph_t.arg2 = p_dphsettar.gencoartic
                 np_param.tarcur += mlsh1(p_dph_t.arg1, p_dph_t.arg2)
 
             np_param.tarend = np_param.tarcur
 
-            # 4b. Companion tarnex coarticulation -- mirrors ph_setar.c
-            # lines 848-995 ("Compute (approx.) general coartic of
-            # tarnex with tarend"). After tarend has been adjusted by
-            # block 4 above, this block pulls tarnex toward tarend by
-            # N10PRCNT (default) or N15PRCNT (unstressed F1/F3) or
-            # N25PRCNT (unstressed F2). The C source comment calls
-            # this "BAD, FIX IT IF POSSIBLE" but the rule fires in
-            # the production HLSYN build, so the port preserves it
-            # verbatim.
-            if p_dphsettar.par_type == _PARTYPE_FORM_FREQ:
-                p_dph_t.arg2 = N10PRCNT
-                if (struccur & FSTRESS) == 0:
-                    p_dph_t.arg2 = N15PRCNT
-                    if p_dphsettar.np == F2:
-                        p_dph_t.arg2 = N25PRCNT
-                if np_param.tarnex <= 0:
-                    p_dph_t.arg1 = np_param.tarend
-                else:
-                    p_dph_t.arg1 = np_param.tarend - np_param.tarnex
-                np_param.tarnex += mlsh1(p_dph_t.arg1, p_dph_t.arg2)
+        # 6. Companion tarnex coarticulation -- ph_setar.c lines
+        # 850-994 ("Compute (approx.) general coartic of tarnex with
+        # tarend"). NOTE: in the C source this block sits OUTSIDE the
+        # non-diphthong ``else`` (it runs for diphthongised targets
+        # too, using the tarend make_dip computed), and the active US
+        # arm is the unconditional ``arg2 = N10PRCNT; arg1 = tarend -
+        # tarnex`` -- the unstressed N15/N25 escalation and the
+        # ``tarnex <= 0`` case are GERMAN-only (issue #269).
+        if p_dphsettar.par_type == _PARTYPE_FORM_FREQ:
+            p_dph_t.arg2 = N10PRCNT
+            p_dph_t.arg1 = np_param.tarend - np_param.tarnex
+            np_param.tarnex += mlsh1(p_dph_t.arg1, p_dph_t.arg2)
 
         # 5a. Forward-smooth default bouval / durtran -- mirrors
         # ph_setar.c lines 1003-1004:

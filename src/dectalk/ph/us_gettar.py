@@ -1,7 +1,19 @@
 # ruff: noqa: PLR2004, SIM102, SIM108, SIM114, PLR5501, PLR1730 -- faithful translation of branchy C source
-"""``us_gettar`` -- US-English per-parameter target lookup from p_us_st1.c.
+"""``us_gettar`` -- US-English per-parameter target lookup from p_us_st0.c.
 
-Translated from ``src/dapi/src/ph/p_us_st1.c`` line 76 (~290 lines).
+Translated from ``src/dapi/src/ph/p_us_st0.c`` line 67 (~240 lines).
+
+**Variant note (issue #269).** ``ph_sttr1.c`` picks the US settar
+implementation via ``#if defined(ENGLISH_US) && defined(OLD_SETTAR)``;
+the active klsyn build (``dectalkf_klsyn.h`` defines ``OLD_SETTAR``
+whenever ``VOICE_ROM_DECTALK_1996M_43F`` is selected) compiles
+``p_us_st0.c``, NOT ``p_us_st1.c``. An earlier port of this module
+followed p_us_st1.c and inherited five wrong-variant behaviours: the
+removed ``tartemp == -1`` fallback chain, ``-12`` dummy-vowel AV
+reduction (st0: ``-7``), ``56`` HX aspiration before back vowels
+(st0: ``60``), ``10`` dummy-vowel TILT (st0: ``20``), and a front-
+vowel TILT bias of ``+6``-else-``+3`` with no sex split (st0:
+``+6`` female / ``+3`` male, nothing otherwise).
 
 ``us_gettar`` resolves the target value of one Klatt voice parameter
 for one phone position in a clause. It is the leaf of the
@@ -61,10 +73,11 @@ from dectalk.ph.numeric_constants import (
     B2,
     B3,
     F1,
+    FEMALE,
     FZ,
     TILT,
 )
-from dectalk.ph.parameter_tables import partyp
+from dectalk.ph.parameter_tables import parini, partyp
 from dectalk.ph.phoneme_features import (
     F2BACKF,
     F2BACKI,
@@ -164,10 +177,34 @@ def us_gettar(phTTS: TtsHandle, nphone_temp: int) -> int:  # noqa: N803, PLR0912
             # p_diph[2]", and so on. Return the sentinel so the
             # caller (getbegtar/getendtar) can dereference it.
             return tartemp
-        # The C source has a vestigial second `if (tartemp < -1)`
-        # immediately after the return-on-sentinel block. It can
-        # never execute because the early return caught it; the
-        # Python port drops it.
+        if tartemp == -1:
+            # p_us_st0.c lines 93-118: target undefined -- fall back
+            # to the next segment, then the second-next, then the
+            # previous (resolving a diph pointer to its LAST value),
+            # then the parameter's parini[] default. The p_us_st1.c
+            # rewrite (BATS 982) removed this chain and let the
+            # gettar() wrapper walk candidates instead; the active
+            # OLD_SETTAR build resolves it right here, so the phone's
+            # own context (phone_temp) still drives the tweak rules
+            # below.
+            tartemp = p_tar[(phnex_temp & PVALUE) + pphotr]
+            if tartemp == -1:
+                tartemp = p_tar[(get_phone(p_dph_t, nphone_temp + 2) & PVALUE) + pphotr]
+                if tartemp == -1:
+                    tartemp = p_tar[(phlas_temp & PVALUE) + pphotr]
+                    if tartemp < -1:
+                        # Diphthongised seg: use its last target value.
+                        p_diph = cast(list[int], p_dph_t.p_diph)
+                        while p_diph[-tartemp] != -1:
+                            tartemp -= 1
+                        tartemp = p_diph[-tartemp - 1]
+                    if tartemp == -1:
+                        tartemp = parini[npar]
+        if tartemp < -1:
+            # A diph pointer picked up from the phnex/phnex2 fallback
+            # levels above resolves to its FIRST value (st0 line 121).
+            p_diph = cast(list[int], p_dph_t.p_diph)
+            tartemp = p_diph[-tartemp]
 
         # Fricatives have higher F1 if preceded by a vowel.
         if (
@@ -205,9 +242,9 @@ def us_gettar(phTTS: TtsHandle, nphone_temp: int) -> int:  # noqa: N803, PLR0912
             if p_ksd_t.sprate < 100 and phone_temp == USP_Q:
                 tartemp -= 30
 
-            # Dummy vowel has less intensity.
+            # Dummy vowel has less intensity (st0: -7; st1 used -12).
             if (p_dph_t.allofeats[nphone_temp] & FDUMMY_VOWEL) != 0:
-                tartemp -= 12
+                tartemp -= 7
 
             # Voiced stop devoiced if previous segment was voiceless.
             if (phone_feature(phone_temp) & FPLOSV) != 0 and (
@@ -229,11 +266,12 @@ def us_gettar(phTTS: TtsHandle, nphone_temp: int) -> int:  # noqa: N803, PLR0912
                 if tartemp < 0:
                     tartemp = 0
         else:
-            # AP: only /hx/ has aspiration; stronger before back vowels.
+            # AP: only /hx/ has aspiration; stronger before back vowels
+            # (st0: 60; st1 used 56).
             if phone_temp == USP_HX:
                 tartemp = 53
                 if begtyp(phnex_temp) != 1:
-                    tartemp = 56
+                    tartemp = 60
             else:
                 tartemp = 0
 
@@ -258,13 +296,17 @@ def us_gettar(phTTS: TtsHandle, nphone_temp: int) -> int:  # noqa: N803, PLR0912
 
         if p_dphsettar.np == TILT:
             # Spectral tilt: high for obstruents, low for vowels.
+            # st0 form: the GEN_SIL / HX tests are sequential ``if``s
+            # (not chained), the dummy-vowel tilt is 20 (st1: 10), and
+            # the front-vowel bias is +6 female / +3 male with NO
+            # catch-all else (st1 added +6-else-+3 with no sex split).
             tartemp = 0
             if phone_temp == GEN_SIL:
                 tartemp = 0
-            elif phone_temp == USP_HX:
+            if phone_temp == USP_HX:
                 tartemp = 20
             elif (p_dph_t.allofeats[nphone_temp] & FDUMMY_VOWEL) != 0:
-                tartemp = 10
+                tartemp = 20
             elif (phone_feature(phone_temp) & FOBST) != 0:
                 tartemp = 7
                 if (phone_feature(phone_temp) & FVOICD) != 0 and (
@@ -272,11 +314,13 @@ def us_gettar(phTTS: TtsHandle, nphone_temp: int) -> int:  # noqa: N803, PLR0912
                 ):
                     tartemp = 40
             elif (phone_feature(phone_temp) & FNASAL) != 0:
-                tartemp += 6
+                tartemp = 6
             elif begtyp(phone_temp) == 1 or endtyp(phone_temp) == 1:
-                tartemp += 6
-            else:
-                tartemp += 3
+                # Female front vowels tilted down slightly; males less.
+                if p_dph_t.malfem == FEMALE:
+                    tartemp += 6
+                else:
+                    tartemp += 3
 
     return tartemp
 

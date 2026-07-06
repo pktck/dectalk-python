@@ -1,7 +1,8 @@
 """Behavioural tests for the Python port of ``us_gettar``.
 
-The C source lives in ``src/dapi/src/ph/p_us_st1.c``; the Python
-port mirrors its branchy par_type-dispatched body. Each test
+The C source lives in ``src/dapi/src/ph/p_us_st0.c`` (the variant the
+active ``ENGLISH_US + OLD_SETTAR`` build compiles -- issue #269); the
+Python port mirrors its branchy par_type-dispatched body. Each test
 exercises one branch of the dispatch and asserts the return value
 against hand-derived expectations (no oracle dependency).
 """
@@ -26,7 +27,7 @@ from dectalk.kernel.ksd_t import KsdT
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import FDUMMY_VOWEL, FSTRESS_1
-from dectalk.ph.numeric_constants import AV, B2, F1, FZ, TILT
+from dectalk.ph.numeric_constants import AV, B2, F1, FEMALE, FZ, MALE, TILT
 from dectalk.ph.parameter_tables import partyp
 from dectalk.ph.rom_tables import us_femamp, us_femtar
 from dectalk.ph.tts_handle import TtsHandle
@@ -153,16 +154,20 @@ def test_glottal_stop_loses_30_at_slow_rate() -> None:
     assert us_gettar(base, 1) - us_gettar(slow, 1) == 30
 
 
-def test_dummy_vowel_reduces_av_by_12() -> None:
-    """Dummy-vowel flag in allofeats subtracts 12 from AV."""
+def test_dummy_vowel_reduces_av_by_7() -> None:
+    """Dummy-vowel flag in allofeats subtracts 7 from AV.
+
+    p_us_st0.c line 185 (the active OLD_SETTAR variant) uses -7; the
+    p_us_st1.c rewrite used -12 (issue #269).
+    """
     base = _make_handle(np_idx=AV, phone=USP_AA)
     poisoned = _make_handle(np_idx=AV, phone=USP_AA)
     cast(DphT, poisoned.p_ph_thread_data).allofeats[1] = FDUMMY_VOWEL
     # Both go through the unstressed branch (allofeats stress==0), so
-    # the dummy-vowel delta isolates to a -12 difference *modulo* any
+    # the dummy-vowel delta isolates to a -7 difference *modulo* any
     # later corrections. With a vowel like AA we don't hit any other
     # phoneme-specific tweak, so the comparison is clean.
-    assert us_gettar(base, 1) - us_gettar(poisoned, 1) == 12
+    assert us_gettar(base, 1) - us_gettar(poisoned, 1) == 7
 
 
 def test_hx_aspiration_53_before_front_vowel() -> None:
@@ -171,10 +176,14 @@ def test_hx_aspiration_53_before_front_vowel() -> None:
     assert us_gettar(handle, 1) == 53
 
 
-def test_hx_aspiration_56_before_back_vowel() -> None:
-    """AP for /hx/ jumps to 56 before a back vowel (begtyp!=1)."""
+def test_hx_aspiration_60_before_back_vowel() -> None:
+    """AP for /hx/ jumps to 60 before a back vowel (begtyp!=1).
+
+    p_us_st0.c line 222 (the active OLD_SETTAR variant) uses 60; the
+    p_us_st1.c rewrite used 56 (issue #269).
+    """
     handle = _make_handle(np_idx=AV + 1, phone=USP_HX, phnex=USP_AA)
-    assert us_gettar(handle, 1) == 56
+    assert us_gettar(handle, 1) == 60
 
 
 def test_ap_zero_for_non_hx() -> None:
@@ -220,12 +229,31 @@ def test_tilt_20_for_hx() -> None:
     assert us_gettar(handle, 1) == 20
 
 
-def test_tilt_3_for_plain_vowel() -> None:
-    """TILT target is +3 when begtyp != 1 and endtyp != 1 (e.g. AA)."""
-    # AA: us_begtyp=2 and us_endtyp=2 -> the front-vowel +6 branch is
-    # skipped and we land on the default +3.
+def test_tilt_0_for_plain_non_front_vowel() -> None:
+    """TILT target stays 0 when begtyp != 1 and endtyp != 1 (e.g. AA).
+
+    p_us_st0.c (the active OLD_SETTAR variant) has no catch-all
+    ``else +3``; only front vowels get a bias (issue #269).
+    """
+    # AA: us_begtyp=2 and us_endtyp=2 -> the front-vowel branch is
+    # skipped and the target stays 0.
     handle = _make_handle(np_idx=TILT, phone=USP_AA)
-    assert us_gettar(handle, 1) == 3
+    assert us_gettar(handle, 1) == 0
+
+
+def test_tilt_front_vowel_bias_by_sex() -> None:
+    """Front vowels tilt +3 for male voices, +6 for female.
+
+    p_us_st0.c lines 293-303: ``malfem == FEMALE ? +6 : +3``. The
+    p_us_st1.c rewrite lost the sex split (flat +6), issue #269.
+    """
+    male = _make_handle(np_idx=TILT, phone=USP_IY)
+    cast(DphT, male.p_ph_thread_data).malfem = MALE
+    assert us_gettar(male, 1) == 3
+
+    female = _make_handle(np_idx=TILT, phone=USP_IY)
+    cast(DphT, female.p_ph_thread_data).malfem = FEMALE
+    assert us_gettar(female, 1) == 6
 
 
 def test_tilt_6_for_nasal() -> None:
