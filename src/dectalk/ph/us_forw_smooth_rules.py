@@ -16,8 +16,9 @@ Branches:
   USP_EN / USP_M phoneme-specific corrections, and a final shrink
   of the transition duration via :func:`mlsh1` if the current
   segment is a short sonorant.
-- ``par_type == NASAL_ZERO_FREQ`` (FZ): jumps to NASAL_ZERO_BOUNDARY
-  with NF80MS transition when leaving a nasal.
+- ``par_type == NASAL_ZERO_FREQ`` (FZ): jumps to 400 with NF80MS
+  transition when leaving a nasal (p_us_st0.c hardcodes 400; the
+  st1 rewrite used NASAL_ZERO_BOUNDARY = 370).
 - ``par_type == FORM_BW`` (B1, B2, B3): default NF40MS, with
   silence-boundary cushion, nasal-trail widening on B1/B2, and a
   zero-transition clamp inside a current nasal segment.
@@ -85,7 +86,7 @@ from dectalk.ph.setloc import setloc
 from dectalk.ph.sonor_classes import OBSTRUENT
 from dectalk.ph.timing import begtyp, endtyp, phone_feature
 from dectalk.ph.tts_handle import TtsHandle
-from dectalk.ph.utterance_constants import GEN_SIL, NASAL_ZERO_BOUNDARY
+from dectalk.ph.utterance_constants import GEN_SIL
 
 _PARTYPE_AV_OR_AH: int = 0
 _PARTYPE_NASAL_ZERO_FREQ: int = 1
@@ -232,7 +233,10 @@ def us_forw_smooth_rules(  # noqa: PLR0912, PLR0915
         # FORWARD SMOOTH: FN (nasal-zero frequency)
         p_dphsettar.durtran = 0
         if (fealas & FNASAL) != 0 and (feacur & FNASAL) == 0:
-            p_dphsettar.bouval = NASAL_ZERO_BOUNDARY
+            # p_us_st0.c line 602 hardcodes 400 (== NASAL_ZERO_CONS);
+            # the st1 rewrite switched to NASAL_ZERO_BOUNDARY = 370
+            # (issue #269).
+            p_dphsettar.bouval = 400
             p_dphsettar.durtran = NF80MS
 
     elif par_type == _PARTYPE_FORM_BW:

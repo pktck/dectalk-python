@@ -29,11 +29,11 @@ amplitude ROM differs structurally from BETA5: it lays each obstruent
 out as a 4-row x 6-column block (24 entries) referenced by a 24-stride
 :data:`us_ptram` base offset, rather than the BETA5 30-stride layout
 with ``-1`` sentinels, and applies in-table reductions (``49-6``,
-``65-10``) plus a ``DEC_SZ`` macro on the S/Z A5 entries. ``DEC_SZ`` is
-an old Phc-toolchain compile-time knob undefined in the C source tree;
-it resolves to ``0`` here, verified against the byte-identical S/Z A5
-literals in ``p_us_rom_dectalk41.c`` / ``p_us_rom_dtc_03_03Jan89.c``
-(which carry the same modern layout with ``DEC_SZ`` pre-resolved).
+``65-10``) plus a ``DEC_SZ`` reduction on the S/Z A5 entries.
+``dectalkf_klsyn.h`` line 300 defines ``DEC_SZ 3`` whenever a
+``VOICE_ROM_*`` is selected -- which the active build always does --
+so the compiled S/Z amplitudes are 3 dB below the in-table literals
+(issue #269; an earlier pass resolved the macro to 0).
 
 These phoneme-indexed lookup tables drive the Klatt-frame
 target generation in the PH module — feeding into the
@@ -460,16 +460,19 @@ us_malamp: Final[tuple[int, ...]] = (
     0, 0, 0, 0, 0, 41,
     0, 0, 0, 0, 0, 39,
     0, 0, 0, 0, 0, 39,
-    # [S] (A5 = 57/57/58/58 - DEC_SZ, DEC_SZ = 0)
-    0, 0, 0, 0, 57, 0,
-    0, 0, 0, 0, 57, 0,
-    0, 0, 0, 0, 58, 0,
-    0, 0, 0, 0, 58, 0,
-    # [Z] (A5 = 51/51/52/52 - DEC_SZ, DEC_SZ = 0)
-    0, 0, 0, 0, 51, 0,
-    0, 0, 0, 0, 51, 0,
-    0, 0, 0, 0, 52, 0,
-    0, 0, 0, 0, 52, 0,
+    # [S] (57/57/58/58 - DEC_SZ; dectalkf_klsyn.h defines DEC_SZ = 3
+    # whenever a VOICE_ROM_* is selected, so the active build compiles
+    # these as 54/54/55/55 -- issue #269; the earlier port resolved
+    # DEC_SZ to 0)
+    0, 0, 0, 0, 54, 0,
+    0, 0, 0, 0, 54, 0,
+    0, 0, 0, 0, 55, 0,
+    0, 0, 0, 0, 55, 0,
+    # [Z] (51/51/52/52 - DEC_SZ = 48/48/49/49, DEC_SZ = 3)
+    0, 0, 0, 0, 48, 0,
+    0, 0, 0, 0, 48, 0,
+    0, 0, 0, 0, 49, 0,
+    0, 0, 0, 0, 49, 0,
     # [SH]
     0, 43, 55, 0, 42, 0,
     0, 43, 55, 0, 42, 0,
@@ -548,16 +551,17 @@ us_femamp: Final[tuple[int, ...]] = (
     0, 0, 0, 0, 0, 40,
     0, 0, 0, 0, 0, 38,
     0, 0, 0, 0, 0, 38,
-    # [S] (A5 = 58/58/61/61 - DEC_SZ, DEC_SZ = 0)
-    0, 0, 0, 0, 58, 0,
-    0, 0, 0, 0, 58, 0,
-    0, 0, 0, 0, 61, 0,
-    0, 0, 0, 0, 61, 0,
-    # [Z] (A5 = 52/52/55/55 - DEC_SZ, DEC_SZ = 0)
-    0, 0, 0, 0, 52, 0,
-    0, 0, 0, 0, 52, 0,
+    # [S] (58/58/61/61 - DEC_SZ = 55/55/58/58; dectalkf_klsyn.h defines
+    # DEC_SZ = 3 for all VOICE_ROM_* builds -- issue #269)
     0, 0, 0, 0, 55, 0,
     0, 0, 0, 0, 55, 0,
+    0, 0, 0, 0, 58, 0,
+    0, 0, 0, 0, 58, 0,
+    # [Z] (52/52/55/55 - DEC_SZ = 49/49/52/52, DEC_SZ = 3)
+    0, 0, 0, 0, 49, 0,
+    0, 0, 0, 0, 49, 0,
+    0, 0, 0, 0, 52, 0,
+    0, 0, 0, 0, 52, 0,
     # [SH]
     0, 46, 53, 0, 37, 0,
     0, 46, 53, 0, 37, 0,

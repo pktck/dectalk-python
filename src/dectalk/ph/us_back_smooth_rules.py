@@ -81,7 +81,7 @@ from dectalk.ph.rom_tables import us_place
 from dectalk.ph.setloc import setloc
 from dectalk.ph.timing import begtyp, endtyp
 from dectalk.ph.tts_handle import TtsHandle
-from dectalk.ph.utterance_constants import GEN_SIL, NASAL_ZERO_BOUNDARY
+from dectalk.ph.utterance_constants import GEN_SIL
 
 _PARTYPE_AV_OR_AH: int = 0
 _PARTYPE_NASAL_ZERO_FREQ: int = 1
@@ -204,8 +204,12 @@ def us_back_smooth_rules(  # noqa: PLR0912, PLR0915
     elif par_type == _PARTYPE_NASAL_ZERO_FREQ:
         # BACKWARD SMOOTH: FN
         p_dphsettar.durtran = 0
+        # Nasalization cue: place zero between F1 and FP.
         if (feanex & FNASAL) != 0 and (feacur & FNASAL) == 0:
-            p_dphsettar.bouval = NASAL_ZERO_BOUNDARY
+            # p_us_st0.c line 973 hardcodes 400 (== NASAL_ZERO_CONS);
+            # the st1 rewrite switched to NASAL_ZERO_BOUNDARY = 370
+            # (issue #269).
+            p_dphsettar.bouval = 400
             p_dphsettar.durtran = NF80MS
             if p_dphsettar.phonex == USP_EN:
                 p_dphsettar.durtran = NF130MS
