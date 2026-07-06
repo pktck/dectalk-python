@@ -107,6 +107,41 @@ def test_vtm1_pcm_length_within_tolerance(text: str, monkeypatch: pytest.MonkeyP
     )
 
 
+# Prompts whose FULL+VTM1 sample count is exactly the C oracle's after
+# the #270 timing fixes (sole-secondary lexicon stress alignment,
+# per-clause phclause segmentation, HLSYN-only WBOUND step-past
+# removal). Byte-level content still diverges (Phase E frame-content
+# work), but the per-allophone durations — and therefore the total
+# sample count — are phone-for-phone equal to the oracle. Pinned as a
+# hard gate so timing regressions surface immediately.
+_COUNT_EXACT_PROMPTS: tuple[str, ...] = (
+    "hello world",
+    "testing one two three",
+    "the quick brown fox",
+    "a box of cats",
+    "and then we left",
+    "chairs, tables, lamps, and rugs",
+)
+
+
+@pytest.mark.parametrize("text", _COUNT_EXACT_PROMPTS)
+def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Python FULL+VTM1 sample count equals the C oracle's exactly.
+
+    Issue #270: the per-allophone durations on these prompts match the
+    oracle phone-for-phone (verified via the OUT_PH/OUT_DU cells of
+    ``vtm_frames.dump``), so the emitted frame count — and the PCM
+    sample count — must be identical. This is the timing-layer parity
+    gate; byte equality remains tracked by the xfail test below.
+    """
+    ref = _binary_pcm_int16(text)
+    py = _python_vtm1_pcm(text, monkeypatch)
+    assert py.size == ref.size, (
+        f"sample-count drift for {text!r}: Python {py.size} vs C {ref.size} "
+        f"({(py.size - ref.size) / _SAMPLES_PER_FRAME:+.1f} frames)"
+    )
+
+
 @pytest.mark.parametrize("text", _PROMPTS)
 @pytest.mark.xfail(
     reason="Full PCM bit-parity is gated on Phase E (PH timing layer)",
