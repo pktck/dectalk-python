@@ -23,6 +23,7 @@ from dectalk.include.usp_codes import (
     USP_HX,
     USP_JH,
     USP_LL,
+    USP_M,
     USP_N,
     USP_P,
     USP_S,
@@ -32,6 +33,7 @@ from dectalk.include.usp_codes import (
     USP_Z,
     USP_ZH,
 )
+from dectalk.include.cmd_codes import PVALUE
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import FDUMMY_VOWEL
@@ -59,11 +61,13 @@ from dectalk.ph.numeric_constants import (
     B2,
     B3,
     F1,
+    F2,
     F3,
     FEMALE,
     TILT,
 )
 from dectalk.ph.phoneme_features import (
+    F2BACKI,
     FNASAL,
     FOBST,
     FPLOSV,
@@ -73,6 +77,7 @@ from dectalk.ph.phoneme_features import (
     FSYLL,
     FVOICD,
 )
+from dectalk.ph.rom_tables import us_place
 from dectalk.ph.setloc import setloc
 from dectalk.ph.timing import begtyp, endtyp
 from dectalk.ph.tts_handle import TtsHandle
@@ -80,6 +85,7 @@ from dectalk.ph.utterance_constants import GEN_SIL, NASAL_ZERO_BOUNDARY
 
 _PARTYPE_AV_OR_AH: int = 0
 _PARTYPE_NASAL_ZERO_FREQ: int = 1
+_PARTYPE_PARALLEL_FORM_AMP: int = 2
 _PARTYPE_FORM_FREQ: int = 3
 _PARTYPE_FORM_BW: int = 4
 
@@ -160,21 +166,36 @@ def us_back_smooth_rules(  # noqa: PLR0912, PLR0915
                     p_dphsettar.durtran = NF20MS
                 if (feacur & FPLOSV) != 0:
                     p_dphsettar.durtran = p_dph_t.durfon
-                    # F1 += 100 at offset of voiceless plosive.
-                    # SKIPPED on the libtts_us.so build target: the C source
-                    # at p_us_st1.c lines 975-980 guards this block with
-                    # ``#if (defined FAKE_HLSYN || !defined HLSYN)``, so the
-                    # HLSYN build (ours) compiles it out.
+                    # F1 raised at offset of a voiceless plosive
+                    # (p_us_st0.c lines 917-920; active on the
+                    # non-HLSYN build -- an earlier port misread the
+                    # guard polarity and dropped it, issue #269).
+                    if p_dphsettar.np == F1 and (feacur & FVOICD) == 0:
+                        p_dphsettar.bouval += 100
 
-            # Higher formant transitions slow inside a nasal.
-            # SKIPPED entirely on the libtts_us.so build target: the C source
-            # at p_us_st1.c lines 984-1015 wraps the whole block (including
-            # the outer ``if (feacur & FNASAL)``, durtran=durfon, the F1 jump
-            # to 0, and all F2/F3/M sub-branches) in
-            # ``#if (defined FAKE_HLSYN || !defined HLSYN)``, so the HLSYN
-            # build (ours) compiles it out. The HLSyn-area-based formant
-            # adjustment in hlframe.c (un-ported; wait for Phase E) is the
-            # HLSYN replacement for these rules.
+            # Higher formant transitions slow inside a nasal
+            # (p_us_st0.c lines 924-953, all active on the non-HLSYN
+            # build; previously dropped on a misread guard, #269).
+            if (feacur & FNASAL) != 0:
+                p_dphsettar.durtran = p_dph_t.durfon
+                # Except F1, which jumps to value below FNZRO.
+                if p_dphsettar.np == F1:
+                    p_dphsettar.durtran = 0
+                # Lower F2 & F3 of [n] nasal murmur before front vowels.
+                elif p_dphsettar.phcur in (USP_N, USP_EN) and begtyp(p_dphsettar.phonex) == 1:
+                    if p_dphsettar.np == F2:
+                        p_dphsettar.bouval -= 100
+                        if (us_place[p_dphsettar.phonex & PVALUE] & F2BACKI) != 0:
+                            p_dphsettar.bouval -= 100
+                    if p_dphsettar.np == F3:
+                        p_dphsettar.bouval -= 100
+                # Lower F2 of [m] murmur near [i,y,yu,ir].
+                elif (
+                    p_dphsettar.np == F2
+                    and p_dphsettar.phcur == USP_M
+                    and (us_place[p_dphsettar.phonex & PVALUE] & F2BACKI) != 0
+                ):
+                    p_dphsettar.bouval -= 150
 
         # Shrink tran dur inside sonor if sonor short.
         if (feacur & FOBST) == 0 and begtyp(p_dphsettar.phonex) != 4 and p_dphsettar.durtran > 0:
@@ -229,8 +250,11 @@ def us_back_smooth_rules(  # noqa: PLR0912, PLR0915
         if (feacur & FNASAL) != 0:
             p_dphsettar.durtran = 0
 
-    elif par_type == _PARTYPE_AV_OR_AH:
-        # BACKWARD SMOOTH: AV, AP, A2..A6, AB, TILT
+    elif par_type in (_PARTYPE_AV_OR_AH, _PARTYPE_PARALLEL_FORM_AMP):
+        # BACKWARD SMOOTH: AV, AP, A2..A6, AB, TILT. The active
+        # p_us_st0.c line 1042 tests ``IS_PARALLEL_FORM_AMP ||
+        # IS_AV_OR_AH``; p_us_st1.c dropped the PARALLEL_FORM_AMP arm
+        # and an earlier port followed it (issue #269).
         # Onset detection: source intensity increasing.
         temp = np_param.tarnex - 10
         if p_dphsettar.bouval < temp:
