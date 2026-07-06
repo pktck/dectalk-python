@@ -15,6 +15,7 @@ from __future__ import annotations
 # ruff: noqa: PLR2004, SIM102 -- C-literal magic numbers and nested ifs kept
 from typing import cast
 
+from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.usp_codes import (
     USP_CH,
     USP_DH,
@@ -33,7 +34,6 @@ from dectalk.include.usp_codes import (
     USP_Z,
     USP_ZH,
 )
-from dectalk.include.cmd_codes import PVALUE
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import FDUMMY_VOWEL
