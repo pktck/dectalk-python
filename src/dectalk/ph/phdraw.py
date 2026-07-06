@@ -2435,10 +2435,15 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912 — branches mirror
         parp = _div_by8(value) + p.tarcur
         p_dph_t.parstochip[out_idx] = parp
 
-        # Lines 408-414: special-rule constant override (B1 / B2 use this
-        # for aspiration-time bandwidth widening).
-        if p.tspesh > 0 and p_dph_t.tcum < p.tspesh:
-            p_dph_t.parstochip[out_idx] = p.pspesh
+        # Lines 407-420: special-rule constant override (B1 / B2 use
+        # this for aspiration-time bandwidth widening). NOTE the C
+        # else-binding: ``else if (np == &PB1)`` chains to the OUTER
+        # ``if (np->tspesh > 0)`` -- when a tspesh window exists but
+        # has expired (tcum >= tspesh), NEITHER arm fires. An earlier
+        # port applied the B1 breathy multiply in that case (#269).
+        if p.tspesh > 0:
+            if p_dph_t.tcum < p.tspesh:
+                p_dph_t.parstochip[out_idx] = p.pspesh
         elif param_idx == B1:
             # Lines 417-420: breathy-voice widens first-formant bandwidth.
             p_dph_t.parstochip[out_idx] = frac4mul(p_dph_t.parstochip[out_idx], p_dph_t.spdefb1off)
@@ -2464,19 +2469,15 @@ def phdraw(phTTS: TtsHandle) -> None:  # noqa: N803, PLR0912 — branches mirror
                     p_dph_t, param_idx, p, p_dph_t.parstochip[out_idx]
                 )
 
-        # Lines 527-602: PAV-specific VOT / glottal-area sync.
-        # The C body here mutates pDph_t->target_ag and pDph_t->agspeed
-        # which only feed the HLSyn area loop (un-ported), so skipping
-        # the mutation has no observable effect on the ported Klatt
-        # parameter trajectory. The pDph_t->lastvot bookkeeping is kept
-        # because it's read by other functions.
+        # Lines 527-602: PAV-specific VOT / glottal-area sync. The
+        # entire tspesh body (target_ag / agspeed mutation AND the
+        # ``lastvot = tspesh`` write at C 576) is ``#ifdef HLSYN`` --
+        # compiled OUT of the active build. Only the ``else lastvot =
+        # 0`` (C 600-601) survives. An earlier port carried the HLSYN
+        # lastvot write here (#269).
         if param_idx == AV:
             if p.tspesh:
-                # Note: only the lastvot=tspesh-at-vot-onset bookkeeping
-                # has observable effect on the ported path; the full
-                # target_ag / agspeed mutation is gated to phdraw_hlsyn.
-                if p_dph_t.tcum == p.tspesh:
-                    p_dph_t.lastvot = p.tspesh
+                pass  # HLSYN-only body; no active-side effect.
             else:
                 p_dph_t.lastvot = 0
 
