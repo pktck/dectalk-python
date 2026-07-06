@@ -11,14 +11,20 @@ elaborate path: a one-frame "delay buffer" shuffles every parameter
 except ``AV``, ``TILT`` and ``T0`` by one frame, the parstochip is
 written into the SPC packet queue, and ``hlframe.c`` performs the HL
 → LL parameter conversion (formant adjustment, ag/agf/agm gating,
-etc.). The Python port now provides two paths:
+etc.). The Python port now provides three paths:
 
 - :func:`parstochip_to_llframe_delayed` — the legacy direct-copy path
-  (no HL→LL gating). Still the default for the full pipeline driver.
+  (no HL→LL gating) for the hlsyn back-end. Applies the send_pars
+  one-frame delay + ``lineartilt[]`` mapping while building the
+  LLFrame.
 - :func:`parstochip_to_llframe_via_hl` — the new path that builds an
   :class:`~dectalk.ph.hlsyn_structs.HLFrame` from parstochip and runs
   the full :func:`~dectalk.hlsyn.hlframe.hl_synthesize_ll_frame`
   conversion (AV/AH/AF gating, formant bandwidth adjustments, OQ/TL/DI).
+- :func:`send_pars_delaypars` — the vtm1-path packet builder (issue
+  #275): applies the same send_pars transformation but emits a raw
+  ``list[int]`` in parstochip layout, exactly what the C driver's
+  ``spcwrite`` ships to ``vtm1.c``.
 
 OUT_T0 holds the fundamental period in deciHz (10x Hz) when HLSyn
 is enabled (``ph_drwt02.c`` line 1409); :class:`LLFrame.F0` uses
@@ -284,6 +290,67 @@ def parstochip_to_llframe_delayed(
     )
 
 
+def send_pars_delaypars(
+    parstochip: list[int],
+    previous_parstochip: list[int],
+) -> list[int]:
+    """Build the emitted ``delaypars[]`` packet of ``ph_claus.c::send_pars``.
+
+    This is the vtm1-path sibling of
+    :func:`parstochip_to_llframe_delayed`: it reconstructs, as a plain
+    ``list[int]`` in parstochip layout, the exact SPC voice packet the
+    C driver hands its synthesiser (``ph_claus.c`` lines 694-846,
+    active ``ENGLISH``/non-``FRENCH``/non-``NEW_TILT``/non-``NEW_VTM``
+    build):
+
+    - ``OUT_AV`` and ``OUT_T0`` come from the **current** frame's
+      parstochip (written at the top of the ``send_pars`` call that
+      performs the ``spcwrite``);
+    - ``OUT_TLT`` is the current frame's raw tilt remapped through the
+      :data:`~dectalk.ph.parameter_tables.lineartilt` LUT
+      (``ph_romi.c``; 0..31 raw scale -> 0..40), ``ph_claus.c`` line
+      735;
+    - **every other slot** — ``AP F1 A2-A6 AB F2 F3 FZ B1 B2 B3`` and
+      the ``PH/DU/PH2`` metadata cells — carries the **previous**
+      frame's parstochip value (written into the fresh ``delaypars``
+      buffer at the bottom of the previous ``send_pars`` call, lines
+      786-846: the one-frame formant-side delay).
+
+    Faithfulness notes:
+
+    - The ``if (parstochip[OUT_AP] >= 10) delaypars[OUT_AP] -= 3``
+      pre-write at line 821 is dead code in the active build — it is
+      unconditionally overwritten by the raw copy on the next line —
+      so ``OUT_AP`` is the raw previous-frame value here too.
+    - The first ``send_pars`` call (``initpardelay == 0``) only seeds
+      the delay buffer and never performs the ``spcwrite``. Callers
+      model that seed call by discarding the first driver frame (see
+      the ``_render_clause_full`` driver loop), then passing that
+      frame as ``previous_parstochip`` when emitting the first packet.
+    - The ``pDph_t->asperation += asp_bump`` side effect at the tail
+      of ``send_pars`` (cross-clause pause bookkeeping consumed by the
+      next clause's ``us_phtiming``) is intentionally NOT modelled by
+      this pure function.
+
+    Args:
+        parstochip: Current frame's parstochip array.
+        previous_parstochip: Previous frame's parstochip array (the
+            delay-buffer contents seeded by the previous call).
+
+    Returns:
+        New ``list[int]`` with the same width as
+        ``previous_parstochip``, holding the mixed-frame packet.
+    """
+    packet = list(previous_parstochip)
+    packet[OUT_AV] = parstochip[OUT_AV]
+    # Defensive clamp: phdraw keeps OUT_TLT inside 0..31 (the LUT's
+    # domain); guard against transient out-of-range values while the
+    # PH port is still converging rather than IndexError-ing.
+    packet[OUT_TLT] = lineartilt[_clamp(parstochip[OUT_TLT], 0, len(lineartilt) - 1)]
+    packet[OUT_T0] = parstochip[OUT_T0]
+    return packet
+
+
 def _to_int16(value: int) -> int:
     """Reinterpret the low 16 bits of ``value`` as a signed int16.
 
@@ -475,4 +542,5 @@ __all__ = [
     "parstochip_to_llframe",
     "parstochip_to_llframe_delayed",
     "parstochip_to_llframe_via_hl",
+    "send_pars_delaypars",
 ]

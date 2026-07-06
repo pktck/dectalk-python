@@ -352,6 +352,68 @@ class TestSpeakViaPythonFullVtm1Dispatch:
         assert samples.size > 0
         assert np.any(samples != 0), "vtm1 default path produced all-zero output"
 
+    def test_driver_feeds_send_pars_delaypars_packets(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The vtm1 pump receives post-send_pars packets, not raw parstochip.
+
+        Pins the issue #275 wiring invariant: for every emitted frame
+        the driver hands the pump exactly ``send_pars_delaypars(cur,
+        prev)`` where ``(cur, prev)`` is the raw current/previous
+        parstochip pair the ``parstochip_to_llframe_delayed`` capture
+        hook sees — formant side one frame delayed, ``OUT_TLT``
+        LUT-mapped, ``OUT_AV``/``OUT_T0`` current, and the discarded
+        first driver frame surfacing as packet 0's delayed half. Also
+        re-pins the #279 precondition that the capture hook keeps
+        seeing raw (un-mixed) parstochip pairs.
+        """
+        monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+        monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
+        monkeypatch.setenv("DECTALK_USE_VTM1", "1")
+
+        import dectalk.vtm.pump_frames as pump_frames_mod  # noqa: PLC0415
+        from dectalk.api.speak import _speak_via_python_full  # noqa: PLC0415
+        from dectalk.ph import parstochip_to_frames as ptf_mod  # noqa: PLC0415
+
+        pump_inputs: list[list[int]] = []
+        real_pump = pump_frames_mod.pump_frames_via_vtm1
+
+        def _pump_spy(
+            frames: list[list[int]],
+            preset: object = None,
+            **kwargs: object,
+        ) -> np.ndarray:
+            pump_inputs.extend(list(f) for f in frames)
+            return real_pump(frames, preset, **kwargs)  # type: ignore[arg-type]
+
+        hook_pairs: list[tuple[list[int], list[int]]] = []
+        real_hook = ptf_mod.parstochip_to_llframe_delayed
+
+        def _hook_spy(
+            parstochip: list[int],
+            previous_parstochip: list[int] | None,
+            *args: object,
+            **kwargs: object,
+        ) -> object:
+            # The driver never emits before the first frame seeded the
+            # delay buffer, so the hook must keep seeing a real pair.
+            assert previous_parstochip is not None
+            hook_pairs.append((list(parstochip), list(previous_parstochip)))
+            return real_hook(parstochip, previous_parstochip, *args, **kwargs)  # type: ignore[arg-type]
+
+        # Both call sites import lazily at call time, so patching the
+        # module attributes intercepts the dispatch.
+        monkeypatch.setattr(pump_frames_mod, "pump_frames_via_vtm1", _pump_spy)
+        monkeypatch.setattr(ptf_mod, "parstochip_to_llframe_delayed", _hook_spy)
+
+        _speak_via_python_full("hi", 1.0, None, "us", True)
+
+        assert pump_inputs, "vtm1 pump never invoked"
+        assert len(pump_inputs) == len(hook_pairs)
+        expected = [ptf_mod.send_pars_delaypars(cur, prev) for cur, prev in hook_pairs]
+        assert pump_inputs == expected
+
     def test_escape_hatch_zero_selects_legacy_hlsyn(
         self,
         monkeypatch: pytest.MonkeyPatch,

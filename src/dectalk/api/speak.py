@@ -460,11 +460,13 @@ def _speak_via_python_full(
          ``phdraw`` and emitting one :class:`~dectalk.hlsyn.llsyn.LLFrame`
          per 6.4 ms tick.
       7. :func:`~dectalk.vtm.pump_frames.pump_frames_via_vtm1` pumps
-         the per-frame parstochip arrays to int16 PCM through the
-         ``vtm1.c``-ported ``speech_waveform_generator`` (the default
-         render path, issue #272). Under the ``DECTALK_USE_VTM1=0``
-         escape hatch, :func:`ll_synthesize` renders the LLFrames via
-         the legacy hlsyn path instead.
+         the per-frame post-``send_pars`` ``delaypars`` packets (built
+         by :func:`~dectalk.ph.parstochip_to_frames.send_pars_delaypars`,
+         issue #275) to int16 PCM through the ``vtm1.c``-ported
+         ``speech_waveform_generator`` (the default render path,
+         issue #272). Under the ``DECTALK_USE_VTM1=0`` escape hatch,
+         :func:`ll_synthesize` renders the LLFrames via the legacy
+         hlsyn path instead.
 
     Args:
         text: Speech input string. May contain ``[:cmd value]``
@@ -832,44 +834,54 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     from dectalk.ph.param_indices import OUT_DU, OUT_PH, OUT_PH2  # noqa: PLC0415
     from dectalk.ph.parstochip_to_frames import (  # noqa: PLC0415
         parstochip_to_llframe_delayed,
+        send_pars_delaypars,
     )
     from dectalk.ph.phdraw import phdraw  # noqa: PLC0415
     from dectalk.ph.phinton import phinton  # noqa: PLC0415
     from dectalk.ph.pht0draw import pht0draw  # noqa: PLC0415
 
     frames: list[object] = []
-    # Also accumulate raw parstochip snapshots so the default vtm1
-    # synth path (issues #158 / #272) can pump them through
-    # ``speech_waveform_generator`` without re-running the PH stage.
+    # Also accumulate the post-``send_pars`` ``delaypars[]`` packets so
+    # the default vtm1 synth path (issues #158 / #272 / #275) can pump
+    # them through ``speech_waveform_generator`` without re-running the
+    # PH stage. Each packet mixes two driver frames exactly as
+    # ``ph_claus.c::send_pars`` (lines 694-846) does before its
+    # ``spcwrite``: formant-side slots one frame delayed, AV/T0 current,
+    # TLT current via the ``lineartilt[]`` LUT — see
+    # :func:`~dectalk.ph.parstochip_to_frames.send_pars_delaypars`.
     # The LLFrame list above is only *rendered* under the
     # ``DECTALK_USE_VTM1=0`` escape hatch, but it is populated
     # unconditionally: the per-frame ``parstochip_to_llframe_delayed``
     # call doubles as the capture point for the F0 / frame-metadata
     # diagnostics (``tests/parity/test_per_frame_f0.py``,
-    # ``scripts/verify_out_t0_parity.py``) which monkey-patch it.
-    parstochip_frames: list[list[int]] = []
+    # ``scripts/verify_out_t0_parity.py``) which monkey-patch it —
+    # those hooks keep seeing the *raw* current/previous parstochip
+    # pair (issue #279 precondition), never the mixed packet.
+    delaypars_frames: list[list[int]] = []
     # Cap each clause's frame loop to keep buggy state from running
     # away during the multi-month port. 8000 frames is ~51 s of audio
     # -- well past any reasonable clause.
     max_frames = 8000
     # One-frame-delay buffer mirroring ph_claus.c's ``delaypars[]``
-    # (lines 706-820). Holds the previous frame's parstochip so the
+    # (lines 706-846). Holds the previous frame's parstochip so the
     # F1/B1/F2/B2/F3/B3/FZ/A2..A6/AB/AP slots of the *emitted*
-    # LLFrame come from one frame ago, while AV / TL / T0 come from
-    # the current frame. The delay buffer lives in ``send_pars``'s
-    # per-handle static state, so it spans clause boundaries: only the
-    # very FIRST frame of the whole utterance is the fill frame.
+    # packet / LLFrame come from one frame ago, while AV / TLT / T0
+    # come from the current frame. The delay buffer lives in
+    # ``send_pars``'s per-handle static state, so it spans clause
+    # boundaries: only the very FIRST frame of the whole utterance is
+    # the fill frame.
+    #
+    # ``None`` doubles as the utterance-first-iteration marker:
+    # ``ph_claus.c::send_pars`` implements the one-frame delay by
+    # allocating ``delaypars[]`` on its first call and ONLY seeding
+    # it — it does NOT spcwrite that first frame. The synthesizer
+    # only receives the delayed buffer on the SECOND call onwards.
+    # The Python loop therefore also discards the first iteration's
+    # frame: it represents the synth-side delay-buffer fill, not an
+    # emitted PCM frame (issue #157 leading-frame bleed -- removes 1
+    # frame of leading silence per utterance; #266 leading-silence
+    # accounting).
     previous_parstochip: list[int] | None = None
-    # ``ph_claus.c::send_pars`` (lines 706-781) implements the one-
-    # frame delay by allocating ``delaypars[]`` on its first call and
-    # ONLY initialising it (TLT=T0=AV=0) — it does NOT spcwrite that
-    # first frame. The synthesizer only receives the delayed buffer
-    # on the SECOND call onwards. The Python loop therefore must
-    # also discard the first iteration's frame: it represents the
-    # synth-side delay-buffer fill, not an emitted PCM frame
-    # (issue #157 leading-frame bleed -- removes 1 LLSynth-frame of
-    # leading silence per prompt, ~110 samples at 11025 Hz).
-    first_frame_consumed = False
 
     # 4b..6. Per-clause chain -- one ``phclause()`` equivalent per
     # delimiter-closed symbol run (C: ``speak_now`` -> ``phclause``):
@@ -973,33 +985,36 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
                 phsettar(handle)
             pht0draw(handle)
             phdraw(handle)
-            if first_frame_consumed:
+            if previous_parstochip is not None:
                 frames.append(
                     parstochip_to_llframe_delayed(
                         p_dph_t.parstochip, previous_parstochip, _us_paul_spd
                     )
                 )
-                parstochip_frames.append(list(p_dph_t.parstochip))
-            else:
-                # First iteration of the utterance: matches C's
-                # send_pars initpardelay==0 branch, which only seeds
-                # delaypars and skips the spcwrite. The synthesizer
-                # never sees this frame.
-                first_frame_consumed = True
+                delaypars_frames.append(
+                    send_pars_delaypars(p_dph_t.parstochip, previous_parstochip)
+                )
+            # else: first iteration of the utterance — matches C's
+            # send_pars initpardelay==0 branch, which only seeds
+            # delaypars and skips the spcwrite. The synthesizer never
+            # sees this frame directly; its formant side re-surfaces
+            # as the delayed half of the first emitted packet.
             previous_parstochip = list(p_dph_t.parstochip)
 
     # 7. Pump the collected Klatt frames through the synthesizer for
-    # int16 PCM output. By default the raw parstochip frames are pumped
-    # through ``speech_waveform_generator`` (vtm1.c) -- the same
-    # synthesiser the shipped ``libtts_us.so`` uses (issue #158) and
-    # the byte-exact-capable parity path (issue #272). Setting
-    # ``DECTALK_USE_VTM1=0`` selects the legacy hlsyn SenSyn 2.2
-    # cascade-parallel synth instead (diagnostic escape hatch only --
-    # it over-runs the C reference uniformly; see :func:`_use_vtm1`).
+    # int16 PCM output. By default the post-send_pars ``delaypars``
+    # packets are pumped through ``speech_waveform_generator`` (vtm1.c)
+    # -- the same synthesiser the shipped ``libtts_us.so`` uses (issue
+    # #158) consuming the same packet stream the C driver's spcwrite
+    # ships (issue #275) -- the byte-exact-capable parity path (issue
+    # #272). Setting ``DECTALK_USE_VTM1=0`` selects the legacy hlsyn
+    # SenSyn 2.2 cascade-parallel synth instead (diagnostic escape
+    # hatch only -- it over-runs the C reference uniformly; see
+    # :func:`_use_vtm1`).
     if _use_vtm1():
         from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
 
-        return pump_frames_via_vtm1(list(parstochip_frames), voice_preset)
+        return pump_frames_via_vtm1(list(delaypars_frames), voice_preset)
     return _pump_frames_to_samples(frames, voice_preset, p_ksd_t.vol_att)
 
 

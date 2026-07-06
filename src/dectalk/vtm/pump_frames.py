@@ -7,22 +7,28 @@ with the :mod:`dectalk.hlsyn`-based path used by
 :func:`dectalk.api.speak._pump_frames_to_samples` retained as the
 ``DECTALK_USE_VTM1=0`` legacy escape hatch.
 
-The two paths share the same PH-stage input (a sequence of
-``parstochip[]`` arrays, one per 6.4 ms frame) but render audio
-through different synthesizers:
+The two paths share the same PH-stage origin (per-6.4 ms-frame
+``parstochip[]`` arrays) but render audio through different
+synthesizers:
 
-* **vtm1 path** (this module, the default -- issue #272): feeds the
-  parstochip directly into ``SynthState.parambuff`` and drives the
-  integer Klatt synthesiser ported from
-  ``vtm1.c::speech_waveform_generator``. This is the synthesizer
-  the shipped ``libtts_us.so`` actually uses (the active build
-  defines ``VTM1`` in ``dectalkf_klsyn.h``).
+* **vtm1 path** (this module, the default -- issue #272): consumes
+  the post-``send_pars`` ``delaypars[]`` packet stream the driver
+  loop builds via
+  :func:`~dectalk.ph.parstochip_to_frames.send_pars_delaypars`
+  (issue #275: formant-side slots one frame delayed, ``OUT_TLT``
+  through the ``lineartilt[]`` LUT, ``OUT_AV``/``OUT_T0`` current
+  — exactly what the C driver's ``spcwrite`` ships and what patch
+  0006's ``vtm_frames.dump`` records), copies each packet into
+  ``SynthState.parambuff`` and drives the integer Klatt
+  synthesiser ported from ``vtm1.c::speech_waveform_generator``.
+  This is the synthesizer the shipped ``libtts_us.so`` actually
+  uses (the active build defines ``VTM1`` in ``dectalkf_klsyn.h``).
 * **hlsyn path** (legacy, selected via ``DECTALK_USE_VTM1=0``):
-  converts each parstochip to an
+  converts each raw parstochip to an
   :class:`~dectalk.hlsyn.llsyn.LLFrame` via
-  :func:`~dectalk.ph.parstochip_to_frames.parstochip_to_llframe_delayed`,
-  then drives the SenSyn 2.2 cascade-parallel synthesiser
-  (``hlsyn/``).
+  :func:`~dectalk.ph.parstochip_to_frames.parstochip_to_llframe_delayed`
+  (which applies the same send_pars delay + LUT internally), then
+  drives the SenSyn 2.2 cascade-parallel synthesiser (``hlsyn/``).
 
 The vtm1 path is the byte-exact-capable parity route -- on ``hello
 world`` it is sample-count-exact vs the C binary (13845), F0 is
@@ -103,19 +109,28 @@ def pump_frames_via_vtm1(
     *,
     sample_rate: int = PC_SAMPLE_RATE,
 ) -> NDArray[np.int16]:
-    """Synthesize a sequence of parstochip frames through ``speech_waveform_generator``.
+    """Synthesize a sequence of voice packets through ``speech_waveform_generator``.
 
     Alternative to
-    :func:`dectalk.api.speak._pump_frames_to_samples`. Takes the
-    same per-frame parstochip arrays that the hlsyn path consumes,
-    but feeds them through the integer Klatt synthesiser from
-    ``vtm1.c`` instead.
+    :func:`dectalk.api.speak._pump_frames_to_samples`. Feeds each
+    packet through the integer Klatt synthesiser from ``vtm1.c``.
+
+    This function is the Python mirror of the C VTM's packet consumer
+    (``vtmiont.c`` ``case SPC_type_voice``): it copies each packet
+    into ``parambuff`` verbatim and runs one synthesis frame. It does
+    NOT apply the ``send_pars`` transformation itself — the driver
+    loop does that (issue #275) — so its input must already be at
+    the post-``send_pars`` ``delaypars`` level (the level of the C
+    oracle's ``vtm_frames.dump``; feeding that dump through here is
+    the #263/#266 byte-parity experiment).
 
     Args:
-        frames: Sequence of ``list[int]`` parstochip arrays (one per
-            6.4 ms frame), as produced by the PH-stage driver loop in
-            :func:`dectalk.api.speak._speak_via_python_full`. Each
-            inner list is expected to have length at least
+        frames: Sequence of ``list[int]`` voice packets in parstochip
+            layout (one per 6.4 ms frame), as produced by the PH-stage
+            driver loop in
+            :func:`dectalk.api.speak._speak_via_python_full` via
+            :func:`~dectalk.ph.parstochip_to_frames.send_pars_delaypars`.
+            Each inner list is expected to have length at least
             ``OUT_TLT + 1`` (i.e. all the OUT_* slots vtm1 reads).
         preset: Voice preset, or ``None`` for Paul. Drives the
             speaker-definition lookup.
@@ -138,10 +153,11 @@ def pump_frames_via_vtm1(
     out = np.zeros(len(frames) * samples_per_frame, dtype=np.int16)
 
     for fi, parstochip in enumerate(frames):
-        # The frames must be raw parstochip ``list[int]`` arrays --
-        # the call site in :func:`dectalk.api.speak._speak_via_python_full`
-        # accumulates them alongside the LLFrame list so the
-        # ``DECTALK_USE_VTM1`` branch can route through here.
+        # The frames are post-send_pars ``delaypars`` packets in
+        # parstochip layout -- the call site in
+        # :func:`dectalk.api.speak._render_clause_full` accumulates
+        # them alongside the LLFrame list so the ``DECTALK_USE_VTM1``
+        # branch can route through here.
 
         # Copy the OUT_* parameter cells into parambuff[1..]. The C
         # source uses ``variabpars = &parambuff[1]; variabpars[OUT_*]
