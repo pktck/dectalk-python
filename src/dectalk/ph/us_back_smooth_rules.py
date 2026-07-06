@@ -1,6 +1,8 @@
-"""``us_back_smooth_rules`` -- backward-smoothing helper from p_us_st1.c.
+"""``us_back_smooth_rules`` -- backward-smoothing helper from p_us_st0.c.
 
-Translated from ``src/dapi/src/ph/p_us_st1.c`` line 888 (~380 lines).
+Translated from ``src/dapi/src/ph/p_us_st0.c`` line 830 (~380 lines) --
+the variant the active ``ENGLISH_US + OLD_SETTAR`` build compiles
+(issue #269; an earlier port followed the p_us_st1.c rewrite).
 
 Symmetric counterpart to :func:`us_forw_smooth_rules`. Called once
 per parameter from :func:`phsettar`'s main loop after the per-parameter
