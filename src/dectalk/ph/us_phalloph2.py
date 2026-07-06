@@ -651,7 +651,9 @@ def phalloph2_from_symbols(phTTS: TtsHandle, symbols: list[int], nsymbtot: int) 
     mirroring the C ``speak_now`` -> ``phclause`` per-delimiter cycle).
 
     The caller must have run
-    :func:`dectalk.ph.init_phclause.init_phclause` for this clause.
+    :func:`dectalk.ph.init_phclause.init_phclause` beforehand — once
+    per utterance suffices, matching C's ``kltask`` which zeroes the
+    scratch arrays at task entry (ph_task.c line 422), not per clause.
     """
     from dectalk.ph.dph_t import DphT  # noqa: PLC0415
 
