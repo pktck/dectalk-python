@@ -201,12 +201,16 @@ def _summarize(label: str, series: list[float]) -> str:
 # ``f0basefall = BF * 10`` baseline-declination seed in ph_vset.c) the
 # Python contour is frame-identical to the oracle on these prompts
 # (mean |Δ| == 0.0 Hz across every voiced frame). They are pinned as a
-# hard parity assertion. ``the quick brown fox`` still diverges, but
-# *not* on the F0 contour: its first ~145 frames match exactly, then a
-# frame-count drift (Python 258 vs C 279 voiced frames) from an
-# un-ported timing detail shifts the alignment. That divergence is a
-# duration/timing issue, not an F0-dynamics one, so it stays xfail.
-_FRAME_EXACT_PROMPTS: frozenset[str] = frozenset({"hello world", "testing one two three"})
+# hard parity assertion. ``the quick brown fox`` joined the exact set
+# with the #270 timing fixes: the 258-vs-279 voiced-frame drift was the
+# lexicon's sole-secondary stress on quick/brown (C's dictionary
+# surfaces them as primary), which shortened every phone of both
+# stressed syllables in ``us_phtiming``. With the stress class aligned
+# the Python contour is frame-identical (279 voiced frames, max |Δ|
+# 0.0 Hz).
+_FRAME_EXACT_PROMPTS: frozenset[str] = frozenset(
+    {"hello world", "testing one two three", "the quick brown fox"}
+)
 
 
 @pytest.mark.parametrize("prompt", _PROMPTS, ids=lambda p: p.replace(" ", "_"))
