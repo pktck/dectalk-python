@@ -33,7 +33,7 @@ from __future__ import annotations
 
 from typing import cast
 
-# ruff: noqa: SIM102, PLR2004 -- C-literal magic numbers and nested ifs kept
+# ruff: noqa: SIM102 -- C-literal magic numbers and nested ifs kept
 from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.usp_codes import (
     USP_AE,
@@ -60,7 +60,11 @@ from dectalk.ph.rom_tables import us_place
 from dectalk.ph.timing import phone_feature
 
 
-def us_special_coartic(p_dph_t: DphT, nfon: int, diphpos: int) -> int:
+def us_special_coartic(  # noqa: PLR0912 -- branchy by design, mirrors the C body
+    p_dph_t: DphT,
+    nfon: int,
+    diphpos: int,
+) -> int:
     """Compute the coarticulation delta for one diphthong segment.
 
     Faithful translation of the C static helper. The caller adds the

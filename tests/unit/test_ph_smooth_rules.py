@@ -30,7 +30,7 @@ from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.us_back_smooth_rules import us_back_smooth_rules
 from dectalk.ph.us_forw_smooth_rules import us_forw_smooth_rules
 from dectalk.ph.us_special_rules import us_special_rules
-from dectalk.ph.utterance_constants import GEN_SIL, NASAL_ZERO_BOUNDARY
+from dectalk.ph.utterance_constants import GEN_SIL
 
 
 def _make_handle(np_idx: int, phcur: int, phonex: int = GEN_SIL) -> TtsHandle:
@@ -64,7 +64,11 @@ def _make_handle(np_idx: int, phcur: int, phonex: int = GEN_SIL) -> TtsHandle:
 
 
 def test_forw_nasal_zero_writes_boundary_on_nasal_to_non_nasal() -> None:
-    """FZ branch: leaving a nasal sets bouval to NASAL_ZERO_BOUNDARY."""
+    """FZ branch: leaving a nasal sets bouval to 400.
+
+    p_us_st0.c line 602 (the active OLD_SETTAR variant) hardcodes 400;
+    the p_us_st1.c rewrite used NASAL_ZERO_BOUNDARY = 370 (issue #269).
+    """
     handle = _make_handle(np_idx=FZ, phcur=USP_AA)
     p_dph_t = cast(DphT, handle.p_ph_thread_data)
     p_dph_t.durfon = 40  # large enough that durfon-clamp doesn't fire
@@ -79,7 +83,7 @@ def test_forw_nasal_zero_writes_boundary_on_nasal_to_non_nasal() -> None:
         feanex=0,
     )
     settar = cast(DphSettarSt, p_dph_t.pSTphsettar)
-    assert settar.bouval == NASAL_ZERO_BOUNDARY
+    assert settar.bouval == 400
     assert settar.durtran == NF80MS
 
 

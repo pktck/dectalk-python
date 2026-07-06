@@ -37,6 +37,7 @@ smoothing framework:
 
 from __future__ import annotations
 
+# ruff: noqa: SIM102 -- nested ifs mirror the C source structure
 from typing import cast
 
 from dectalk.include.cmd_codes import PVALUE
