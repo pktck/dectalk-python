@@ -1,32 +1,37 @@
 # ruff: noqa: PLR2004  -- the 32767 / -32768 int16 limits are inherent.
-"""Alternative synth path: pump parstochip frames through ``vtm1.c``.
+"""Default synth path: pump parstochip frames through ``vtm1.c``.
 
 This module wires :func:`speech_waveform_generator` into the
-end-to-end audio pipeline as an alternative to the
-:mod:`dectalk.hlsyn`-based path used by
-:func:`dectalk.api.speak._pump_frames_to_samples`.
+end-to-end audio pipeline as the default render stage (issue #272),
+with the :mod:`dectalk.hlsyn`-based path used by
+:func:`dectalk.api.speak._pump_frames_to_samples` retained as the
+``DECTALK_USE_VTM1=0`` legacy escape hatch.
 
 The two paths share the same PH-stage input (a sequence of
 ``parstochip[]`` arrays, one per 6.4 ms frame) but render audio
 through different synthesizers:
 
-* **hlsyn path** (default): converts each parstochip to an
+* **vtm1 path** (this module, the default -- issue #272): feeds the
+  parstochip directly into ``SynthState.parambuff`` and drives the
+  integer Klatt synthesiser ported from
+  ``vtm1.c::speech_waveform_generator``. This is the synthesizer
+  the shipped ``libtts_us.so`` actually uses (the active build
+  defines ``VTM1`` in ``dectalkf_klsyn.h``).
+* **hlsyn path** (legacy, selected via ``DECTALK_USE_VTM1=0``):
+  converts each parstochip to an
   :class:`~dectalk.hlsyn.llsyn.LLFrame` via
   :func:`~dectalk.ph.parstochip_to_frames.parstochip_to_llframe_delayed`,
   then drives the SenSyn 2.2 cascade-parallel synthesiser
   (``hlsyn/``).
-* **vtm1 path** (this module, enabled via ``DECTALK_USE_VTM1=1``):
-  feeds the parstochip directly into ``SynthState.parambuff`` and
-  drives the integer Klatt synthesiser ported from
-  ``vtm1.c::speech_waveform_generator``. This is the synthesizer
-  the shipped ``libtts_us.so`` actually uses (the active build
-  defines ``VTM1`` in ``dectalkf_klsyn.h``).
 
-The vtm1 path is exposed primarily for parity testing -- comparing
-its PCM output against the C oracle is the path to closing
-Phase E (full byte-identical audio from pure Python). The default
-audio path continues to route through ``hlsyn`` because that's
-where the existing bit-accurate parity coverage lives.
+The vtm1 path is the byte-exact-capable parity route -- on ``hello
+world`` it is sample-count-exact vs the C binary (13845), F0 is
+frame-exact, and the leading 213 samples are byte-identical --
+so it is the Phase E workhorse (full byte-identical audio from
+pure Python). The legacy hlsyn render over-runs the C reference
+uniformly (~21450 vs 13845 samples on ``hello world``) and is
+retained only as a diagnostic escape hatch (see
+:func:`dectalk.api.speak._use_vtm1`).
 """
 
 from __future__ import annotations

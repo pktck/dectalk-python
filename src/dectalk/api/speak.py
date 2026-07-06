@@ -51,6 +51,29 @@ from dectalk.ph.sequencer import synthesize_phonemes
 # default import path stays cheap.
 _FULL_PIPELINE_ENV: str = "DECTALK_FULL_PIPELINE"
 
+# Escape-hatch env var for the full pipeline's render stage. Unset (or
+# any value other than "0") renders through the vtm1 path; "0" selects
+# the legacy hlsyn path. See :func:`_use_vtm1`.
+_USE_VTM1_ENV: str = "DECTALK_USE_VTM1"
+
+
+def _use_vtm1() -> bool:
+    """Whether the full pipeline renders through the vtm1 synthesiser.
+
+    Defaults to True (issue #272): ``DECTALK_FULL_PIPELINE=1`` implies
+    the ``vtm1.c``-ported ``speech_waveform_generator`` render path --
+    the synthesiser the shipped ``libtts_us.so`` actually uses, and the
+    byte-exact-capable parity path (``hello world`` renders 13845
+    samples == the C binary, F0 frame-exact, leading 213 samples
+    byte-identical). Set ``DECTALK_USE_VTM1=0`` to select the legacy
+    hlsyn (SenSyn 2.2 cascade-parallel) render path instead; that path
+    over-runs the C reference uniformly (``hello world``: 21450 vs C
+    13845) and is retained only as a diagnostic escape hatch -- it has
+    already caused one parity misdiagnosis (#254).
+    """
+    return os.environ.get(_USE_VTM1_ENV) != "0"
+
+
 # Nominal speaking rate that maps to ``rate=1.0`` in the public API.
 # DECtalk's TextToSpeechSetRate accepts words-per-minute in [75, 600];
 # 180 wpm is the binary's default (per
@@ -436,7 +459,12 @@ def _speak_via_python_full(
       6. Per-frame driver loop walking ``phsettar`` / ``pht0draw`` /
          ``phdraw`` and emitting one :class:`~dectalk.hlsyn.llsyn.LLFrame`
          per 6.4 ms tick.
-      7. :func:`ll_synthesize` pumps frames to int16 PCM.
+      7. :func:`~dectalk.vtm.pump_frames.pump_frames_via_vtm1` pumps
+         the per-frame parstochip arrays to int16 PCM through the
+         ``vtm1.c``-ported ``speech_waveform_generator`` (the default
+         render path, issue #272). Under the ``DECTALK_USE_VTM1=0``
+         escape hatch, :func:`ll_synthesize` renders the LLFrames via
+         the legacy hlsyn path instead.
 
     Args:
         text: Speech input string. May contain ``[:cmd value]``
@@ -861,11 +889,15 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     p_dph_t.nphone = -1
     p_dph_t.durfon = 0
     frames: list[object] = []
-    # Also accumulate raw parstochip snapshots so the alternative vtm1
-    # synth path (issue #158) can pump them through
+    # Also accumulate raw parstochip snapshots so the default vtm1
+    # synth path (issues #158 / #272) can pump them through
     # ``speech_waveform_generator`` without re-running the PH stage.
-    # Only used when ``DECTALK_USE_VTM1=1`` is set; the conversion
-    # itself is cheap (list copy), so we always populate.
+    # The LLFrame list above is only *rendered* under the
+    # ``DECTALK_USE_VTM1=0`` escape hatch, but it is populated
+    # unconditionally: the per-frame ``parstochip_to_llframe_delayed``
+    # call doubles as the capture point for the F0 / frame-metadata
+    # diagnostics (``tests/parity/test_per_frame_f0.py``,
+    # ``scripts/verify_out_t0_parity.py``) which monkey-patch it.
     parstochip_frames: list[list[int]] = []
     # Cap the loop to keep buggy state from running away during the
     # multi-month port. 8000 frames is ~51 s of audio -- well past
@@ -933,13 +965,14 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
         previous_parstochip = list(p_dph_t.parstochip)
 
     # 7. Pump the collected Klatt frames through the synthesizer for
-    # int16 PCM output. By default this routes through the hlsyn
-    # SenSyn 2.2 cascade-parallel synth (the existing
-    # bit-accurate path). When ``DECTALK_USE_VTM1=1`` is set, frames
-    # are pumped through the alternative ``speech_waveform_generator``
-    # (vtm1.c) path -- the same synthesiser the shipped
-    # ``libtts_us.so`` uses (issue #158).
-    if os.environ.get("DECTALK_USE_VTM1") == "1":
+    # int16 PCM output. By default the raw parstochip frames are pumped
+    # through ``speech_waveform_generator`` (vtm1.c) -- the same
+    # synthesiser the shipped ``libtts_us.so`` uses (issue #158) and
+    # the byte-exact-capable parity path (issue #272). Setting
+    # ``DECTALK_USE_VTM1=0`` selects the legacy hlsyn SenSyn 2.2
+    # cascade-parallel synth instead (diagnostic escape hatch only --
+    # it over-runs the C reference uniformly; see :func:`_use_vtm1`).
+    if _use_vtm1():
         from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
 
         return pump_frames_via_vtm1(list(parstochip_frames), voice_preset)
