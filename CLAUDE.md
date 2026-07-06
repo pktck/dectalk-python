@@ -7,8 +7,36 @@ repository. Read this at the start of every session.
 - `docs/PLAN.md` — strategic plan for the C→Python port (phases A-F).
 - `docs/PLAN-CI-STRATEGY.md` — workflow infrastructure rationale.
 - `docs/PORTING.md` — per-task playbook for translator agents.
+- `docs/PARITY-METHOD.md` — Phase E byte-parity diagnosis playbook
+  (capture rules, wrong-variant checklist, verification gates,
+  misdiagnosis case studies). **Read before any parity work.**
 - `docs/TASKS.md` — current open port targets (auto-generated from
   `NotImplementedError` shims).
+
+## Autonomy protocol (anti-stall)
+
+Sessions on this repo have historically stalled — ending the turn
+after finishing a single task instead of continuing autonomously.
+The protocol:
+
+1. **End-of-turn checklist.** Before ending any turn, at least one of
+   these must hold: (a) a PR green-poll or webhook subscription is in
+   flight, (b) a background agent is running, (c) you are genuinely
+   blocked on the user (send an ntfy first). If none hold and
+   unclaimed `area/parity` issues exist, dispatch the next one
+   instead of stopping.
+2. **The sweep.** On every wake (webhook, poll completion, heartbeat):
+   merge green PRs per `docs/PARITY-METHOD.md` §6 → check agents,
+   salvage/re-dispatch dead ones → refill the dispatch pipeline →
+   only then consider stopping.
+3. **Heartbeat trigger.** A scheduled trigger
+   (`orchestrator-heartbeat-parity-sweep`, every 2 h) fires the sweep
+   prompt into the orchestrator session as a dead-man's switch, so a
+   stalled session self-recovers within 2 h. Manage it with
+   `list_triggers` / `update_trigger` (set `enabled:false` to pause).
+4. **Status recaps are a stop-tell.** If you're drafting a summary
+   and nothing is in flight, that is the signal to dispatch the next
+   issue, not to stop.
 
 ## Orchestrator role (top-level session)
 
@@ -72,9 +100,10 @@ Examples:
 - `Authored-by: Claude:claude-opus-4-7 ruff pyright`
 - `Authored-by: Codex:gpt-5.4`
 
-**For Claude in this session.** `MODEL_VERSION` is `claude-opus-4-7`
-(no `[1m]` suffix — that's a harness detail kept to chat-only
-contexts).
+**For Claude.** `MODEL_VERSION` is the model actually running the
+session (e.g. `claude-fable-5`, `claude-opus-4-8`), without any
+`[1m]`-style harness suffix — those are chat-only details. Do not
+copy a stale value from older artifacts; state the model you are.
 
 **Tools listed.** Significant non-basic tools whose output materially
 influenced the artifact: ruff, ruff-format, pyright, pytest,
