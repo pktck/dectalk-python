@@ -5,6 +5,11 @@ from __future__ import annotations
 from dectalk.hlsyn.llsyn import LLFrame
 from dectalk.ph.param_indices import (
     OUT_A2,
+    OUT_A3,
+    OUT_A4,
+    OUT_A5,
+    OUT_A6,
+    OUT_AB,
     OUT_ABLADE,
     OUT_AG,
     OUT_AL,
@@ -13,23 +18,30 @@ from dectalk.ph.param_indices import (
     OUT_ATB,
     OUT_AV,
     OUT_B1,
+    OUT_B2,
+    OUT_B3,
     OUT_CNK,
     OUT_DC,
+    OUT_DU,
     OUT_F1,
     OUT_F2,
     OUT_F3,
     OUT_FZ,
+    OUT_PH,
+    OUT_PH2,
     OUT_PLACE,
     OUT_PS,
     OUT_T0,
     OUT_TLT,
     OUT_UE,
 )
+from dectalk.ph.parameter_tables import lineartilt
 from dectalk.ph.parstochip_to_frames import (
     _build_hl_frame_from_parstochip,
     parstochip_to_llframe,
     parstochip_to_llframe_delayed,
     parstochip_to_llframe_via_hl,
+    send_pars_delaypars,
 )
 from dectalk.ph.spdef_chip import SpdChip
 from dectalk.vtm.spd_chip import default_us_paul_spd
@@ -160,6 +172,99 @@ def test_delayed_applies_lineartilt_to_current_tlt() -> None:
     frame = parstochip_to_llframe_delayed(cur, _empty_parstochip())
     # lineartilt[5] == 17 (ph_romi.c lines 96-103).
     assert frame.TL == 17
+
+
+# -- send_pars_delaypars: the vtm1-path packet builder (issue #275) ---------
+#
+# Mirrors ph_claus.c::send_pars lines 694-846 (active build): the emitted
+# SPC voice packet takes OUT_AV / OUT_T0 from the current parstochip,
+# OUT_TLT = lineartilt[current OUT_TLT], and every other slot from the
+# previous frame's parstochip (the one-frame formant-side delay).
+
+# Every packet slot send_pars fills from the *previous* frame in the
+# active (non-NEW_VTM) build: ph_claus.c lines 786-846.
+_DELAYED_SLOTS = (
+    OUT_AP,
+    OUT_F1,
+    OUT_A2,
+    OUT_A3,
+    OUT_A4,
+    OUT_A5,
+    OUT_A6,
+    OUT_AB,
+    OUT_F2,
+    OUT_F3,
+    OUT_FZ,
+    OUT_B1,
+    OUT_B2,
+    OUT_B3,
+    OUT_PH,
+    OUT_DU,
+    OUT_PH2,
+)
+
+
+def _numbered_parstochip(base: int) -> list[int]:
+    """Parstochip whose cell ``i`` holds ``base + i`` (all cells distinct)."""
+    return [base + i for i in range(64)]
+
+
+def test_send_pars_delaypars_delayed_slots_from_previous() -> None:
+    """AP/F1/A2-A6/AB/F2/F3/FZ/B1-B3 and PH/DU/PH2 come from the previous frame."""
+    prev = _numbered_parstochip(1000)
+    cur = _numbered_parstochip(2000)
+    cur[OUT_TLT] = 5  # keep the LUT index in range.
+    packet = send_pars_delaypars(cur, prev)
+    for slot in _DELAYED_SLOTS:
+        assert packet[slot] == prev[slot], f"slot {slot} not delayed"
+
+
+def test_send_pars_delaypars_av_t0_from_current() -> None:
+    """OUT_AV and OUT_T0 are the current frame's values (ph_claus.c 724/744)."""
+    prev = _empty_parstochip()
+    prev[OUT_AV] = 99  # must NOT appear.
+    prev[OUT_T0] = 777  # must NOT appear.
+    cur = _empty_parstochip()
+    cur[OUT_AV] = 60
+    cur[OUT_T0] = 328
+    packet = send_pars_delaypars(cur, prev)
+    assert packet[OUT_AV] == 60
+    assert packet[OUT_T0] == 328
+
+
+def test_send_pars_delaypars_applies_lineartilt_to_current_tlt() -> None:
+    """OUT_TLT is the current frame's raw tilt through lineartilt[] (line 735)."""
+    prev = _empty_parstochip()
+    prev[OUT_TLT] = 31  # must NOT appear (not even LUT-mapped).
+    cur = _empty_parstochip()
+    cur[OUT_TLT] = 8
+    packet = send_pars_delaypars(cur, prev)
+    # lineartilt[8] == 23 (ph_romi.c lines 96-103).
+    assert packet[OUT_TLT] == 23
+
+
+def test_send_pars_delaypars_tilt_index_clamped() -> None:
+    """Out-of-domain raw tilt clamps to the LUT bounds instead of raising."""
+    cur_low = _empty_parstochip()
+    cur_low[OUT_TLT] = -3
+    assert send_pars_delaypars(cur_low, _empty_parstochip())[OUT_TLT] == lineartilt[0]
+    cur_high = _empty_parstochip()
+    cur_high[OUT_TLT] = 99
+    assert send_pars_delaypars(cur_high, _empty_parstochip())[OUT_TLT] == lineartilt[-1]
+
+
+def test_send_pars_delaypars_preserves_width_and_inputs() -> None:
+    """The packet is a NEW list of the previous frame's width; inputs unmutated."""
+    prev = _numbered_parstochip(100)
+    cur = _numbered_parstochip(500)
+    cur[OUT_TLT] = 0
+    prev_copy = list(prev)
+    cur_copy = list(cur)
+    packet = send_pars_delaypars(cur, prev)
+    assert len(packet) == len(prev)
+    assert packet is not prev
+    assert prev == prev_copy
+    assert cur == cur_copy
 
 
 # -- _build_hl_frame_from_parstochip unit conversions ----------------------
