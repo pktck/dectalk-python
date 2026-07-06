@@ -1,6 +1,8 @@
-"""``us_forw_smooth_rules`` -- forward-smoothing helper from p_us_st1.c.
+"""``us_forw_smooth_rules`` -- forward-smoothing helper from p_us_st0.c.
 
-Translated from ``src/dapi/src/ph/p_us_st1.c`` line 493 (~370 lines).
+Translated from ``src/dapi/src/ph/p_us_st0.c`` line 440 (~370 lines) --
+the variant the active ``ENGLISH_US + OLD_SETTAR`` build compiles
+(issue #269; an earlier port followed the p_us_st1.c rewrite).
 
 Called once per parameter from :func:`phsettar`'s main loop after
 the per-parameter target lookup. Decides ``bouval`` (boundary value
