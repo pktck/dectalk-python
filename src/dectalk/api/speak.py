@@ -779,52 +779,39 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     p_ksd_t.lang_curr = LANG_english
     handle.p_kernel_share_data = p_ksd_t
 
-    # 4. Per-clause init -- MUST run before the phalloph2 chain
-    # because :func:`init_phclause` zeroes / sizes the per-clause
-    # arrays (``allophons`` / ``allofeats`` / ``allodurs`` / ``f0tar``
-    # / ``f0tim``). The phalloph2 chain then writes through those
-    # arrays as it walks the symbol stream.
-    init_phclause(p_dph_t)
+    # 4. Split the stream into clauses. The C engine's ``ph_task.c``
+    # ``kltask`` loop hands symbols to ``phclause`` once per clause
+    # delimiter (``isdelim`` = COMMA..EXCLAIM) — NOT once per
+    # utterance — and resets the buffer to a fresh leading GEN_SIL
+    # after each. Every ``phclause`` pass therefore sees a
+    # clause-local ``nallotot``, which drives ``us_phtiming``'s
+    # short-phrase rules (Rule 2's ``nallotot < 10`` vowel bonus,
+    # Rule 17's ``prcnt += 30``) and the rhythm-pass segmentation.
+    # Rendering a multi-clause utterance through one merged clause
+    # walk left every content phone in comma-separated prompts
+    # systematically short (the ``multi_clause`` |Δ|med=1633 bucket of
+    # the 500-prompt FULL+VTM1 sample, issue #270). The per-frame
+    # driver below runs once per clause, appending to the same frame
+    # stream — exactly as C's per-clause ``phclause`` frame loops feed
+    # the single VTM stream.
+    from dectalk.ph.us_phalloph2 import (  # noqa: PLC0415
+        phalloph2_from_symbols,
+        split_dectalk_stream_clauses,
+    )
 
-    # 4a. Run the byte-exact ``phsort + us_phalloph`` chain. Decodes the
-    # DECtalk ASCII stream from step 1 into the packed ``symbols[]`` array
-    # and runs:
-    #
-    #   - ``all_phsort`` (``ph_sort.c`` lines 428-1712) -- walks the
-    #     symbol stream emitting ``phonemes[]`` / ``sentstruc[]`` with the
-    #     full per-phone feature word.
-    #   - ``us_phalloph`` (``ph_aloph1.c`` lines 444-1546) -- applies the
-    #     US-English allophonic-substitution rules and writes through to
-    #     ``allophons[]`` / ``allofeats[]`` (setting ``nallotot``),
-    #     including the leading-silence prefix and trailing-PERIOD silence
-    #     pad (``ph_task.c`` lines 437-439).
-    #
-    # Because ``raw_phonemes`` already carries the C kernel's punctuation /
-    # phrase / boundary markers (``COMMA`` / ``PERIOD`` / ``QUEST`` /
-    # ``EXCLAIM`` / ``VPSTART`` / ``MBOUND`` / …), ``all_phsort`` emits the
-    # internal + trailing ``GEN_SIL`` phones and sets the ``FSENTENDS`` /
-    # clause-boundary features itself — exactly as it does for the C
-    # kernel's own ``symbols[]`` stream. The hand-rolled boundary-feature
-    # fix-ups this function used to need (the former issue #72 / #218
-    # ``nallotot-2`` and internal-``GEN_SIL`` passes) are therefore gone:
-    # the markers do it natively. A clause-final ``!`` arrives as an
-    # ``EXCLAIM`` marker, still driving ``all_phsort``'s
-    # ``raise_last_stress`` hook (issue #212); a yes/no ``?`` arrives as a
-    # ``QUEST`` marker, still setting the question clausetype ``phinton``
-    # reads for rising intonation. Both are encoded in the stream, so no
-    # separate sentence-type flag is needed.
-    from dectalk.ph.us_phalloph2 import phalloph2_from_dectalk  # noqa: PLC0415
+    clause_runs = split_dectalk_stream_clauses(raw_phonemes)
 
-    phalloph2_from_dectalk(handle, raw_phonemes)
-
-    # 4a-ter. Per-clause pause-length defaults from ``phclause()``
+    # 4a-bis. Per-clause pause-length defaults from ``phclause()``
     # lines 247-255 of ``ph_claus.c`` (English branch). These are
     # consulted by ``us_phtiming``'s Rule 1 when computing the
     # GEN_SIL ``dpause`` value (``nfperiod + perpause + asperation``
     # for sentence-end, ``nfcomma + compause + asperation`` for
     # comma-end). Without them the trailing SIL gets the default
     # 15-frame minimum and the Python output is ~360 ms shorter than
-    # the C reference (issue #72 trailing-silence pad gap).
+    # the C reference (issue #72 trailing-silence pad gap). C re-runs
+    # the assignment at every ``phclause`` entry with the same
+    # constants, so setting them once before the clause loop is
+    # equivalent.
     #
     # The English ``nfperiod`` value is gated by
     # ``#if defined(HLSYN) || defined(CHANGES_AFTER_V43)``:
@@ -835,26 +822,12 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     p_dph_t.nfperiod = 75
     p_dph_t.nfcomma = 16
 
-    init_timing(
-        p_dph_t,
-        settar,
-        sprate_ref=[wpm],
-        lang_curr=LANG_english,
-    )
+    # 4a-ter. Zero / size the per-clause scratch arrays ONCE per
+    # utterance -- C's ``kltask`` calls ``init_phclause`` at task
+    # entry (ph_task.c line 422), NOT per ``phclause``; the per-clause
+    # scratch beyond ``nallotot`` intentionally keeps stale data.
+    init_phclause(p_dph_t)
 
-    # 4b. Per-allophone duration rules (us_phtiming). Walks the clause
-    # applying the 26 named duration rules and writing per-phone frame
-    # durations into pDph_t.allodurs. Must run AFTER init_timing (which
-    # seeds sprat0/sprat1/sprat2) and BEFORE the per-frame loop below
-    # (which needs durfon = allodurs[nphone] for its target/transition
-    # math and frame-advance bookkeeping).
-    us_phtiming(handle)
-
-    # 5. phinton: F0 contour generation, ONCE per clause before the
-    # per-frame loop. Walks the allophone stream firing pitch events
-    # (hat-rise / stress impulses / comma+question gestures /
-    # continuation rises / baseline reset / dummy schwa). Writes
-    # f0tar / f0type / f0length / f0tim on DphT.
     from dectalk.ph.init_clause import init_clause  # noqa: PLC0415
     from dectalk.ph.param_indices import OUT_DU, OUT_PH, OUT_PH2  # noqa: PLC0415
     from dectalk.ph.parstochip_to_frames import (  # noqa: PLC0415
@@ -864,30 +837,6 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     from dectalk.ph.phinton import phinton  # noqa: PLC0415
     from dectalk.ph.pht0draw import pht0draw  # noqa: PLC0415
 
-    # init_clause sets nf0ev=-2 (hard init) so pht0draw's first call
-    # performs a full hard+soft initialisation — matching ph_claus.c.
-    init_clause(p_dph_t)
-
-    phinton(handle)
-
-    # 6. Per-frame driver loop -- mirrors ph_claus.c's phclause while-
-    # loop (lines 367-505). For each 6.4 ms frame:
-    #
-    #   * Increment tcum. If it has passed the current allophone's
-    #     duration, advance ``nphone`` (returning when allophones run
-    #     out), reset ``tcum``, set ``durfon`` from ``allodurs``, and
-    #     re-run phsettar for the new allophone.
-    #   * Call pht0draw to generate the F0 contour for this frame,
-    #     writing ``parstochip[OUT_T0]``.
-    #   * Call phdraw to update ``parstochip[]`` for this frame.
-    #   * Convert ``parstochip[]`` to an LLFrame and append.
-    #
-    # The first iteration enters the "advance" branch (tcum starts at
-    # -1, durfon at 0), so phsettar gets called for nphone=0 inside
-    # the loop -- matching the C init_pars() setup.
-    p_dph_t.tcum = -1
-    p_dph_t.nphone = -1
-    p_dph_t.durfon = 0
     frames: list[object] = []
     # Also accumulate raw parstochip snapshots so the default vtm1
     # synth path (issues #158 / #272) can pump them through
@@ -899,15 +848,17 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # diagnostics (``tests/parity/test_per_frame_f0.py``,
     # ``scripts/verify_out_t0_parity.py``) which monkey-patch it.
     parstochip_frames: list[list[int]] = []
-    # Cap the loop to keep buggy state from running away during the
-    # multi-month port. 8000 frames is ~51 s of audio -- well past
-    # any reasonable clause.
+    # Cap each clause's frame loop to keep buggy state from running
+    # away during the multi-month port. 8000 frames is ~51 s of audio
+    # -- well past any reasonable clause.
     max_frames = 8000
     # One-frame-delay buffer mirroring ph_claus.c's ``delaypars[]``
     # (lines 706-820). Holds the previous frame's parstochip so the
     # F1/B1/F2/B2/F3/B3/FZ/A2..A6/AB/AP slots of the *emitted*
     # LLFrame come from one frame ago, while AV / TL / T0 come from
-    # the current frame.
+    # the current frame. The delay buffer lives in ``send_pars``'s
+    # per-handle static state, so it spans clause boundaries: only the
+    # very FIRST frame of the whole utterance is the fill frame.
     previous_parstochip: list[int] | None = None
     # ``ph_claus.c::send_pars`` (lines 706-781) implements the one-
     # frame delay by allocating ``delaypars[]`` on its first call and
@@ -919,50 +870,123 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # (issue #157 leading-frame bleed -- removes 1 LLSynth-frame of
     # leading silence per prompt, ~110 samples at 11025 Hz).
     first_frame_consumed = False
-    # ``phinton`` may insert a dummy schwa (ph_inton2.c lines 1685-1725)
-    # which increments ``p_dph_t.nallotot``. Read it from state inside
-    # the loop so the per-frame driver walks the FINAL allophone array
-    # length, not the pre-phinton snapshot captured above. Without this
-    # the trailing GEN_SIL is silently skipped and the clause ends one
-    # allophone short, dropping the long-pause trailing silence (#72).
-    for _ in range(max_frames):
-        p_dph_t.tcum += 1
-        if p_dph_t.tcum >= p_dph_t.durfon:
-            p_dph_t.nphone += 1
-            if p_dph_t.nphone >= p_dph_t.nallotot:
-                break
-            p_dph_t.tcum -= p_dph_t.durfon
-            p_dph_t.durfon = (
-                p_dph_t.allodurs[p_dph_t.nphone] if p_dph_t.allodurs[p_dph_t.nphone] > 0 else 40
-            )
-            # Phoneme-code / duration metadata writes from ph_claus.c
-            # lines 465-472 (BATS 887, eab 5/3/99 — output from the
-            # correct place so SAPI / debug time-alignment is correct).
-            # These cells are consumed by debug / instrumentation
-            # readers (frame dumps), not by the Klatt synthesiser
-            # itself; LLFrame has no corresponding fields so the
-            # parstochip → LLFrame adapter drops them. Writing them
-            # here keeps frame-dump parity with the C binary.
-            p_dph_t.parstochip[OUT_PH] = p_dph_t.allophons[p_dph_t.nphone]
-            p_dph_t.parstochip[OUT_DU] = p_dph_t.allodurs[p_dph_t.nphone]
-            if p_dph_t.nphone + 1 > p_dph_t.nallotot:
-                p_dph_t.parstochip[OUT_PH2] = 0
+
+    # 4b..6. Per-clause chain -- one ``phclause()`` equivalent per
+    # delimiter-closed symbol run (C: ``speak_now`` -> ``phclause``):
+    #
+    #   - ``all_phsort`` (``ph_sort.c`` lines 428-1712) -- walks the
+    #     clause's symbol stream emitting ``phonemes[]`` /
+    #     ``sentstruc[]`` with the full per-phone feature word.
+    #   - ``us_phalloph`` (``ph_aloph1.c`` lines 444-1546) -- applies
+    #     the US-English allophonic-substitution rules and writes
+    #     through to ``allophons[]`` / ``allofeats[]`` (setting the
+    #     clause-local ``nallotot``).
+    #   - ``init_timing`` + ``us_phtiming`` -- the ~22 named duration
+    #     rules; Rule 2's short-phrase bonus and Rule 17's
+    #     ``nallotot < 10`` lengthening see the clause-local phone
+    #     count exactly as C does.
+    #   - ``init_clause`` + ``phinton`` -- F0 contour events. Clause 0
+    #     hard-inits pht0draw (``nf0ev = -2`` via ``loadspdef``);
+    #     later clauses soft-init (``nf0ev = -1``) because the
+    #     ``loadspdef`` consumption below clears the flag -- matching
+    #     ``phclause``'s ``if (loadspdef) { loadspdef = FALSE;
+    #     setspdef(...); }`` (ph_claus.c lines 259-262), which gives
+    #     the C engine its cross-comma F0 declination continuity.
+    #   - per-frame driver loop (``pht0draw`` / ``phdraw`` /
+    #     ``phsettar``) appending to the utterance-wide frame stream.
+    #
+    # Because ``raw_phonemes`` carries the C kernel's punctuation /
+    # phrase / boundary markers, ``all_phsort`` emits the internal +
+    # trailing ``GEN_SIL`` phones and clause-boundary features
+    # natively per clause. A clause-final ``!`` arrives as an
+    # ``EXCLAIM`` marker, still driving ``raise_last_stress``
+    # (issue #212); a yes/no ``?`` arrives as a ``QUEST`` marker,
+    # still setting the question clausetype ``phinton`` reads.
+    for clause_symbols, clause_nsymbtot in clause_runs:
+        # C phclause step 0: init_clause + loadspdef consumption.
+        init_clause(p_dph_t)
+        if p_dph_t.loadspdef == 1:
+            # ``setspdef``'s speaker-scalar seeding equivalent happened
+            # at DphT construction above; just consume the flag so the
+            # NEXT clause weak-inits F0 (ph_claus.c lines 259-262).
+            p_dph_t.loadspdef = 0
+
+        phalloph2_from_symbols(handle, clause_symbols, clause_nsymbtot)
+
+        init_timing(
+            p_dph_t,
+            settar,
+            sprate_ref=[wpm],
+            lang_curr=LANG_english,
+        )
+
+        # Per-allophone duration rules (us_phtiming). Must run AFTER
+        # init_timing (which seeds sprat0/sprat1/sprat2) and BEFORE
+        # the per-frame loop (which needs durfon = allodurs[nphone]).
+        us_phtiming(handle)
+
+        # phinton: F0 contour generation, once per clause. Writes
+        # f0tar / f0type / f0length / f0tim on DphT.
+        phinton(handle)
+
+        # Per-frame driver loop -- mirrors ph_claus.c's phclause
+        # while-loop (lines 367-505). For each 6.4 ms frame:
+        #
+        #   * Increment tcum. If it has passed the current allophone's
+        #     duration, advance ``nphone`` (breaking when allophones
+        #     run out), reset ``tcum``, set ``durfon`` from
+        #     ``allodurs``, and re-run phsettar for the new allophone.
+        #   * Call pht0draw to generate the F0 contour for this frame,
+        #     writing ``parstochip[OUT_T0]``.
+        #   * Call phdraw to update ``parstochip[]`` for this frame.
+        #   * Convert ``parstochip[]`` to an LLFrame and append.
+        #
+        # The first iteration enters the "advance" branch (tcum starts
+        # at -1, durfon at 0 -- C's init_pars()), so phsettar gets
+        # called for nphone=0 inside the loop. ``phinton`` may insert
+        # a dummy schwa which increments ``p_dph_t.nallotot``; reading
+        # it live keeps the trailing GEN_SIL in the walk (#72).
+        p_dph_t.tcum = -1
+        p_dph_t.nphone = -1
+        p_dph_t.durfon = 0
+        for _ in range(max_frames):
+            p_dph_t.tcum += 1
+            if p_dph_t.tcum >= p_dph_t.durfon:
+                p_dph_t.nphone += 1
+                if p_dph_t.nphone >= p_dph_t.nallotot:
+                    break
+                p_dph_t.tcum -= p_dph_t.durfon
+                p_dph_t.durfon = (
+                    p_dph_t.allodurs[p_dph_t.nphone] if p_dph_t.allodurs[p_dph_t.nphone] > 0 else 40
+                )
+                # Phoneme-code / duration metadata writes from
+                # ph_claus.c lines 465-472 (BATS 887, eab 5/3/99).
+                # Consumed by debug / instrumentation readers (frame
+                # dumps), not the Klatt synthesiser; keeps frame-dump
+                # parity with the C binary.
+                p_dph_t.parstochip[OUT_PH] = p_dph_t.allophons[p_dph_t.nphone]
+                p_dph_t.parstochip[OUT_DU] = p_dph_t.allodurs[p_dph_t.nphone]
+                if p_dph_t.nphone + 1 > p_dph_t.nallotot:
+                    p_dph_t.parstochip[OUT_PH2] = 0
+                else:
+                    p_dph_t.parstochip[OUT_PH2] = p_dph_t.allophons[p_dph_t.nphone + 1]
+                phsettar(handle)
+            pht0draw(handle)
+            phdraw(handle)
+            if first_frame_consumed:
+                frames.append(
+                    parstochip_to_llframe_delayed(
+                        p_dph_t.parstochip, previous_parstochip, _us_paul_spd
+                    )
+                )
+                parstochip_frames.append(list(p_dph_t.parstochip))
             else:
-                p_dph_t.parstochip[OUT_PH2] = p_dph_t.allophons[p_dph_t.nphone + 1]
-            phsettar(handle)
-        pht0draw(handle)
-        phdraw(handle)
-        if first_frame_consumed:
-            frames.append(
-                parstochip_to_llframe_delayed(p_dph_t.parstochip, previous_parstochip, _us_paul_spd)
-            )
-            parstochip_frames.append(list(p_dph_t.parstochip))
-        else:
-            # First iteration: matches C's send_pars initpardelay==0
-            # branch, which only seeds delaypars and skips the
-            # spcwrite. The synthesizer never sees this frame.
-            first_frame_consumed = True
-        previous_parstochip = list(p_dph_t.parstochip)
+                # First iteration of the utterance: matches C's
+                # send_pars initpardelay==0 branch, which only seeds
+                # delaypars and skips the spcwrite. The synthesizer
+                # never sees this frame.
+                first_frame_consumed = True
+            previous_parstochip = list(p_dph_t.parstochip)
 
     # 7. Pump the collected Klatt frames through the synthesizer for
     # int16 PCM output. By default the raw parstochip frames are pumped

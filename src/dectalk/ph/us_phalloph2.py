@@ -546,6 +546,69 @@ def _dectalk_stream_to_symbols(
     return symbols, len(symbols)
 
 
+def split_dectalk_stream_clauses(
+    raw: bytes,
+    *,
+    default_terminator: int = PERIOD,
+) -> list[tuple[list[int], int]]:
+    """Split a DECtalk ASCII stream into per-clause ``symbols[]`` arrays.
+
+    Mirrors the C ``ph_task.c`` ``kltask`` loop, which buffers incoming
+    symbols and calls ``speak_now`` -> ``phclause`` **per clause
+    delimiter** (``isdelim(ph)`` = ``COMMA``..``EXCLAIM``, ph_defs.h
+    line 781) rather than once per utterance. After each clause the
+    buffer resets to a leading ``GEN_SIL`` (``symbols[0] = GEN_SIL;
+    nsymbtot = 1`` — ph_task.c lines 1126-1129), so every clause gets
+    its own clause-initial silence phone — and, critically, its own
+    **clause-local** ``nallotot``: ``us_phtiming``'s short-phrase rules
+    (Rule 2's ``nallotot < 10`` vowel bonus, Rule 17's ``prcnt += 30``)
+    and the rhythm-pass state see per-clause counts exactly as the C
+    engine does. Driving the whole multi-clause utterance through one
+    merged clause walk left every content phone systematically short —
+    the ``multi_clause`` |Δ|med = 1633-sample shortfall in the 500-prompt
+    FULL+VTM1 measurement (issue #270).
+
+    The final fragment (no trailing delimiter in the stream) is closed
+    with ``default_terminator``, matching the C flush path
+    (``ph_task.c`` line 738: ``symbols[nsymbtot] = PERIOD; speak_now``)
+    which also only fires when the buffer holds real content
+    (``nsymbtot > 1``).
+
+    Returns:
+        List of ``(symbols, nsymbtot)`` pairs, one per clause, each in
+        the same shape :func:`_dectalk_stream_to_symbols` produces.
+    """
+    tokens = parse_phoneme_stream(raw)
+    sil = (PFUSA << 8) | int(USPhoneme.SIL)
+    clauses: list[tuple[list[int], int]] = []
+    cur: list[int] = [sil]
+    for tok in tokens:
+        if tok.code < MAX_PHONES:
+            # C's post-clause reset is a bare ``symbols[0] = GEN_SIL``;
+            # the word-boundary marker Python's single-shot decoder
+            # injects models the kernel's invisible per-word marker in
+            # front of the first WORD. When a clause opens with
+            # explicit syntax markers instead (``^`` SBOUND / ``(``
+            # PPSTART / ``)`` VPSTART, e.g. the ``^ ( aen d`` "and"
+            # cluster after a comma), the C stream carries NO WBOUND
+            # before them — injecting one shifts ``all_phsort``'s
+            # boundary classification of the following word.
+            if len(cur) == 1:
+                cur.append(WBOUND)
+            cur.append((PFUSA << 8) | tok.code)
+        else:
+            cur.append(tok.code)
+        if tok.code in _CLAUSE_TERMINATORS:
+            clauses.append((cur, len(cur)))
+            cur = [sil]
+    if len(cur) > 1:
+        # Unterminated trailing fragment: close it like the C flush
+        # path (implicit end-of-text PERIOD).
+        cur.append(default_terminator)
+        clauses.append((cur, len(cur)))
+    return clauses
+
+
 def phalloph2_from_dectalk(phTTS: TtsHandle, raw: bytes) -> None:
     """Drive ``phsort + phalloph`` from a byte-exact DECtalk phoneme stream.
 
@@ -574,16 +637,30 @@ def phalloph2_from_dectalk(phTTS: TtsHandle, raw: bytes) -> None:
             sentence/clause terminator is read from the stream itself, so
             question / exclamation intonation needs no separate flag.
     """
+    # 1. Decode the byte-exact stream into a packed symbols[] array.
+    symbols, nsymbtot = _dectalk_stream_to_symbols(raw)
+    phalloph2_from_symbols(phTTS, symbols, nsymbtot)
+
+
+def phalloph2_from_symbols(phTTS: TtsHandle, symbols: list[int], nsymbtot: int) -> None:
+    """Run the ``phsort + phalloph`` chain on one clause's ``symbols[]``.
+
+    Body shared by :func:`phalloph2_from_dectalk` (single-shot stream)
+    and the per-clause driver loop in ``dectalk.api.speak`` (which
+    feeds one :func:`split_dectalk_stream_clauses` entry at a time,
+    mirroring the C ``speak_now`` -> ``phclause`` per-delimiter cycle).
+
+    The caller must have run
+    :func:`dectalk.ph.init_phclause.init_phclause` for this clause.
+    """
     from dectalk.ph.dph_t import DphT  # noqa: PLC0415
 
     p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
 
-    # 1. Decode the byte-exact stream into a packed symbols[] array.
-    symbols, nsymbtot = _dectalk_stream_to_symbols(raw)
     p_dph_t.symbols = list(symbols)
     p_dph_t.nsymbtot = nsymbtot
 
-    # 2. Reallocate phonemes[] / sentstruc[] / user_durs[] / user_f0[] as
+    # Reallocate phonemes[] / sentstruc[] / user_durs[] / user_f0[] as
     # INDEPENDENT buffers — Python's init_phclause aliases them to
     # allophons[] / allofeats[] / allodurs[] / f0tar[], which us_phalloph
     # would otherwise clobber as it walks the phoneme stream (see the
@@ -594,9 +671,14 @@ def phalloph2_from_dectalk(phTTS: TtsHandle, raw: bytes) -> None:
     p_dph_t.user_durs = [0] * buf_size
     p_dph_t.user_f0 = [0] * buf_size
 
-    # 3. Run the PH-sort + allophonic-substitution chain.
+    # Run the PH-sort + allophonic-substitution chain.
     all_phsort(phTTS)
     us_phalloph(phTTS)
 
 
-__all__ = ["phalloph2", "phalloph2_from_dectalk"]
+__all__ = [
+    "phalloph2",
+    "phalloph2_from_dectalk",
+    "phalloph2_from_symbols",
+    "split_dectalk_stream_clauses",
+]

@@ -249,12 +249,18 @@ def all_phsort(phTTS: TtsHandle) -> int:
             m = n + 1
             while m < p_dph_t.nsymbtot and m < len(p_dph_t.symbols):
                 if is_wboundary(p_dph_t.symbols[m] & PVALUE):
-                    # C lines 1125-1128 (HLSYN/CHANGES_AFTER_V43 path):
-                    # step past a plain WBOUND.
-                    if (p_dph_t.symbols[m] & PVALUE) == WBOUND and m + 1 < len(p_dph_t.symbols):
-                        m += 1
-                    if m >= len(p_dph_t.symbols):
-                        break
+                    # The ``if (symbols[m] == WBOUND) m++;`` step-past is
+                    # ``#if defined(HLSYN) || defined(CHANGES_AFTER_V43)``
+                    # (ph_sort.c lines 1125-1128) — DEAD on the shipped
+                    # build. The active path evaluates the promotion
+                    # condition on the FIRST w-boundary symbol itself, so
+                    # a plain WBOUND (< COMMA) after the function word
+                    # means NO promotion. Porting the HLSYN step-past made
+                    # the scan look one symbol further (e.g. the SBOUND of
+                    # a following "^ ax" cluster, >= COMMA) and wrongly
+                    # stress-promoted clause-medial "( aen d" — +13 frames
+                    # on the "and" vowel of "..., and a period." vs the C
+                    # oracle (issue #270 audit).
                     next_val = p_dph_t.symbols[m] & PVALUE
                     if next_val >= COMMA or (
                         next_val == PPSTART
