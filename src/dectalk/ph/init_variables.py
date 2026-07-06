@@ -160,6 +160,18 @@ def init_variables(phTTS: TtsHandle) -> InitVariablesOut:  # noqa: N803
     p_dphsettar = cast(DphSettarSt, p_dph_t.pSTphsettar)
     out = InitVariablesOut()
 
+    # shrink / shrif / shrib live on DphT in the C source (the out-
+    # pointers are &pDph_t->shrink etc.), so when the sonorant branch
+    # below is skipped -- obstruents and GEN_SIL -- the previous
+    # phone's coefficients PERSIST. Seed the out-struct from the
+    # persistent fields so the skip path keeps them; a fresh zero here
+    # collapsed e.g. the trailing-silence formant transition to a
+    # single frame (mlsh1(durtran, 0) + 1 == 1) where the C ramps it
+    # over the full NF130MS window (issue #269).
+    out.shrink = p_dph_t.shrink
+    out.shrif = p_dph_t.shrif
+    out.shrib = p_dph_t.shrib
+
     if p_dph_t.nphone == 0:
         # First position of the clause: previous phone is silence,
         # struclm2 is zero by definition (no phone two positions back).

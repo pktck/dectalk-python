@@ -21,8 +21,9 @@ tables (``us_malamp`` / ``us_femamp``) and the per-phone gesture/prosody
 tables (``us_burdr`` / ``us_f0segtars`` / ``us_endtyp`` / ``us_ptram``)
 from the same active file. The active amplitude ROM uses a 1 + 16 x
 (4 x 6) block layout referenced by 24-strided ``us_ptram`` offsets and
-an undefined ``DEC_SZ`` Phc-toolchain macro on the S/Z A5 entries; the
-parser resolves ``DEC_SZ`` to 0 (see ``_parse_rom_table``).
+a ``DEC_SZ`` reduction macro on the S/Z A5 entries; the parser resolves
+``DEC_SZ`` to 3, matching ``dectalkf_klsyn.h`` line 300 which defines
+it for every VOICE_ROM_* build (see ``_parse_rom_table``).
 
 The active C source embeds in-table integer arithmetic (e.g. ``180+80``,
 ``300+100``, ``49-6``); the parser below evaluates it so the comparison
@@ -90,14 +91,13 @@ def _parse_rom_table(name: str, path: Path) -> tuple[int, ...]:
     # Drop C preprocessor lines that sit inside an initialiser body
     # (the legacy ROM keeps an ``#endif`` right after ``= {``).
     text = re.sub(r"^[ \t]*#.*$", "", text, flags=re.MULTILINE)
-    # ``DEC_SZ`` is an old Phc-toolchain compile-time macro used only by
-    # the active amplitude ROM's S/Z A5 entries (``57-DEC_SZ`` etc.); it
-    # is never #defined in the C source tree. It resolves to 0 -- the
-    # resulting literals match the modern-layout p_us_rom_dectalk41.c /
-    # p_us_rom_dtc_03_03Jan89.c ROMs, which carry the same entries with
-    # DEC_SZ pre-resolved to literal 57/58/51/52 (male) and 58/61/52/55
-    # (female).
-    text = re.sub(r"\bDEC_SZ\b", "0", text)
+    # ``DEC_SZ`` scales down the S/Z parallel amplitudes (``57-DEC_SZ``
+    # etc.). dectalkf_klsyn.h line 300 defines it to 3 whenever a
+    # VOICE_ROM_* is selected, which the active build always does --
+    # so the compiled ROM carries 54/55 (male S) etc. (Issue #269; an
+    # earlier pass resolved it to 0 on the mistaken belief the macro
+    # was never defined.)
+    text = re.sub(r"\bDEC_SZ\b", "3", text)
     m = re.search(
         rf"(?:const\s+)?short\s+{re.escape(name)}\s*\[\d*\]\s*=\s*\{{(.+?)\}}\s*;",
         text,
