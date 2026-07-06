@@ -1943,6 +1943,14 @@ elsewhere.
 FULL+VTM1 yet.** The structural body-content divergence is large
 enough to make the default-flip premature.
 
+> **Superseded (issue #272, 2026-07-06):** subsequent PH/VTM parity
+> work made FULL+VTM1 the byte-exact-capable path (`hello world`
+> sample-count-exact at 13845, F0 frame-exact, leading 213 samples
+> byte-identical), while the non-VTM1 render's uniform over-run
+> (`hello world` 21450 vs 13845) caused the #254 misdiagnosis. The
+> default has flipped: `DECTALK_FULL_PIPELINE=1` now renders via
+> vtm1 unless the `DECTALK_USE_VTM1=0` escape hatch is set.
+
 ### Sample design
 
 500 prompts drawn from `_corpus.py` (133 637 total) with
