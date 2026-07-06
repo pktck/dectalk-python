@@ -192,7 +192,12 @@ def test_phinton_runs_on_silence_only_clause() -> None:
     phinton(handle)
     dph = cast(DphT, handle.p_ph_thread_data)
     assert dph.nf0tot == 0
-    assert dph.tcumdur >= 5
+    # The active US build never accumulates tcumdur: us_phtiming zeroes
+    # it (p_us_tim0.c line 124) and the accumulating code in
+    # ph_inton0.c lines 1086/1125 belongs to the NWSNOAA/ENGLISH_UK
+    # first definition — dead here. phinton must leave it untouched
+    # (issue #270 audit).
+    assert dph.tcumdur == 0
 
 
 def test_phinton_emits_stress_impulse_value_encoded() -> None:
