@@ -113,13 +113,18 @@ necessary but nowhere near sufficient.
   merge.
 - Orchestrator: **independently re-verify any claim that contradicts a
   CI-locked result** (see §7), mark ready, **rebase**-merge (linear
-  history required), delete the branch via the REST API (the git proxy
-  403s pushes of deletes), unsubscribe.
+  history required), unsubscribe. Branch deletion: try the REST
+  `DELETE /git/refs/heads/…` or `git push origin --delete`; some
+  containers' proxies block BOTH (REST 403 + sideband disconnect) —
+  if so, skip it: stale merged branches are cosmetic.
 - Orchestrator commits: `git -c commit.gpgsign=false commit …`.
-- After every push: `subscribe_pr_activity` **plus** a
-  `run_in_background` until-loop polling `get_check_runs` — the poll's
-  completion is the reliable wake; webhooks to a suspended container
-  are best-effort.
+- After every push: `subscribe_pr_activity`. Where raw `GH_TOKEN`
+  REST works, also arm a `run_in_background` until-loop polling
+  check-runs (its completion is a reliable wake). In containers whose
+  proxy blocks raw REST (curl returns "GitHub access is not enabled"),
+  background curl polls CANNOT work — wakes come from the CI-status
+  sticky-comment webhook, scheduled self check-ins, and the heartbeat
+  trigger; read CI state via mcp `get_check_runs` in the foreground.
 - Stale webhooks: verify a CI event's commit SHA before acting on it;
   concurrency cancels superseded runs.
 
