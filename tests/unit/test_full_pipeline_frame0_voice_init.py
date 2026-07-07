@@ -12,7 +12,9 @@ and ``frac4mul(parstochip[OUT_B1], 0)`` zeroed B1 every frame.
 
 The fix in :func:`dectalk.api.speak._render_clause_full` seeds:
 
-- ``f0_dep_tilt = 73`` (Paul's ``paul_8.FT`` from ``p_us_vdf1.c`` line 150),
+- ``f0_dep_tilt = 75`` (Paul's ``FT`` from the active
+  ``p_us_vdf_dectalk43.c`` rows, lines 32/410 — issue #289 fixed the
+  earlier 73 that had been read from the inactive ``p_us_vdf1.c``),
 - ``spdefb1off = 4096`` (Paul's ``paul_8.BR = 0`` → ``(0*0)>>1 + 4096``
   per ``ph_vset.c`` line 629),
 - ``f0 = f0minimum`` (so the first ``pht0draw`` frame's ``f0prime`` lives
@@ -112,8 +114,9 @@ def test_frame0_tlt_is_voice_derived(monkeypatch: pytest.MonkeyPatch) -> None:
 
     Pre-fix the value was 5 — ``temptilt = 8 - frac4mul(f0 - 900, 0) =
     8`` then ``tilt_value = 8 + 0 - 3 = 5`` (the constant fall-through
-    when ``f0_dep_tilt = 0``). With ``f0_dep_tilt = 73`` (Paul's SPD_FT)
-    and the seeded ``f0 = f0minimum = 880`` the computed value shifts.
+    when ``f0_dep_tilt = 0``). With ``f0_dep_tilt = 75`` (Paul's SPD_FT
+    from the active ``p_us_vdf_dectalk43.c``) and the seeded
+    ``f0 = f0minimum`` the computed value shifts.
     """
     frame0 = _capture_frame0("hello world", monkeypatch)
     # Sanity-bound: the synth-side TLT clamp is [0, 31]. The pre-fix

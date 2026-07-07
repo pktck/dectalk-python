@@ -738,19 +738,30 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # ``ph_draw.c`` lines 617-742 computes ``OUT_TLT`` as
     # ``(12 - frac4mul(1400 - f0, f0_dep_tilt)) + (spdeftltoff - 6)``
     # clamped to [0, 31] (issue #226). ``spdeftltoff`` is left at the
-    # DphT default of 0 because Paul's ``SM`` (smoothness) is 0, and C's
-    # ``ph_vset.c`` line 625 computes ``spdeftltoff = (SM * 25) / 100``.
-    # Paul's ``paul_8`` SPDEF row in ``p_us_vdf1.c`` lines 126/150 supplies:
+    # DphT default of 0 because Paul's ``SM`` (smoothness) is 3 in the
+    # active SPDEF row and C's ``ph_vset.c`` line 625 computes
+    # ``spdeftltoff = (SM * 25) / 100`` = ``75 / 100`` = 0 in integer
+    # division. Paul's SPDEF row in the **active** voice-definition
+    # variant ``p_us_vdf_dectalk43.c`` (selected by ``ph_vdefi.c`` lines
+    # 80-81 under ``VDF_DECTALK_43``; ``paul`` line 410 and ``paul_8``
+    # line 32 agree on FT) supplies:
     #
-    # - ``FT = 73`` → ``f0_dep_tilt = 73`` (Q12-style multiplier on the
+    # - ``FT = 75`` → ``f0_dep_tilt = 75`` (Q12-style multiplier on the
     #   ``(1400 - f0)`` tilt-vs-f0 slope; the ``(f0 - 900)`` MALE variant
     #   at ``ph_draw.c`` lines 640-643 is ``#if HLSYN||CHANGES_AFTER_V43``
-    #   dead on this build).
+    #   dead on this build). The previous seed of 73 came from the
+    #   *inactive* ``p_us_vdf1.c`` row — the wrong-variant defect behind
+    #   the last 11-13 OUT_TLT mismatching cells per gate prompt (issue
+    #   #289): the shallower 73-slope crossed each ``>> 12`` quantum
+    #   boundary a few frames later than the oracle's 75-slope on F0
+    #   decays, leaving ``temptilt`` one raw unit high on exactly the
+    #   crossing frames. ``ph/voice_definitions.py`` (the dectalk43
+    #   port) already carried FT=75.
     # - ``BR = 0`` → ``spdefb1off = (0*0)>>1 + 4096 = 4096`` (Q12 unity;
     #   ``ph_draw.c`` line 417 multiplies parstochip[OUT_B1] by this so
     #   any non-unity value scales the first-formant bandwidth — at 4096
     #   it's a passthrough, at 0 it zeros B1).
-    p_dph_t.f0_dep_tilt = 73  # FT for Paul (p_us_vdf1.c line 150)
+    p_dph_t.f0_dep_tilt = 75  # FT for Paul (p_us_vdf_dectalk43.c lines 32/410)
     p_dph_t.spdefb1off = 4096  # BR=0 for Paul → (0*0)>>1 + 4096 (ph_vset.c line 629)
     # Seed F0 to the speaker's f0minimum so the very first ``pht0draw``
     # frame's ``f0prime = f0 + f0s`` reflects the voice's baseline rather
