@@ -181,13 +181,22 @@ Under `DECTALK_DISABLE_CAPI=1` + `DECTALK_FULL_PIPELINE=1` the
 pipeline runs end-to-end and renders through the `vtm1.c`-ported
 `speech_waveform_generator` by default (issue #272) — the same
 synthesiser the shipped `libtts_us.so` uses. This is the
-byte-exact-capable parity path: on `hello world` the default render
-is sample-count-exact vs the C binary (13845 == C), F0 is
-frame-exact, and the leading 213 samples are byte-identical. Full
-byte-parity across the corpus is **not yet reached** — the
-2026-05-27 500-prompt audit at the end of
-`docs/parity-divergence-audit.md` measured 0/500 bit-exact, and the
-remaining gap is body-content divergence, not envelope/length.
+byte-exact-capable parity path. State as of 2026-07-06 (dev
+`f2aab30`, post #282/#283/#285):
+
+- **255/500** corpus prompts render the **exact** C sample count
+  (median |Δsamples| = 0; max 1491); the residual timing mass is the
+  function-word runtime-S2 cluster (#280).
+- On `hello world` F0 is frame-exact, **all 16 formant / bandwidth /
+  amplitude per-frame parameters are byte-exact** (settar re-port
+  from the active `p_us_st0.c`, PR #285), and packets reach the VTM
+  through the C `send_pars` delay + `lineartilt` transform (#283).
+- The first divergent **byte** is sample **214**: the VTM-internal
+  voicing-onset residual (#284), followed by the last 11-13 `OUT_TLT`
+  cells (#289). Those two issues are the remaining gates to the
+  first byte-exact prompt; corpus-wide byte parity then follows the
+  count-exact set. Bit-exact across the corpus is otherwise
+  **not yet reached** (0/500).
 Setting `DECTALK_USE_VTM1=0` restores the legacy hlsyn render — it
 over-runs the C reference uniformly (`hello world`: 21450 vs 13845
 samples) and is retained only as a diagnostic escape hatch after
