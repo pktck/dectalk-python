@@ -18,16 +18,19 @@ from dectalk.vtm.vtm_t import VtmT, default_us_paul_vtm_t
 class TestDefaultUsPaulSpd:
     """Verify US-Paul SpdChip field values against p_us_vdf_dectalk43.c paul."""
 
-    # Resonator 4 cascade (F4=3300, B4=260)
+    # Resonator 4 cascade. The chip word is the setspdef() derivation
+    # (F4 * fnscale) >> 12 = (3300 * 4100) >> 12 = 3303 (ph_vset.c:648),
+    # not the raw SPDEF table's 3300 (issue #284).
     def test_r4cc_f4(self) -> None:
-        assert default_us_paul_spd().r4cc == 3300, "F4 centre frequency"
+        assert default_us_paul_spd().r4cc == 3303, "F4 chip word (F4*fnscale>>12)"
 
     def test_r4cb_b4(self) -> None:
         assert default_us_paul_spd().r4cb == 260, "B4 bandwidth"
 
-    # Resonator 5 cascade (F5=3650, B5=330)
+    # Resonator 5 cascade. Chip word = (3650 * 4100) >> 12 = 3653
+    # (ph_vset.c:670); B5 passes through unscaled.
     def test_r5cc_f5(self) -> None:
-        assert default_us_paul_spd().r5cc == 3650, "F5 centre frequency"
+        assert default_us_paul_spd().r5cc == 3653, "F5 chip word (F5*fnscale>>12)"
 
     def test_r5cb_b5(self) -> None:
         assert default_us_paul_spd().r5cb == 330, "B5 bandwidth"
@@ -68,19 +71,25 @@ class TestDefaultUsPaulSpd:
     def test_rnpgain_gn(self) -> None:
         assert default_us_paul_spd().rnpgain == 74, "GN (nasal-pole gain)"
 
-    # fnscale: 4096 = Q12 unity (HS=100, nominal head size for Paul)
-    def test_fnscale_q12_unity(self) -> None:
-        assert default_us_paul_spd().fnscale == 4096, "fnscale must be Q12 unity (4096) for HS=100"
+    # fnscale = (200 - HS) * 41 (ph_vset.c:638): 4100 for HS=100, not
+    # the Q12-unity 4096 -- the C bridge's nominal head size deliberately
+    # over-scales formants by 4100/4096 (issue #284).
+    def test_fnscale_setspdef_derivation(self) -> None:
+        assert default_us_paul_spd().fnscale == 4100, "fnscale = (200-HS)*41 for HS=100"
 
-    # Integer-cascade build leaves these chip slots zero
-    def test_nopen1_zero(self) -> None:
-        assert default_us_paul_spd().nopen1 == 0, "nopen1 unused in integer cascade build"
+    # Glottal open-phase constants: K1/K2 of vtm1.c line 915
+    # ``nopen = frac1mul(k1, T0) + k2``. nopen1 = 4000+160*(100-RI)
+    # (ph_vset.c:717, RI=70); nopen2 = NF*4 (ph_vset.c:718, NF=0).
+    def test_nopen1_setspdef_derivation(self) -> None:
+        assert default_us_paul_spd().nopen1 == 8800, "nopen1 = 4000+160*(100-RI)"
 
     def test_nopen2_zero(self) -> None:
-        assert default_us_paul_spd().nopen2 == 0, "nopen2 unused in integer cascade build"
+        assert default_us_paul_spd().nopen2 == 0, "nopen2 = NF*4 with NF=0"
 
-    def test_aturb_zero(self) -> None:
-        assert default_us_paul_spd().aturb == 0, "aturb unused in integer cascade build"
+    # aturb = BR + 9 (ph_vset.c:722, non-HLSYN branch); amptable[9] == 0
+    # so Paul's audible breathiness is still nil.
+    def test_aturb_br_plus_nine(self) -> None:
+        assert default_us_paul_spd().aturb == 9, "aturb = BR+9 with BR=0"
 
     def test_t0jit_zero(self) -> None:
         assert default_us_paul_spd().t0jit == 0

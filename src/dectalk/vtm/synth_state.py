@@ -150,8 +150,17 @@ class SynthState:
     avlind: int = 0
     aturb1: int = 0
     nper: int = 0
-    T0: int = 100
-    nopen: int = 40
+    # T0 / nopen start at 0, matching the C ``calloc(1, sizeof(VTM_T))``
+    # zero-init in the VTM bring-up (``vtmiont.c``). This is load-bearing
+    # for byte parity (issue #284): with ``T0 == nper == 0`` the very
+    # first inner tick of the first frame trips the pitch-synchronous
+    # ``nper == T0`` update, loading T0 / nopen / decay and all cascade
+    # coefficients from frame 0's packet before any sample is filtered.
+    # A non-zero default (the port used to say 100/40) free-runs the
+    # glottal source for T0 ticks on fabricated values instead, skewing
+    # every later pitch-period boundary — the sample-214 onset residual.
+    T0: int = 0
+    nopen: int = 0
     nmod: int = 0
     nolast: int = 0
     decay: int = 0
