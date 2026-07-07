@@ -452,8 +452,10 @@ def test_via_hl_ap_independent_of_out_ap_aspiration_db() -> None:
 # pipeline already had Paul's voice-specific defaults loaded in a
 # :class:`~dectalk.vtm.spd_chip.SpdChip`. Issue #159 wires the SpdChip
 # through these adapters so the emitted ``LLFrame`` reflects the active
-# voice. For US-Paul the values are F4=3300, B4=260, F5=3650, B5=330
-# (from the active non-_8 ``paul[SPDEF]`` in ``p_us_vdf_dectalk43.c``).
+# voice. For US-Paul the chip words are F4=3303, B4=260, F5=3653,
+# B5=330 -- the ``setspdef()`` derivations (F4/F5 pre-scaled by
+# fnscale=4100; ph_vset.c:638/648/670) of the non-_8 ``paul[SPDEF]``
+# table values 3300/260/3650/330 in ``p_us_vdf_dectalk43.c``.
 
 
 def test_parstochip_to_llframe_uses_spd_chip_for_f4_b4_f5_b5() -> None:
@@ -461,9 +463,9 @@ def test_parstochip_to_llframe_uses_spd_chip_for_f4_b4_f5_b5() -> None:
     spd = default_us_paul_spd()
     frame = parstochip_to_llframe(_empty_parstochip(), spd_chip=spd)
     # Paul's voice-table values (non-_8 paul[SPDEF] in p_us_vdf_dectalk43.c).
-    assert frame.F4 == spd.r4cc == 3300
+    assert frame.F4 == spd.r4cc == 3303
     assert frame.B4 == spd.r4cb == 260
-    assert frame.F5 == spd.r5cc == 3650
+    assert frame.F5 == spd.r5cc == 3653
     assert frame.B5 == spd.r5cb == 330
 
 
@@ -504,9 +506,9 @@ def test_parstochip_to_llframe_delayed_uses_spd_chip_for_f4_b4_f5_b5() -> None:
     frame = parstochip_to_llframe_delayed(
         _empty_parstochip(), previous_parstochip=None, spd_chip=spd
     )
-    assert frame.F4 == spd.r4cc == 3300
+    assert frame.F4 == spd.r4cc == 3303
     assert frame.B4 == spd.r4cb == 260
-    assert frame.F5 == spd.r5cc == 3650
+    assert frame.F5 == spd.r5cc == 3653
     assert frame.B5 == spd.r5cb == 330
 
 

@@ -128,11 +128,11 @@ class TestSeedSpeakerState:
         assert state.APgain == amptable[70]
         assert state.AFgain == amptable[70]
 
-    def test_seeds_paul_fnscale_unity(self) -> None:
-        """Paul's HS=100 → fnscale=4096 (Q12 unity)."""
+    def test_seeds_paul_fnscale(self) -> None:
+        """Paul's HS=100 → fnscale = (200-HS)*41 = 4100 (ph_vset.c:638)."""
         state = SynthState()
         seed_speaker_state(state, default_us_paul_spd())
-        assert state.fnscal == 4096
+        assert state.fnscal == 4100
 
     def test_idempotent_seed_resets_delays(self) -> None:
         """Re-seeding clears the filter delays — speaker switches start fresh."""

@@ -141,31 +141,33 @@ def speech_waveform_generator(
     # Speaker-def-just-loaded silence latch (lines 383-398).
     #
     # The C source latch (vtm1.c:383-398) is ``if(ldspdef>=1){ldspdef++;
-    # zero amps;} if(ldspdef>=3) ldspdef=-1;`` whose ``1->2->3->-1``
-    # trajectory zeroes exactly two leading frames. The shipped
-    # ``libtts_us.so`` binary, however, holds **three** leading frames as
-    # real silence: on ``hello world`` the byte-exact oracle's first
-    # non-zero sample is 213 (frame 3), so frames 0/1/2 are silent. This
-    # is verifiable two ways: (1) the byte-identical CAPI path
-    # (``test_binary_wav_parity``, 1065/1065) renders 213, and (2) issue
-    # #157's independent leading-zero audit measured the same C lead=213
-    # for ``hello world`` / ``the quick brown fox`` / ``hello``. Feeding
-    # the oracle's OWN ``vtm_frames.dump`` parambuff (frame 2 carries a
-    # live ``OUT_AP``=53 aspiration cell) back through this synth still
-    # diverged at sample 142 = start of frame 2, isolating the off-by-one
-    # to this latch rather than to param generation (issue #263/#266).
+    # zero amps;} if(ldspdef>=3) ldspdef=-1;``. Read as ideal integers
+    # that trajectory (``1->2->3->-1``) would zero exactly two leading
+    # frames -- but ``ldspdef`` is declared ``BOOL`` (vtminst.h:657) and
+    # the active linux build's BOOL is ``typedef unsigned char``
+    # (``osf/dtmmedefs.h:168``). The ``ldspdef = -1`` therefore stores
+    # **255**, so the third frame re-enters the latch (``255 >= 1``),
+    # gets its amps zeroed too, and the ``ldspdef++`` wraps 255 -> 0,
+    # releasing the latch from frame 3 on. The shipped binary's three
+    # silent leading frames are an unsigned-char overflow artifact.
+    # Proven in issue #284 by compiling the oracle's own vtm1.c into a
+    # standalone packet-fed harness (byte-identical to the oracle WAV,
+    # 13845/13845 on ``hello world``) and tracing ``ldspdef`` per
+    # frame: 2, 3(->255), 255(->0), 0.
     #
-    # Reconciliation with #157: the PH driver in
-    # ``api/speak.py::_speak_via_python_full`` correctly discards the
-    # ``send_pars`` ``initpardelay==0`` seed frame (the #157 leading-bleed
-    # fix, which keeps the emitted sample count exact at 13845). That
-    # discard is the right behaviour and is preserved; *not* discarding it
-    # both regresses the sample count (+71) and fails to silence frame 2.
-    # The missing third silent frame lives here in the synth latch, so we
-    # extend the reset threshold (``>=3`` -> ``>=4``), giving a
-    # ``1->2->3->4->-1`` trajectory that zeroes frames 0/1/2 to match the
-    # binary. Each silenced leading frame is 71 samples of byte parity
-    # (extends the ``hello world`` prefix 142 -> 213).
+    # The ``>= 4`` threshold below emulates the wrap with a
+    # ``1->2->3->4->-1`` trajectory: identical zeroed-frame set (0/1/2)
+    # and identical released state (< 1) in every reachable sequence,
+    # including mid-stream speaker-definition reloads (which reset
+    # ``ldspdef`` to 1 in both forms). On ``hello world`` the oracle's
+    # first non-zero sample is 213 (frame 3), byte-matched by this path
+    # (#263/#266/#267 measured the same lead empirically; #284's
+    # dump-feed control is byte-exact for whole utterances).
+    #
+    # Note the PH driver in ``api/speak.py::_speak_via_python_full``
+    # discards the ``send_pars`` ``initpardelay==0`` seed frame (the
+    # #157 leading-bleed fix, keeping the emitted sample count exact);
+    # that behaviour is orthogonal to this latch and preserved.
     if state.ldspdef >= 1:
         state.ldspdef += 1
         variabpars[OUT_AV + 1] = 0

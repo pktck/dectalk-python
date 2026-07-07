@@ -144,14 +144,21 @@ class TestSpdChipFieldParity:
     def test_r4cb_eq_b4(self, paul_c_values: dict[str, int]) -> None:
         assert default_us_paul_spd().r4cb == paul_c_values["B4"]
 
-    def test_r4cc_eq_f4(self, paul_c_values: dict[str, int]) -> None:
-        assert default_us_paul_spd().r4cc == paul_c_values["F4"]
+    def test_r4cc_eq_f4_chip_scaled(self, paul_c_values: dict[str, int]) -> None:
+        # setspdef pre-scales F4 by fnscale before streaming it to the
+        # chip: r4cb_chip = (F4 * fnscale) >> 12 (ph_vset.c:648). The
+        # Python SpdChip stores the frequency in .r4cc (swapped field
+        # convention -- see spd_chip.py docstring).
+        fnscale = (200 - paul_c_values["HS"]) * 41
+        assert default_us_paul_spd().r4cc == (paul_c_values["F4"] * fnscale) >> 12
 
     def test_r5cb_eq_b5(self, paul_c_values: dict[str, int]) -> None:
         assert default_us_paul_spd().r5cb == paul_c_values["B5"]
 
-    def test_r5cc_eq_f5(self, paul_c_values: dict[str, int]) -> None:
-        assert default_us_paul_spd().r5cc == paul_c_values["F5"]
+    def test_r5cc_eq_f5_chip_scaled(self, paul_c_values: dict[str, int]) -> None:
+        # r5cb_chip = (F5 * fnscale) >> 12 (ph_vset.c:670).
+        fnscale = (200 - paul_c_values["HS"]) * 41
+        assert default_us_paul_spd().r5cc == (paul_c_values["F5"] * fnscale) >> 12
 
     def test_r4pb_eq_f7(self, paul_c_values: dict[str, int]) -> None:
         assert default_us_paul_spd().r4pb == paul_c_values["F7"]
@@ -195,27 +202,33 @@ class TestSpdChipFieldParity:
         assert paul_c_values["OS"] == 0, "test assumes 4.3 paul SPD_OS=0"
         assert default_us_paul_spd().osgain == paul_c_values["OS"] == 0
 
-    def test_t0jit_zero(self) -> None:
-        assert default_us_paul_spd().t0jit == 0
+    def test_t0jit_eq_la_shifted(self, paul_c_values: dict[str, int]) -> None:
+        # t0jit = LA << 3 (ph_vset.c:701); Paul LA=0.
+        assert default_us_paul_spd().t0jit == paul_c_values["LA"] << 3
 
-    def test_nopen1_zero(self) -> None:
-        assert default_us_paul_spd().nopen1 == 0
+    def test_nopen1_setspdef_derivation(self, paul_c_values: dict[str, int]) -> None:
+        # nopen1 = 4000 + 160*(100 - RI) (ph_vset.c:717); Paul RI=70
+        # gives 8800 -- the K1 of the glottal open phase (issue #284).
+        assert default_us_paul_spd().nopen1 == 4000 + 160 * (100 - paul_c_values["RI"])
 
-    def test_nopen2_zero(self) -> None:
-        assert default_us_paul_spd().nopen2 == 0
+    def test_nopen2_setspdef_derivation(self, paul_c_values: dict[str, int]) -> None:
+        # nopen2 = NF * 4 (ph_vset.c:718); Paul NF=0.
+        assert default_us_paul_spd().nopen2 == paul_c_values["NF"] * 4
 
-    def test_aturb_zero(self) -> None:
-        assert default_us_paul_spd().aturb == 0
+    def test_aturb_setspdef_derivation(self, paul_c_values: dict[str, int]) -> None:
+        # aturb = BR + 9 (ph_vset.c:722, non-HLSYN branch); Paul BR=0.
+        assert default_us_paul_spd().aturb == paul_c_values["BR"] + 9
 
     def test_notused_zero(self) -> None:
         assert default_us_paul_spd().notused == 0
 
-    def test_fnscale_q12_unity_for_hs_100(
+    def test_fnscale_setspdef_derivation(
         self,
         paul_c_values: dict[str, int],
     ) -> None:
-        assert paul_c_values["HS"] == 100, "test assumes nominal HS=100"
-        assert default_us_paul_spd().fnscale == 4096
+        # fnscale = (200 - HS) * 41 (ph_vset.c:638): 4100 for HS=100,
+        # not Q12-unity 4096 (issue #284).
+        assert default_us_paul_spd().fnscale == (200 - paul_c_values["HS"]) * 41
 
     def test_speaker_index_zero(self) -> None:
         assert default_us_paul_spd().speaker == 0
