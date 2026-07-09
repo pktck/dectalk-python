@@ -1,7 +1,7 @@
 # Corpus prompts whose Python phoneme stream is a known divergence from the
 # C oracle (issue #281 burn-down list). One prompt per line, sorted.
 # Regenerate: uv run python scripts/corpus_phoneme_sweep.py --update-known-list
-# Verified against a fresh oracle on 2026-07-07: 56 prompts / 133,641 corpus.
+# Verified against a fresh oracle on 2026-07-09: 56 prompts / 133,641 corpus.
 a aunt of ours
 a brother of ours
 a colleague of ours

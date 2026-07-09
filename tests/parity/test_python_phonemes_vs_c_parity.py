@@ -7,14 +7,17 @@ the phoneme stream that drives the downstream PH/VTM stages. The pure
 Python pipeline is byte-compared against it across a deterministic
 subsample of the shared bit-parity corpus (``tests/parity/_corpus.py``).
 
-**Current status (measured 2026-07-06, issue #281):** the corpus is NOT
-fully byte-identical. Prompts that currently diverge are listed in
-``tests/parity/data/corpus_phoneme_known_divergent.txt`` and are xfailed
-(non-strict) here; the dominant divergence class is the C runtime's
-position-dependent stress on function words (#280). The gate enforced by
-this module is therefore: **no prompt outside the known-divergent list
-may regress**. Shrink the list as the backlog burns down — regenerate it
-with ``scripts/corpus_phoneme_sweep.py --update-known-list`` after a fix.
+**Current status (measured 2026-07-09, issue #281):** 133,585 / 133,641
+corpus prompts are byte-identical (99.96%). The 56 divergent prompts —
+homograph POS resolution (close/lead/tears/wind/object/subject/
+contrast/produce), positional stress variants (clause-final ``ours``,
+possessive ``its``), and a few LTS nuances (swing/string IH-before-NG,
+``al dente``) — are listed in
+``tests/parity/data/corpus_phoneme_known_divergent.txt`` and xfailed
+(non-strict) here. The gate enforced by this module is therefore: **no
+prompt outside the known-divergent list may regress**. Shrink the list
+as the backlog burns down — regenerate it with
+``scripts/corpus_phoneme_sweep.py --update-known-list`` after a fix.
 
 Sampling: parametrising all ~133K corpus prompts into every CI shard is
 wasteful, and bulk-querying the C oracle from one process is impossible
