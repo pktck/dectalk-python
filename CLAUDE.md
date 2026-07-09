@@ -431,11 +431,23 @@ is multi-week work: port the PH orchestration layer from
 `src/dectalk/ph/`. The hlsyn back-end is already bit-accurate; the
 gap is purely in PH.
 
-## Corpus expansion — diminishing returns
+## Corpus phoneme gate + corpus expansion
 
-The phoneme parity corpus is at ~133K strict-pass prompts. Beyond this
-scale, adding 50-prompt micro-batches isn't valuable signal — it's
-mostly variations on patterns already covered. Prefer either:
+The ~133K-prompt corpus phoneme gate
+(`tests/parity/test_python_phonemes_vs_c_parity.py`) runs in the
+16-shard c-oracle lane on a deterministic 2000-prompt strided
+subsample (`DECTALK_CORPUS_GATE_SAMPLE`). Measured 2026-07-09 (issue
+#281): **133,585 / 133,641 prompts byte-identical (99.96%)**; the 56
+known-divergent prompts (homographs, positional stress) are xfailed
+via `tests/parity/data/corpus_phoneme_known_divergent.txt`. Full-corpus
+sweeps go through `scripts/corpus_phoneme_sweep.py` — bulk in-process
+oracle use segfaults, so the sweep slices across fresh subprocesses.
+Do not call the corpus "strict-pass" without re-measuring; the gate
+rotted unenforced for weeks before #281 wired it into CI.
+
+Corpus expansion has diminishing returns beyond this scale: adding
+50-prompt micro-batches isn't valuable signal — it's mostly variations
+on patterns already covered. Prefer either:
 - one big rounded batch (~1000+ prompts) covering a genuinely new
   syntactic pattern, **committed once**; or
 - shift to Phase E (audio parity) where there's real work left.
