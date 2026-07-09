@@ -353,8 +353,11 @@ remains deferred — tracked as issue #3.
 
 The unit + integration + parity tree contains tens of thousands of
 tests (~21K reported pre-Phase-E; the bit-parity corpus alone
-contributes ~130K strict-pass prompts that exercise
-`tests/parity/test_python_phonemes_vs_c_parity.py` per-prompt).
+contributes ~133K prompts exercised per-prompt by
+`tests/parity/test_python_phonemes_vs_c_parity.py` — measured
+2026-07-09 at 133,585/133,641 byte-identical (99.96%), with the 56
+known divergences xfailed via
+`tests/parity/data/corpus_phoneme_known_divergent.txt`; see #281).
 Run `uv run pytest -n auto --collect-only -q | tail -1` for the
 exact current count.
 

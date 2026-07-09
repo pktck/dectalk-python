@@ -21,18 +21,23 @@ Usage::
         --out src/dectalk/data/lexicon_us_full.txt
 
 .. warning:: **Do not regenerate blindly** — the checked-in
-   ``lexicon_us_full.txt`` carries 34 hand-applied stress corrections
-   (issue #270): the C *runtime* surfaces a different stress class
-   than the raw dictionary text for sole-secondary entries (e.g.
-   ``quick`` / ``brown`` stored with `` ` `` but spoken with primary
-   stress; ``has`` / ``over`` stored with `` ` `` but spoken
-   unstressed). This converter reproduces the raw text, so a
-   regeneration reverts those fixes and reopens the fox-class timing
-   drift. Issue #280 tracks teaching the conversion (or a post-pass)
-   the runtime stress rules; until then, diff any regenerated file
-   against the checked-in one and re-apply the corrections
-   (``git log -p -- src/dectalk/data/lexicon_us_full.txt`` has the
-   authoritative list).
+   ``lexicon_us_full.txt`` carries ~130 hand-applied corrections that
+   align entries with what the C *runtime* actually speaks rather
+   than the raw dictionary text: the 34 sole-secondary stress
+   corrections from issue #270 (``quick`` / ``brown`` stored with
+   `` ` `` but spoken with primary stress; ``has`` / ``over`` stored
+   with `` ` `` but spoken unstressed) plus the ~96 stress/vowel
+   alignments from the issue #281 full-corpus sweep (invariant
+   runtime stress on you/i/she/that/when/which/...; vowel identity
+   on than/at/can/on/had/took/...; added rows). This converter
+   reproduces the raw text, so a regeneration reverts those fixes,
+   reopens the fox-class timing drift, and drops the corpus phoneme
+   gate from ~99.96% back to ~46%. Issue #280 tracks teaching the
+   conversion (or a post-pass) the runtime stress rules; until then,
+   diff any regenerated file against the checked-in one, re-apply the
+   corrections (``git log -p -- src/dectalk/data/lexicon_us_full.txt``
+   has the authoritative list), and re-verify with
+   ``scripts/corpus_phoneme_sweep.py`` before committing.
 """
 
 from __future__ import annotations
