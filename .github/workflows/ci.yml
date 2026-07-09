@@ -148,6 +148,12 @@ jobs:
         env:
           DECTALK_SRC: /tmp/dectalk-src
           DECTALK_BIN: /tmp/dectalk-binary-stable
+          # Corpus phoneme gate (#281): deterministic evenly-strided
+          # subsample of the ~133K bit-parity corpus, distributed across
+          # the 16 shards (~125 prompts/shard). Full-corpus sweeps go
+          # through scripts/corpus_phoneme_sweep.py instead — bulk
+          # in-process oracle use trips the C library's segfault window.
+          DECTALK_CORPUS_GATE_SAMPLE: "2000"
         run: |
           uv run pytest -n auto -m c_oracle \
             --shard-id=${{ matrix.shard }} --num-shards=16 \
