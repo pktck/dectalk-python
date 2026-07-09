@@ -166,10 +166,11 @@ def test_python_phonemes_match_c_phonemes(text: str) -> None:
     Prompts outside the known-divergent list must match byte-for-byte;
     a mismatch there is a fresh regression in the Python front end and
     needs a Python-side fix, not an xfail. Prompts inside the list are
-    the measured #281 backlog (dominated by #280's runtime function-word
-    stress); they xfail non-strictly so fixes can land incrementally,
-    after which ``scripts/corpus_phoneme_sweep.py --update-known-list``
-    re-shrinks the list.
+    the measured #281 backlog (homograph POS resolution and positional
+    stress residue — see #295); they xfail non-strictly so fixes can
+    land incrementally, after which
+    ``scripts/corpus_phoneme_sweep.py --update-known-list`` re-shrinks
+    the list.
     """
     expected = _get_oracle(text)
     actual = _python_phonemes(text)
