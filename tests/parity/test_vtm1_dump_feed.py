@@ -179,10 +179,30 @@ def test_vtm1_dump_feed_byte_exact(capi: CAPI, text: str) -> None:
 # Python SpdChip consumers use the swapped convention (frequency in
 # r4cc/r5cc), so the comparison below crosses the pairs over.
 _SPD_CHIP_FIELDS: tuple[str, ...] = (
-    "r4cb", "r4cc", "r5cb", "r5cc", "r4pb", "r5pb", "t0jit",
-    "r5ca", "r4ca", "r3ca", "r2ca", "r1ca", "nopen1", "nopen2",
-    "aturb", "fnscale", "afgain", "rnpgain", "azgain", "apgain",
-    "notused", "osgain", "speaker", "sex",
+    "r4cb",
+    "r4cc",
+    "r5cb",
+    "r5cc",
+    "r4pb",
+    "r5pb",
+    "t0jit",
+    "r5ca",
+    "r4ca",
+    "r3ca",
+    "r2ca",
+    "r1ca",
+    "nopen1",
+    "nopen2",
+    "aturb",
+    "fnscale",
+    "afgain",
+    "rnpgain",
+    "azgain",
+    "apgain",
+    "notused",
+    "osgain",
+    "speaker",
+    "sex",
 )
 _PY_SWAPPED: dict[str, str] = {"r4cb": "r4cc", "r4cc": "r4cb", "r5cb": "r5cc", "r5cc": "r5cb"}
 
@@ -208,7 +228,5 @@ def test_default_paul_spd_matches_oracle_chip_packet(capi: CAPI) -> None:
         py_value = int(getattr(chip, py_field))
         c_value = spdef[idx]
         if py_value != c_value:
-            mismatches.append(
-                f"chip[{idx}] {c_field} (py .{py_field}): C={c_value} py={py_value}"
-            )
+            mismatches.append(f"chip[{idx}] {c_field} (py .{py_field}): C={c_value} py={py_value}")
     assert not mismatches, "SpdChip drift vs oracle spdef packet:\n" + "\n".join(mismatches)
