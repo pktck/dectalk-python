@@ -1980,12 +1980,21 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             if inner and _digits_strict.match(inner):
                 tokens.extend(_digit_expand(int(inner.replace(",", ""))))
             elif inner and _dotted.match(inner):
+                # Dotted decimal (``3.14`` / ``1,234.56`` / ``6.2.0``).
+                # The C kernel speaks the integer part as a whole number
+                # through the same digit-expansion path as a bare
+                # digit-string (schwa-N THOUSAND, comma pauses, __NUM_AND__
+                # after HUNDRED, or-vowel FOUR/FORTY) and then reads every
+                # ``.``-separated fraction group digit by digit with
+                # leading zeros preserved: ``3.14`` -> "three point one
+                # four" (not "fourteen"), ``10.01`` -> "ten point zero
+                # one". Verified against CAPI.convert_to_phonemes (#281).
                 parts = inner.split(".")
-                for i_part, part in enumerate(parts):
-                    if i_part > 0:
-                        tokens.append(Token(TokenKind.WORD, "POINT"))
-                    for w in number_to_words(int(part.replace(",", ""))):
-                        tokens.append(Token(TokenKind.WORD, w))
+                tokens.extend(_digit_expand(int(parts[0].replace(",", ""))))
+                for part in parts[1:]:
+                    tokens.append(Token(TokenKind.WORD, "POINT"))
+                    for digit in part:
+                        tokens.extend(_digit_expand(int(digit)))
             elif (
                 inner and inner.isalpha() and inner.isupper() and 2 <= len(inner) <= 4  # noqa: PLR2004
             ):
