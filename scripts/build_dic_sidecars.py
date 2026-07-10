@@ -62,6 +62,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Final
 
 from dectalk.dic.dectalk_phonemes_multi import decode_lang_with_markers
 from dectalk.dic.form_class_bits import (
@@ -76,8 +77,9 @@ from dectalk.dic.form_class_bits import (
 # 0-23 / 25-26; position 24 is FC_M_CONTRACTION (bit 30), *not* bit
 # 24. Positions 27-28 are the unused filler and the name-flag column,
 # neither of which lands in the entry's fc word.
+_CONTRACTION_COLUMN: Final[int] = 24
 _COLUMN_BITS: tuple[int, ...] = tuple(
-    FC_M_CONTRACTION if i == 24 else (1 << i) for i in range(27)
+    FC_M_CONTRACTION if i == _CONTRACTION_COLUMN else (1 << i) for i in range(27)
 )
 
 # Homograph-field flags dic_comm.c ORs into the entry mask ("P" also
@@ -87,6 +89,7 @@ _HOMOGRAPH_FIELD_FLAGS: dict[str, int] = {
     "S": FC_HOMOGRAPH,
     "N": 0,
 }
+
 
 def _parse_formclass_mask(bits: str) -> int:
     """Decode a 29-char ``Dic_us.txt`` form-class column into a bit mask.
@@ -128,7 +131,7 @@ def _emits_vpstart(fc_mask: int) -> bool:
     return (fc_mask & vphrase) == vphrase or fc_mask == FC_VERB
 
 
-def _convert(
+def _convert(  # noqa: PLR0912 - mirrors dic_comm.c's per-field parse branches
     source_path: Path, lang: str
 ) -> tuple[dict[str, list[str]], set[str], dict[str, int]]:
     """Parse one DECtalk dictionary file into the three sidecar tables.
