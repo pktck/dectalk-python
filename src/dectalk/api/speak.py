@@ -2223,10 +2223,26 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             group = [p[:-1] + "0" if p and p[-1].isdigit() else p for p in group]
                         flat.extend(group)
                     continue
-                # First-verbs hack: at the start of a sentence/clause, six
-                # auxiliary verbs (are/had/is/was/were/will) get secondary
-                # stress applied through a fixed phoneme sequence.
-                is_sentence_initial = all(t.kind is not TokenKind.WORD for t in tokens[:tok_idx])
+                # First-verbs hack: at the start of a sentence, six
+                # auxiliary / linking verbs (are/had/is/was/were/will) get
+                # secondary stress applied through a fixed phoneme
+                # sequence. C ref: ``ls_task.c`` -- ``ls_task_set_what_state``
+                # runs ``ls_task_lookup_first_verbs`` (the ``verbs[6]``
+                # table) only while ``wstate == UNK_WH``, and
+                # ``ls_task_do_right_punct`` resets ``wstate = UNK_WH``
+                # after ``.`` / ``?`` / ``!`` only -- ``,`` / ``;`` / ``:``
+                # do NOT reset it. The Python tokenizer maps exactly that
+                # sentence-terminator set to ``PAUSE_LONG`` (and the
+                # clause set to ``PAUSE_SHORT``), so "sentence-initial"
+                # means: no WORD token since the last ``PAUSE_LONG``
+                # (or since the start of the utterance).
+                is_sentence_initial = True
+                for back_tok in reversed(tokens[:tok_idx]):
+                    if back_tok.kind is TokenKind.WORD:
+                        is_sentence_initial = False
+                        break
+                    if back_tok.kind is TokenKind.PAUSE_LONG:
+                        break
                 stem_stripped = False
                 if is_sentence_initial and token.text in first_verb_phones:
                     phones = list(first_verb_phones[token.text])
