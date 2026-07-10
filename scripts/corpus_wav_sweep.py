@@ -180,7 +180,44 @@ def _run_band(
     idx_file.unlink(missing_ok=True)
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912 — sweep-driver arg dispatch
+def _select_indices(args: argparse.Namespace, corpus: tuple[str, ...]) -> list[int]:
+    """Corpus indices to sweep: full corpus, strided sample, or prompt list."""
+    n = len(corpus)
+    if args.from_list is not None:
+        wanted = {
+            line
+            for line in args.from_list.read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")
+        }
+        indices = [i for i, text in enumerate(corpus) if text in wanted]
+        missing = wanted - {corpus[i] for i in indices}
+        if missing:
+            print(f"WARNING: {len(missing)} prompts from --from-list not in corpus")
+        return indices
+    if args.sample and args.sample < n:
+        step = -(-n // args.sample)
+        return list(range(0, n, step))
+    return list(range(n))
+
+
+def _resume_filter(indices: list[int], out_dir: Path) -> list[int]:
+    """Drop indices already recorded in ``out_dir``'s result files."""
+    done: set[int] = set()
+    for path in out_dir.glob("results_w*.jsonl"):
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    done.add(int(json.loads(line)["i"]))
+                except (ValueError, KeyError, json.JSONDecodeError):
+                    continue
+    if done:
+        remaining = [i for i in indices if i not in done]
+        print(f"resume: {len(indices) - len(remaining)} already recorded, {len(remaining)} to go")
+        return remaining
+    return indices
+
+
+def main(argv: list[str] | None = None) -> int:
     """Drive the sweep (or run one worker slice with ``--worker``)."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--worker", nargs=2, metavar=("IDX_FILE", "OUT"), help=argparse.SUPPRESS)
@@ -192,6 +229,15 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912 — sweep-drive
         type=Path,
         default=None,
         help="sweep only the prompts listed in this file (one per line)",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "keep existing results_w*.jsonl in --out-dir and sweep only the "
+            "not-yet-recorded indices (restart after a killed driver — "
+            "container suspensions can orphan the worker subprocesses)"
+        ),
     )
     parser.add_argument("--workers", type=int, default=4, help="parallel band workers (default 4)")
     parser.add_argument(
@@ -214,27 +260,15 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912 — sweep-drive
         return 0
 
     corpus = _load_corpus()
-    n = len(corpus)
-    if args.from_list is not None:
-        wanted = {
-            line
-            for line in args.from_list.read_text(encoding="utf-8").splitlines()
-            if line and not line.startswith("#")
-        }
-        indices = [i for i, text in enumerate(corpus) if text in wanted]
-        missing = wanted - {corpus[i] for i in indices}
-        if missing:
-            print(f"WARNING: {len(missing)} prompts from --from-list not in corpus")
-    elif args.sample and args.sample < n:
-        step = -(-n // args.sample)
-        indices = list(range(0, n, step))
-    else:
-        indices = list(range(n))
+    indices = _select_indices(args, corpus)
 
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    for old in out_dir.glob("results_w*.jsonl"):
-        old.unlink()
+    if args.resume:
+        indices = _resume_filter(indices, out_dir)
+    else:
+        for old in out_dir.glob("results_w*.jsonl"):
+            old.unlink()
 
     t0 = time.time()
     band = -(-len(indices) // args.workers)
