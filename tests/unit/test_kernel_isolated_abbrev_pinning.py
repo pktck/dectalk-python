@@ -49,10 +49,10 @@ The C side of the test is skipped unless the locally-built
 The Python side runs unconditionally.
 
 The corresponding ``Dr. Smith``-style cases (abbreviation followed
-by a name) already match cleanly via ``title_abbrevs`` in
-``src/dectalk/api/speak.py`` and are covered by
-``tests/parity/test_python_phonemes_vs_c_parity.py``; this module
-intentionally targets only the **isolated** form.
+by a name) match cleanly via the chunk-loop title pre-pass in
+``src/dectalk/api/speak.py`` (issue #246) and are covered by
+``tests/parity/test_stage_lts_parity.py``; this module intentionally
+targets only the **isolated** form.
 """
 
 from __future__ import annotations
@@ -67,25 +67,29 @@ import dectalk
 from dectalk._capi import CAPI
 
 # ---------------------------------------------------------------------------
-# Pinned Python output (current behaviour at issue-#146 time).
+# Pinned Python output.
 #
-# These reflect what ``dectalk.text_to_dectalk_phonemes`` emits today
-# with no abbreviation-expansion logic in the Python kernel: the
-# abbreviation letters are read out (often via the lexicon's word-form
-# entry for the merged spelling) and the trailing period leaks through
-# as a clause-terminal marker.
+# Issue #246 ported the title-abbreviation expansion: ``dr. / st.``
+# now run the ``ls_task_Dr_St_process`` context rule (isolated ->
+# drive/street) and ``mr. / mrs. / ms. / vs.`` hit their period-keyed
+# runtime-dictionary rows — those six now BYTE-MATCH the C column
+# below. The rest (``i.e.`` / ``Inc.`` / ``etc.`` / ``e.g.`` /
+# ``Mt.`` / ``a.m.`` / ``p.m.``) still have no expansion logic in the
+# Python kernel: the abbreviation letters are read out (often via the
+# lexicon's word-form entry for the merged spelling) and the trailing
+# period leaks through as a clause-terminal marker.
 # ---------------------------------------------------------------------------
 _PY_EXPECTED: dict[str, bytes] = {
-    "Dr.": b"d r . ",
+    "Dr.": b"d r ' ayv ",  # == C ("drive", issue #246)
     "i.e.": b"' ih. ",
     "Inc.": b"' ihnxk . ",
     "etc.": b"' eht k . ",
     "e.g.": b"' ehg . ",
-    "vs.": b"v z . ",
-    "Mr.": b"m r . ",
-    "Mrs.": b"m r z . ",
-    "Ms.": b"m z . ",
-    "St.": b"s t . ",
+    "vs.": b"v rrs ixs ",  # == C ("versus", issue #246)
+    "Mr.": b"m ihs t rr",  # == C ("mister", issue #246)
+    "Mrs.": b"m ihs ixz ",  # == C ("missus", issue #246)
+    "Ms.": b"m ihz ",  # == C ("miz", issue #246)
+    "St.": b"s t r ` iyt ",  # == C ("street", issue #246)
     "Mt.": b"m t . ",
     "a.m.": b"' aem . ",
     "p.m.": b"p m . ",
@@ -134,13 +138,15 @@ def _have_c_oracle() -> bool:
 def test_isolated_abbrev_python_pinned(prompt: str) -> None:
     """Pin Python's current output for isolated abbreviations.
 
-    The Python pipeline does **not** expand isolated abbreviations
-    today; it reads them out letter-by-letter / via the merged lexicon
-    form and leaks the trailing period as a clause-terminal marker.
-    This test asserts that current behaviour byte-for-byte so any
-    change (e.g. a future port of the ``abbrp_words`` table) is a
-    deliberate update of :data:`_PY_EXPECTED` with the new bytes,
-    not an accidental regression.
+    The title family (``dr. / st. / mr. / mrs. / ms. / vs.``) expands
+    C-faithfully since issue #246 and matches the C column. The
+    remaining prompts are **not** expanded; they read out
+    letter-by-letter / via the merged lexicon form and leak the
+    trailing period as a clause-terminal marker. This test asserts
+    current behaviour byte-for-byte so any change (e.g. a future port
+    of the ``abbrp_words`` table) is a deliberate update of
+    :data:`_PY_EXPECTED` with the new bytes, not an accidental
+    regression.
     """
     actual = dectalk.text_to_dectalk_phonemes(prompt)
     expected = _PY_EXPECTED[prompt]
@@ -180,27 +186,35 @@ def test_isolated_abbrev_c_oracle_pinned(prompt: str) -> None:
     )
 
 
-def test_isolated_abbrev_python_and_c_intentionally_diverge() -> None:
-    """Document the divergence: every pinned input differs between Python and C.
+# The title family ported by issue #246 (the ``ls_task_Dr_St_process``
+# context rule + the period-keyed runtime-dictionary rows). These are
+# the pinned prompts whose Python output now byte-matches the C
+# oracle; the rest still await the broader ``abbrp_words`` port.
+_PORTED_MATCHING: frozenset[str] = frozenset({"Dr.", "St.", "Mr.", "Mrs.", "Ms.", "vs."})
 
-    This test is the policy decision crystallised as a single
-    assertion: today, on every isolated-abbreviation token we
-    track, Python and C produce different phoneme streams. The
-    fix path is to port the ``abbrp_words`` /
-    ``ls_task_Dr_St_process`` tables into the Python kernel; until
-    that lands, the divergence is **expected** and **pinned**.
 
-    When that port lands, this test will need to be updated (or
-    removed) alongside :data:`_PY_EXPECTED`.
+def test_isolated_abbrev_python_and_c_divergence_ledger() -> None:
+    """Document exactly which pinned inputs match C and which still diverge.
+
+    The issue #146 policy pinned every isolated abbreviation as
+    divergent. Issue #246 ported the title family
+    (:data:`_PORTED_MATCHING`) — those six now byte-match the C
+    oracle. The remainder (``i.e.`` / ``Inc.`` / ``etc.`` / ``e.g.``
+    / ``Mt.`` / ``a.m.`` / ``p.m.``) still await the ``abbrp_words``
+    port and their divergence stays **expected** and **pinned**. Any
+    membership change in either direction is a deliberate, reviewed
+    event: update :data:`_PY_EXPECTED` and :data:`_PORTED_MATCHING`
+    together.
     """
     assert set(_PY_EXPECTED) == set(_C_EXPECTED), (
         "_PY_EXPECTED and _C_EXPECTED must cover the same prompt set"
     )
-    matches: list[str] = [p for p in _PY_EXPECTED if _PY_EXPECTED[p] == _C_EXPECTED[p]]
-    assert matches == [], (
-        "Expected every isolated abbreviation to diverge between Python and C "
-        "(per policy decision in issue #146). The following now match:\n"
-        f"  {matches}\n"
-        "If this is the result of a deliberate abbrp_words port, update or "
-        "remove this regression-anchor test and the pinned dicts above."
+    matches: set[str] = {p for p in _PY_EXPECTED if _PY_EXPECTED[p] == _C_EXPECTED[p]}
+    assert matches == _PORTED_MATCHING, (
+        "The set of isolated abbreviations whose Python output matches the C\n"
+        "oracle changed:\n"
+        f"  now matching:    {sorted(matches)}\n"
+        f"  expected to be:  {sorted(_PORTED_MATCHING)}\n"
+        "If this is the result of a deliberate abbreviation port, update\n"
+        "_PY_EXPECTED and _PORTED_MATCHING above together."
     )

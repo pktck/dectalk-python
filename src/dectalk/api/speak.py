@@ -111,6 +111,23 @@ _SYMBOL_SENTINELS: Final[dict[str, str]] = {
     "^": "__SYM_CARET__",
 }
 
+# Title abbreviations that are plain runtime-dictionary entries keyed
+# WITH the trailing period (issue #246; Dic_us.txt: ``mr.,N,mIstR`` /
+# ``mrs.,N,mIs|z`` / ``Ms.,N,mIz`` / ``Prof.,N,prxf'EsR`` /
+# ``vs.,N,vRs|s``). They hit case-insensitively in every context —
+# including end of input — and consume the period (no sentence break).
+# ``dr.``/``st.`` are NOT here: they go through the
+# ``ls_task_Dr_St_process`` context rule (see the chunk-loop pre-pass
+# in ``text_to_dectalk_phonemes``). ``no.`` is NOT an entry either —
+# the C reads ``No. 5`` as "no" + period, already matched.
+_TITLE_DICT_SENTINELS: Final[dict[str, str]] = {
+    "mr": "__TITLE_MR__",
+    "mrs": "__TITLE_MRS__",
+    "ms": "__TITLE_MS__",
+    "prof": "__TITLE_PROF__",
+    "vs": "__TITLE_VS__",
+}
+
 # Nominal speaking rate that maps to ``rate=1.0`` in the public API.
 # DECtalk's TextToSpeechSetRate accepts words-per-minute in [75, 600];
 # 180 wpm is the binary's default (per
@@ -1569,16 +1586,36 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         "__PUNCT_NAME_QUESTION__": ["K", "W", "EH1", "S", "CH", "AX0", "N"],
         # "mark" (unstressed) -> ``m aar k``.
         "__PUNCT_NAME_MARK__": ["M", "AA0", "R", "K"],
-        # Title-abbreviation sentinels (see ``title_abbrevs`` below).
-        # ``Dr.`` reads as ``d aak t rr`` (unstressed AA + K + T + ER)
-        # -- subtly different from the spelled-out word "doctor" which
-        # would be ``d ' aok t rr`` (stressed AO + K + T + ER). The
-        # other title forms aren't currently in the parity corpus but
-        # are filled in for completeness.
+        # Title-abbreviation sentinels (issue #246; emitted by the
+        # chunk-loop title pre-pass). The C forms are the verbatim
+        # runtime-dictionary / ls_task phoneme strings, all subtly
+        # different from the spelled-out words:
+        # - ``mr. / mrs. / ms. / vs.`` rows carry NO stress mark
+        #   (``mIstR`` -> ``m ihs t rr``; the word "mister" is
+        #   ``m ' ihs t rr``),
+        # - ``dr. / st.`` resolve context-sensitively to the
+        #   ``pdoctor`` / ``pdrive`` / ``psaint`` / ``pstreet`` tables
+        #   in l_us_con.c lines 607-631 (doctor/saint unstressed,
+        #   drive S1-stressed, street S2-stressed),
+        # - ``Prof.`` = ``prxf'EsR`` -> ``p r axf ' ehs rr``.
         "__TITLE_DR__": ["D", "AA0", "K", "T", "ER0"],
-        "__TITLE_MR__": ["M", "IH1", "S", "T", "ER0"],
-        "__TITLE_MRS__": ["M", "IH1", "S", "IX", "Z"],
-        "__TITLE_MS__": ["M", "IH1", "Z"],
+        "__TITLE_DR_DRIVE__": ["D", "R", "AY1", "V"],
+        "__TITLE_ST__": ["S", "EY0", "N", "T"],
+        "__TITLE_ST_STREET__": ["S", "T", "R", "IY2", "T"],
+        "__TITLE_MR__": ["M", "IH0", "S", "T", "ER0"],
+        "__TITLE_MRS__": ["M", "IH0", "S", "IX", "Z"],
+        "__TITLE_MS__": ["M", "IH0", "Z"],
+        "__TITLE_PROF__": ["P", "R", "AX", "F", "EH1", "S", "ER0"],
+        "__TITLE_VS__": ["V", "ER0", "S", "IX", "S"],
+        # Words the #246 evidence prompts exercise, re-aligned to the
+        # runtime-dictionary rows: ``today,N,t|d'e`` has the IX first
+        # vowel (the bundled lexicon's AH0 read ``t axd ' ey``);
+        # "versus" and "professor" are outside the runtime dictionary
+        # and the Python LTS diverged from the C LTS (voiced final S /
+        # scrambled vowels) -- pin the C readings.
+        "TODAY": ["T", "IX", "D", "EY1"],
+        "VERSUS": ["V", "ER1", "S", "IX", "S"],
+        "PROFESSOR": ["P", "R", "AX", "F", "EH1", "S", "ER0"],
         # --- Symbol sentinels (issue #244) --------------------------
         # Emitted by the chunk-loop symbol splitter; phonemes are the
         # verbatim Dic_us.txt symbol rows (lines 70-236), NOT the
@@ -2098,6 +2135,26 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
 
         _dotted = _re.compile(r"^[\d,]+(?:\.\d+)+$")
         _digits_strict = _re.compile(r"^\d[\d,]*$")
+        _title_chunk = _re.compile(r"^([A-Za-z]+)\.$")
+        _leading_alpha = _re.compile(r"^[A-Za-z]+")
+
+        def _clause_initial(toks: list[Token]) -> bool:
+            """True when no WORD has been emitted since the last pause.
+
+            Mirrors the C ``fc_index == 1`` test in
+            ``ls_task_Dr_St_process`` (ls_task.c line 3042): the
+            form-class index resets at every clause delimiter, so
+            "first word of the sentence" means first word of the
+            current *clause* — a comma resets it too (verified:
+            ``Hello, St. paul`` reads "saint").
+            """
+            for back_tok in reversed(toks):
+                if back_tok.kind is TokenKind.WORD:
+                    return False
+                if back_tok.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
+                    return True
+            return True
+
         # Tokenize with C-faithful digit-string handling: for each
         # whitespace-delimited chunk, if (after stripping surrounding
         # punctuation) it's a pure digit-string or dotted decimal,
@@ -2137,6 +2194,46 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             if punct_tokens is not None:
                 tokens.extend(punct_tokens)
                 continue
+            # --- Title abbreviations (issue #246) -------------------
+            # A chunk of the exact shape ``<letters>.`` may be a title
+            # abbreviation. Two C mechanisms apply (case-insensitive):
+            #
+            # - ``mr. / mrs. / ms. / prof. / vs.`` are plain runtime-
+            #   dictionary entries keyed WITH the trailing period
+            #   (Dic_us.txt lines 177/191/9623/9624/14809), so they hit
+            #   unconditionally -- any following context, including end
+            #   of input -- and the period is consumed (no sentence
+            #   break, no ``.`` marker in the stream).
+            # - ``dr. / st.`` go through ``ls_task_Dr_St_process``
+            #   (ls_task.c lines 2988-3057): next word capitalised ->
+            #   doctor/saint, UNLESS that word is exactly ``Dr``/``St``
+            #   (back-to-back guard) -> drive/street; next word lower-
+            #   case -> doctor/saint only when the abbreviation is the
+            #   first word of the clause, else drive/street; no next
+            #   word at all -> drive/street.
+            title_m = _title_chunk.match(chunk)
+            if title_m:
+                title_low = title_m.group(1).lower()
+                if title_low in _TITLE_DICT_SENTINELS:
+                    tokens.append(Token(TokenKind.WORD, _TITLE_DICT_SENTINELS[title_low]))
+                    continue
+                if title_low in ("dr", "st"):
+                    nxt = chunk_queue[0] if chunk_queue else None
+                    if nxt is None:
+                        person = False  # FINISHED_WORD branch: street/drive
+                    elif nxt[0].isupper():
+                        nxt_alpha_m = _leading_alpha.match(nxt)
+                        nxt_alpha = nxt_alpha_m.group(0) if nxt_alpha_m else ""
+                        # "St. Dr." back-to-back reads street/drive.
+                        person = nxt_alpha not in ("Dr", "St")
+                    else:
+                        person = _clause_initial(tokens)
+                    if title_low == "dr":
+                        sentinel = "__TITLE_DR__" if person else "__TITLE_DR_DRIVE__"
+                    else:
+                        sentinel = "__TITLE_ST__" if person else "__TITLE_ST_STREET__"
+                    tokens.append(Token(TokenKind.WORD, sentinel))
+                    continue
             # --- Symbol splitting (issue #244) ----------------------
             # The C kernel treats ``& % @ + = * / # ^`` as word
             # delimiters that speak via their own runtime-dictionary
@@ -2239,15 +2336,15 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     tokens.append(Token(TokenKind.PAUSE_LONG, last))
                 elif last in (",", ";", ":"):
                     tokens.append(Token(TokenKind.PAUSE_SHORT, last))
-        # Pre-pass B: expand ``Dr.`` -> ``DOCTOR`` / ``Mr.`` -> ``MISTER``
-        # / ``Mrs.`` -> ``MISSUS`` etc. when the abbreviation is
-        # followed by a name (PAUSE_LONG '.' + WORD pattern). DECtalk's
-        # tokenizer does this; ours doesn't, so the abbreviation leaked
-        # through as a spelled-out word.
-        # Title abbreviation -> a sentinel word that lands in
-        # ``word_phoneme_overrides`` with the title-specific phoneme
-        # form ("Dr." reads ``d aak t rr``, slightly different from the
-        # spelled-out "doctor" which is ``d ' aok t rr``).
+        # Pre-pass B: legacy title expansion (PAUSE_LONG '.' + WORD
+        # pattern). The chunk-loop title pre-pass above (issue #246)
+        # now intercepts every clean ``<Title>.`` chunk with the
+        # C-faithful context rules, so this only sees the leftover
+        # punctuation-adjacent shapes it can still reach (``"Dr.,"`` /
+        # quoted forms) where tokenize separated the title from its
+        # period. Kept as a better-than-spelling fallback -- the C
+        # spells such shapes letter-by-letter with a spoken "period",
+        # machinery we don't model.
         title_abbrevs = {
             "DR": "__TITLE_DR__",
             "MR": "__TITLE_MR__",
