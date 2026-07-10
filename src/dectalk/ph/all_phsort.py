@@ -307,6 +307,13 @@ def all_phsort(phTTS: TtsHandle) -> int:
         # The HLSYN build doesn't re-walk dangling stress in main loop 1;
         # citation only.
 
+        # Refresh the cached symbol: the C source re-reads
+        # ``symbols[n]`` at every check below, and the PPSTART
+        # function-word block above may have rewritten slot ``n`` to
+        # WBOUND (or inserted an S1 after it).
+        sym = p_dph_t.symbols[n]
+        sym_val = sym & PVALUE
+
         # C lines 1234-1264: remove the weaker of two boundary symbols
         # in a row. Guard is ``#if !defined(HLSYN) &&
         # !defined(CHANGES_AFTER_V43)`` + ``ENGLISH_US`` — ACTIVE on the
