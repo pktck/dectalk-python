@@ -268,6 +268,21 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "3:30",
     "12/25",
     "10-20",
+    # issue #248: ``[:phoneme on]`` (and the asky/arpabet/off/silent
+    # submatrix) is a state-only directive — it selects how ``[...]``
+    # bracket blocks are read (``cm_pars.c:361``) and never turns the plain
+    # segment body into phonemes, so a leading ``[:phoneme ...]`` speaks the
+    # following text exactly like the bare prompt. (Mid-text ``[:phoneme]``
+    # is deliberately NOT pinned: it splits the utterance into separately-
+    # rendered segments and inherits the pre-existing multi-segment
+    # over-run that also affects mid-text ``[:rate]`` — orthogonal to #248.)
+    "[:phoneme on] hello",
+    "[:phoneme off] hello",
+    "[:phoneme arpabet on] hello",
+    "[:phoneme asky on] hello",
+    "[:phoneme silent] hello",
+    "[:phoneme on] hello world",
+    "[:phoneme on] the quick brown fox",
 )
 
 
