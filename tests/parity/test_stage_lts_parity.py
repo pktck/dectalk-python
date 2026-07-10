@@ -83,3 +83,65 @@ def test_python_arpabet_matches_c(text: str, capi: CAPI) -> None:
         f"  expected (C): {expected!r}\n"
         f"  actual (Py):  {actual!r}"
     )
+
+
+# Issue #310 representatives: the -ed / -ing / -er / -s suffix family
+# on doubled-final-consonant (and related runtime-dictionary-rooted)
+# stems. Each row names a distinct mechanism in the fix:
+#   - "stopped" / "stopping" / "stopper": the l_us_suf.c un-doubling
+#     variants re-deriving the runtime-dictionary root (AO vowel from
+#     the dictionary row; the -ed rule devoices to T after P).
+#   - "grabbed" / "planned": LTS-tier stems (outside both
+#     dictionaries) with the voiced -ed -> D tail.
+#   - "stirred": the -ed rule's ``rr`` un-doubling variant.
+#   - "fitted": the T/D-final stem's epenthetic IX + D tail.
+#   - "swapped": curated override for the compiled ``wa`` -> AO
+#     letter rule the Python heuristic LTS lacks.
+#   - "committed": curated override for C's second-syllable LTS
+#     stress the Python heuristic LTS lacks.
+#   - "admitted" / "begins" / "married": pure-verb runtime roots
+#     emitting the ``)`` VPSTART marker from the root entry's mask.
+#   - "visited" / "referring": lexicon rows re-aligned from the 2002
+#     source rows to the runtime Dic_us.txt rows (IX vs AX vowels).
+#   - the in-context rows: the family embedded in running text.
+_ED_SUFFIX_FAMILY: tuple[str, ...] = (
+    "stopped",
+    "stopping",
+    "stopper",
+    "grabbed",
+    "planned",
+    "stirred",
+    "fitted",
+    "swapped",
+    "committed",
+    "admitted",
+    "begins",
+    "married",
+    "visited",
+    "referring",
+    "the rain stopped.",
+    "it stopped raining",
+    "she grabbed it",
+    "we planned a trip",
+    "he admitted it",
+)
+
+
+@pytest.mark.parametrize("text", _ED_SUFFIX_FAMILY, ids=list(_ED_SUFFIX_FAMILY))
+def test_ed_suffix_family_matches_c(text: str, capi: CAPI) -> None:
+    """Doubled-consonant -ed/-ing family is byte-identical (issue #310).
+
+    Pins the suffix-strip chain fixed in #310: the ACTIVE
+    ``l_us_suf.c`` strip rules (un-doubling variants, runtime-
+    dictionary membership, the ``)`` VPSTART marker from the stripped
+    root's entry) plus the C LTS engine's -ed tail behaviour
+    (devoiced T / voiced D / epenthetic IX D) for stems outside the
+    dictionaries.
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"-ed suffix family mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
