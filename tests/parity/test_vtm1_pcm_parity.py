@@ -260,6 +260,14 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "[:comma 1000] a, b",
     "[:period 2000] a. b",
     "[:comma 45000] a, b",
+    # issue #225 — numeric-format expansion (ordinal / currency /
+    # clock time / fraction / digit-dash range), each byte-verified
+    # against the shipped binary before pinning.
+    "42nd",
+    "$1.50",
+    "3:30",
+    "12/25",
+    "10-20",
 )
 
 

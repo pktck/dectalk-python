@@ -255,3 +255,90 @@ def test_ed_suffix_family_matches_c(text: str, capi: CAPI) -> None:
         f"  expected (C): {expected!r}\n"
         f"  actual (Py):  {actual!r}"
     )
+
+
+# Issue #225 representatives: the C front end's numeric-format
+# expansion, routed through ``lts.numeric_formats``. Each row names a
+# distinct mechanism:
+#   - ordinals: pordin units ("1st"/"42nd"), teens + TH ("11th"),
+#     tens + IX + TH ("20th"), hundred + pand + ordinal ("103rd"),
+#     magnitude-bail + TH ("1000th") — ls_task.c:3953 + the
+#     do_digit_group oflag arms (l_us_pr1.c:429).
+#   - currency: dollars plural Z, "$N.NN" cents with the leading-zero
+#     skip and singular/plural pflag forms, ".00" suppression, the
+#     non-2-digit decimal fallback, and the nwdtab "$5 million"
+#     scale-word lookahead (ls_task_currency_processing).
+#   - clock times: 1/2-digit hour, VPSTART joins, "00"-minute skip,
+#     leading-zero minute spell, :SS tails, and the spelled am/pm
+#     lookahead (ls_proc_is_time / do_time, ls_task.c:3616).
+#   - fractions: half/halves, ordinal denominators with the Z/S
+#     plural allomorph, the "12/25" M/D-looking form that C reads as
+#     a fraction (ls_proc_is_frac / do_frac).
+#   - dd-mon dates: month word + ordinal day + year forms
+#     (ls_proc_is_date / do_date).
+#   - part-number ranges: digit runs via do_2/3/4_digits with the
+#     spelled "dash" separator (ls_task_part_number).
+#   - signed integers / decimals: ls_proc_do_sign + do_number.
+#   - digit plurals: do_number + ls_util_pluralize ("60s" / "60's").
+_NUMERIC_FORMATS: tuple[str, ...] = (
+    "1st",
+    "2nd",
+    "3rd",
+    "11th",
+    "20th",
+    "42nd",
+    "103rd",
+    "1000th",
+    "$5",
+    "$1.50",
+    "$0.01",
+    "$3.00",
+    "$3.240",
+    "$12,345.67",
+    "$5 million",
+    "3:30",
+    "12:45",
+    "3:05",
+    "7:00",
+    "12:34:56",
+    "3:30 pm",
+    "1/2",
+    "3/4",
+    "12/25",
+    "99/100",
+    "10-20",
+    "5-3",
+    "2022-2023",
+    "B-52",
+    "23-aug-1984",
+    "23-Aug",
+    "-5",
+    "+5",
+    "-1/2",
+    "60s",
+    "60's",
+    "the 3rd time",
+    "pay $1.50 now",
+    "range 10-20 only",
+    "meet on 12/25 sharp",
+    "it costs $5 million",
+)
+
+
+@pytest.mark.parametrize("text", _NUMERIC_FORMATS, ids=list(_NUMERIC_FORMATS))
+def test_numeric_formats_match_c(text: str, capi: CAPI) -> None:
+    """Numeric-format expansion is byte-identical (issue #225).
+
+    Pins the ``lts.numeric_formats`` dispatch: ordinal suffixes,
+    currency (incl. the nwdtab scale-word lookahead), clock times
+    (incl. the spelled am/pm lookahead), fractions, dd-mon dates,
+    digit-dash part-number ranges, signed numbers, and digit plurals
+    — each byte-compared against ``TextToSpeechConvertToPhonemes``.
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"numeric-format mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
