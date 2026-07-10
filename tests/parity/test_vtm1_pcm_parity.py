@@ -203,6 +203,10 @@ def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch)
 #     tokens (standalone and word-attached) speaking via their
 #     Dic_us.txt rows, plus the primary-stressed single-letter
 #     reading of "b" (issue #244).
+#   - "Mr. Smith" / "Mrs. Brown called today." / "St. Paul is a
+#     city." / "Prof. White teaches here.": title abbreviations via
+#     the period-keyed runtime-dictionary rows (destressed mister /
+#     missus) and the ls_task_Dr_St_process saint branch (issue #246).
 _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "hi",
     "hello",
@@ -244,6 +248,10 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "a = b",
     "email me @ work",
     "one# two",
+    "Mr. Smith",
+    "Mrs. Brown called today.",
+    "St. Paul is a city.",
+    "Prof. White teaches here.",
 )
 
 

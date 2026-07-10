@@ -185,6 +185,58 @@ def test_symbol_expansion_family_matches_c(text: str, capi: CAPI) -> None:
     )
 
 
+# Issue #246 representatives: title-abbreviation expansion.
+# Each row names a distinct mechanism in the fix:
+#   - "Mr. Smith" / "Mrs. Brown called today." / "Ms. Jones" /
+#     "Bond vs. Smith" / "Prof. White teaches here.": the period-keyed
+#     runtime-dictionary rows (destressed ``m ihs t rr`` etc.), firing
+#     case-insensitively in any context.
+#   - "St. Paul is a city." / "Dr. Smith said hello.": the
+#     ls_task_Dr_St_process capitalised-next branch (saint/doctor).
+#   - "Main St. is long." / "The Dr. smith": the lowercase-next,
+#     not-clause-initial branch (street/drive).
+#   - "Hello, St. paul": comma resets the clause -> first-word rule
+#     picks saint.
+#   - "mister Smith" / "Saint Paul is a city." / "No. 5": spelled-out
+#     controls that must stay untouched.
+#   - "today": the runtime-dictionary IX first vowel (``t|d'e``).
+_ABBREVIATION_FAMILY: tuple[str, ...] = (
+    "Mr. Smith",
+    "Mrs. Brown called today.",
+    "Ms. Jones",
+    "Bond vs. Smith",
+    "Prof. White teaches here.",
+    "St. Paul is a city.",
+    "Dr. Smith said hello.",
+    "Main St. is long.",
+    "The Dr. smith",
+    "Hello, St. paul",
+    "mister Smith",
+    "Saint Paul is a city.",
+    "No. 5",
+    "today",
+)
+
+
+@pytest.mark.parametrize("text", _ABBREVIATION_FAMILY, ids=list(_ABBREVIATION_FAMILY))
+def test_abbreviation_family_matches_c(text: str, capi: CAPI) -> None:
+    """Title abbreviations are byte-identical (issue #246).
+
+    Pins both C mechanisms: the period-keyed runtime-dictionary rows
+    (mr./mrs./ms./prof./vs. — destressed, context-free) and the
+    ``ls_task_Dr_St_process`` context rule for dr./st.
+    (doctor/saint vs drive/street by next-word case, clause position,
+    and the back-to-back guard).
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"abbreviation mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
+
+
 @pytest.mark.parametrize("text", _ED_SUFFIX_FAMILY, ids=list(_ED_SUFFIX_FAMILY))
 def test_ed_suffix_family_matches_c(text: str, capi: CAPI) -> None:
     """Doubled-consonant -ed/-ing family is byte-identical (issue #310).
