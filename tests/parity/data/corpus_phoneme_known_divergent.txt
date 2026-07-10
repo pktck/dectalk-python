@@ -1,60 +1,8 @@
 # Corpus prompts whose Python phoneme stream is a known divergence from the
 # C oracle (issue #281 burn-down list). One prompt per line, sorted.
 # Regenerate: uv run python scripts/corpus_phoneme_sweep.py --update-known-list
-# Verified against a fresh oracle on 2026-07-09: 56 prompts / 133,641 corpus.
-a aunt of ours
-a brother of ours
-a colleague of ours
-a cousin of ours
-a friend of ours
-a neighbor of ours
-a nephew of ours
-a sister of ours
-a uncle of ours
-all roads lead to rome
-another object
-another subject
-as heavy as lead
-aunt of ours
-blood and tears
-brother of ours
-colleague of ours
-cousin of ours
+# Verified against a fresh oracle on 2026-07-10 (issue #295 homograph
+# burn-down): 2 prompts / 133,641 corpus — possessive-`its` secondary
+# stress only, owned by the #280 runtime stress-rules work.
 don't judge a book by its cover
-each object
-each subject
 every dog has its day
-fewer than five came in time
-friend of ours
-he was close enough to hear
-i contrast
-it was too close to hear
-neighbor of ours
-nephew of ours
-sister of ours
-string
-swing
-that was a close one
-the answer is complex
-the answer is not complex
-the cause is complex
-the cause is not complex
-the game was close until the end
-the girl is on the swing
-the match was close
-the pasta is al dente
-the produce
-the question is complex
-the question is not complex
-the road is long and winding
-the truth is complex
-the truth is not complex
-they contrast
-they laughed until tears ran down their faces
-this is ours
-to contract
-to contrast
-uncle of ours
-we contrast
-we like wind, rain, snow, and ice
-you contrast

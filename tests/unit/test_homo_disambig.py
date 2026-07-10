@@ -109,9 +109,7 @@ def test_adverb_fall_through_uses_prev_prev_word() -> None:
     Mirrors the GL 3/3/1997 fall-through (ls_homo.c lines 402-406):
     the PRON context two words back selects the verb reading.
     """
-    reading, rule = select_homograph_entry(
-        WIND_P, WIND_S, prev_fc=LIKE_FC, prev_prev_fc=WE_FC
-    )
+    reading, rule = select_homograph_entry(WIND_P, WIND_S, prev_fc=LIKE_FC, prev_prev_fc=WE_FC)
     assert reading == "S"
     assert rule is not None
     assert rule.h_context == FC_PRON
@@ -119,9 +117,7 @@ def test_adverb_fall_through_uses_prev_prev_word() -> None:
 
 def test_adverb_fall_through_requires_third_word() -> None:
     """The fall-through needs ``fc_index >= 3`` — no prev-prev, no rule."""
-    reading, _rule = select_homograph_entry(
-        WIND_P, WIND_S, prev_fc=LIKE_FC, prev_prev_fc=None
-    )
+    reading, _rule = select_homograph_entry(WIND_P, WIND_S, prev_fc=LIKE_FC, prev_prev_fc=None)
     assert reading == "P"
 
 
@@ -153,9 +149,7 @@ def test_suffix_rule_gates_on_current_word_mask() -> None:
     With a zero current mask the suffix rules are skipped and the ART
     context keeps the primary instead.
     """
-    reading, rule = select_homograph_entry(
-        WIND_P, WIND_S, cur_fc=FC_ING, prev_fc=THE_FC
-    )
+    reading, rule = select_homograph_entry(WIND_P, WIND_S, cur_fc=FC_ING, prev_fc=THE_FC)
     assert reading == "S"
     assert rule is not None
     assert rule.h_suffix == FC_ING
@@ -284,9 +278,7 @@ def test_suffix_form_class_no_match_returns_zero() -> None:
         ),
     ],
 )
-def test_text_to_dectalk_phonemes_matches_c_oracle_capture(
-    text: str, expected: bytes
-) -> None:
+def test_text_to_dectalk_phonemes_matches_c_oracle_capture(text: str, expected: bytes) -> None:
     """Byte-for-byte parity with the captured C oracle stream."""
     assert text_to_dectalk_phonemes(text) == expected
 

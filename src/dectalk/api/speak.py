@@ -2171,9 +2171,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 elif token.text in formclass_lex:
                     this_word_fc = formclass_lex[token.text]
                 else:
-                    suffix_fc, stem_root, _suffix = suffix_form_class(
-                        token.text, formclass_words
-                    )
+                    suffix_fc, stem_root, _suffix = suffix_form_class(token.text, formclass_words)
                     if stem_root is not None and stem_root in homograph_pair_words:
                         homo_fc_reading, selected_fc, this_word_fc = _select_pair(
                             stem_root, suffix_fc

@@ -7,12 +7,14 @@ the phoneme stream that drives the downstream PH/VTM stages. The pure
 Python pipeline is byte-compared against it across a deterministic
 subsample of the shared bit-parity corpus (``tests/parity/_corpus.py``).
 
-**Current status (measured 2026-07-09, issue #281):** 133,585 / 133,641
-corpus prompts are byte-identical (99.96%). The 56 divergent prompts —
-homograph POS resolution (close/lead/tears/wind/object/subject/
-contrast/produce), positional stress variants (clause-final ``ours``,
-possessive ``its``), and a few LTS nuances (swing/string IH-before-NG,
-``al dente``) — are listed in
+**Current status (measured 2026-07-10, issue #295):** 133,639 / 133,641
+corpus prompts are byte-identical (99.999%). The #295 homograph
+burn-down closed the POS-resolution class (close/lead/tears/wind/
+object/subject/contrast/produce via the faithful ``ls_homo_homo``
+port), the ``ours``/``al``/``fewer`` lexicon rows, and the
+swing/string IH-before-NG nuance. The 2 remaining divergent prompts
+are possessive-``its`` secondary-stress residue owned by the #280
+runtime stress-rules work; they are listed in
 ``tests/parity/data/corpus_phoneme_known_divergent.txt`` and xfailed
 (non-strict) here. The gate enforced by this module is therefore: **no
 prompt outside the known-divergent list may regress**. Shrink the list
@@ -149,7 +151,7 @@ def _get_oracle(text: str) -> bytes:
 def _params() -> list[object]:
     known = _known_divergent()
     xfail = pytest.mark.xfail(
-        reason="known divergence — #281 burn-down list "
+        reason="known divergence — possessive-its stress residue, #280 "
         "(tests/parity/data/corpus_phoneme_known_divergent.txt)",
         strict=False,
     )
@@ -166,9 +168,10 @@ def test_python_phonemes_match_c_phonemes(text: str) -> None:
     Prompts outside the known-divergent list must match byte-for-byte;
     a mismatch there is a fresh regression in the Python front end and
     needs a Python-side fix, not an xfail. Prompts inside the list are
-    the measured #281 backlog (homograph POS resolution and positional
-    stress residue — see #295); they xfail non-strictly so fixes can
-    land incrementally, after which
+    the measured residue after the #295 homograph burn-down —
+    possessive-``its`` secondary stress, owned by the #280 runtime
+    stress-rules work; they xfail non-strictly so fixes can land
+    incrementally, after which
     ``scripts/corpus_phoneme_sweep.py --update-known-list`` re-shrinks
     the list.
     """
