@@ -109,7 +109,7 @@ def _worker(idx_file: str, out_path: str) -> None:
                     row = {"i": i, "ok": 1}
                 else:
                     row = {"i": i, "text": text, **_mismatch_stats(py_b, bin_b)}
-            except Exception as exc:  # noqa: BLE001 — worker must survive any prompt
+            except Exception as exc:  # worker must survive any prompt
                 row = {"i": i, "text": text, "error": f"{type(exc).__name__}: {exc}"}
             out.write(json.dumps(row) + "\n")
             out.flush()
@@ -124,7 +124,7 @@ def _mismatch_stats(py_b: bytes, bin_b: bytes) -> dict[str, object]:
             py_pcm = fh.readframes(fh.getnframes())
         with wave.open(io.BytesIO(bin_b)) as fh:
             c_pcm = fh.readframes(fh.getnframes())
-    except Exception:  # noqa: BLE001 — header-mangled output still wants a row
+    except Exception:  # header-mangled output still wants a row
         stats["wav_parse"] = "failed"
         return stats
     n_py, n_c = len(py_pcm) // 2, len(c_pcm) // 2
@@ -180,7 +180,7 @@ def _run_band(
     idx_file.unlink(missing_ok=True)
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0912 — sweep-driver arg dispatch
     """Drive the sweep (or run one worker slice with ``--worker``)."""
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--worker", nargs=2, metavar=("IDX_FILE", "OUT"), help=argparse.SUPPRESS)

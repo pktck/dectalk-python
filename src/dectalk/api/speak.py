@@ -57,15 +57,34 @@ from dectalk.nt.audio import write_wav
 from dectalk.ph.prosody import split_sentences
 from dectalk.ph.sequencer import synthesize_phonemes
 
-# Forward-declared imports for the experimental full pipeline. These
-# names are only imported lazily inside _speak_via_python_full so the
-# default import path stays cheap.
+# Escape-hatch env var for the no-``_capi`` dispatch. Unset (or any
+# value other than "0") routes US-English audio through the full
+# translated PH pipeline; "0" selects the legacy approximate path.
+# See :func:`_use_full_pipeline`.
 _FULL_PIPELINE_ENV: str = "DECTALK_FULL_PIPELINE"
 
 # Escape-hatch env var for the full pipeline's render stage. Unset (or
 # any value other than "0") renders through the vtm1 path; "0" selects
 # the legacy hlsyn path. See :func:`_use_vtm1`.
 _USE_VTM1_ENV: str = "DECTALK_USE_VTM1"
+
+
+def _use_full_pipeline(lang: str) -> bool:
+    """Whether the no-``_capi`` audio path uses the full PH pipeline.
+
+    Defaults to True for US English (issue #311): when ``_capi`` is
+    unavailable (or ``DECTALK_DISABLE_CAPI=1``), ``speak``/``to_wav``
+    route through the translated PH orchestration chain
+    (:func:`_speak_via_python_full`) + the ``vtm1.c``-ported
+    synthesiser — the byte-exact parity path measured at 100% on the
+    500-prompt stratified sample and the full-corpus WAV gate. Set
+    ``DECTALK_FULL_PIPELINE=0`` to select the legacy approximate
+    pipeline (parse -> tokenize -> LTS -> sequencer) instead; that
+    path is retained as a diagnostic escape hatch (the #272/#274
+    pattern one level up) and for languages other than US English,
+    which the full pipeline does not yet wire.
+    """
+    return lang == "us" and os.environ.get(_FULL_PIPELINE_ENV) != "0"
 
 
 def _use_vtm1() -> bool:
@@ -453,7 +472,8 @@ def _speak_via_python_full(
 ) -> NDArray[np.int16]:
     """Real PH-stage pipeline -- walks the translated C call chain.
 
-    Gated behind ``DECTALK_FULL_PIPELINE=1``. Routes the input through
+    The default no-``_capi`` path for US English (issue #311);
+    ``DECTALK_FULL_PIPELINE=0`` opts out. Routes the input through
     :func:`dectalk.cmd.parse` so inline ``[:cmd value]`` directives
     (rate, voice, phoneme-mode) mutate per-segment state instead of
     leaking into the phone stream, then synthesises each segment via
@@ -961,28 +981,26 @@ def _speak_via_python(
     lang: str,
     lts_fallback: bool,
 ) -> NDArray[np.int16]:
-    """Approximate-Python audio pipeline (pre-Phase-B implementation).
+    """Pure-Python audio pipeline dispatch (no ``_capi``).
 
-    When ``DECTALK_FULL_PIPELINE=1`` is set, dispatches to the
-    work-in-progress :func:`_speak_via_python_full` that calls the
-    real translated PH modules. Otherwise falls back to the legacy
-    approximate path (parse -> tokenize -> LTS -> sequencer) used
-    for languages other than US English and when the C library is
-    unavailable.
+    For US English this routes through :func:`_speak_via_python_full`
+    — the translated PH orchestration chain + ``vtm1.c``-ported
+    synthesiser, byte-identical to the DECtalk binary across the
+    parity corpus (issue #311; the no-``_capi`` default since the
+    full-corpus WAV burn-down). ``DECTALK_FULL_PIPELINE=0`` opts out
+    to the legacy approximate path below (parse -> tokenize -> LTS ->
+    sequencer), which also serves languages other than US English.
+    The approximate output is intelligible but not byte-identical.
 
-    Used as the fallback when the C library isn't available, and for
-    languages other than US English. Output is intelligible but not
-    byte-identical to the DECtalk binary.
-
-    The output is wrapped with leading + trailing silence pads matching
-    the C reference's per-utterance envelope (issue #201). The
-    approximate phoneme sequencer renders only the audible phoneme
-    contents, so without these pads every prompt under-ran the C
-    reference by ~4000 samples (the missing trailing pause). The pad
-    sizes mirror the C kernel's ``nfperiod`` / leading-onset behaviour
-    on the 15-prompt parity corpus.
+    The approximate path's output is wrapped with leading + trailing
+    silence pads matching the C reference's per-utterance envelope
+    (issue #201). The approximate phoneme sequencer renders only the
+    audible phoneme contents, so without these pads every prompt
+    under-ran the C reference by ~4000 samples (the missing trailing
+    pause). The pad sizes mirror the C kernel's ``nfperiod`` /
+    leading-onset behaviour on the 15-prompt parity corpus.
     """
-    if os.environ.get(_FULL_PIPELINE_ENV) == "1":
+    if _use_full_pipeline(lang):
         return _speak_via_python_full(text, rate, voice, lang, lts_fallback)
     initial_voice = voice if isinstance(voice, str) else None
     initial_state = SpeechState(voice=initial_voice, rate=rate)
