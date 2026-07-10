@@ -171,12 +171,27 @@ PRESETS: Final[dict[str, VoicePreset]] = {
 }
 """Canonical voice id (``"paul"``..``"willy"``) -> :class:`VoicePreset`."""
 
+# ``[:name X]`` accepts the C ``voice_names[]`` strings (``c_us_cde.h``
+# lines 301-317), two of which differ from the preset keys above:
+# ``wendy`` is the C-table name for the breathy female row exposed here
+# as ``willy`` (see ``dectalk.ph.voice_definitions.VOICES_BY_NAME``),
+# and ``val`` (Variable Val, speaker 9) defaults to the current-speaker
+# row -- Paul on a fresh handle -- until a ``[:dv save]`` overwrites it
+# (``ph_vset.c`` ``saveval``). Discovered via the issue #316 command
+# grid: ``[:name wendy]`` / ``[:name val]`` crashed with KeyError while
+# ``[:nw]`` / ``[:nv]`` rendered byte-exact.
+_NAME_ALIASES: Final[dict[str, str]] = {
+    "wendy": "willy",
+    "val": "paul",
+}
+
 
 def get_preset(name: str) -> VoicePreset:
     """Look up a voice preset by its short name (case-insensitive).
 
     Args:
-        name: Short voice name (``"paul"``, ``"betty"``, ...).
+        name: Short voice name (``"paul"``, ``"betty"``, ...) or a
+            documented ``[:name X]`` alias (``"wendy"``, ``"val"``).
 
     Returns:
         The :class:`VoicePreset` for the named voice.
@@ -184,4 +199,5 @@ def get_preset(name: str) -> VoicePreset:
     Raises:
         KeyError: If ``name`` is not a known voice.
     """
-    return PRESETS[name.lower()]
+    key = name.lower()
+    return PRESETS[_NAME_ALIASES.get(key, key)]

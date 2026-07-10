@@ -22,6 +22,18 @@ def test_get_preset_unknown_raises() -> None:
         get_preset("nobody")
 
 
+def test_get_preset_documented_name_aliases() -> None:
+    """The C ``voice_names[]`` strings resolve (issue #316 discovery).
+
+    ``[:name wendy]`` / ``[:name val]`` crashed with KeyError while the
+    equivalent ``[:nw]`` / ``[:nv]`` shortcuts rendered fine: ``wendy``
+    is the C-table name for the ``willy`` preset and ``val`` (Variable
+    Val) defaults to the Paul row.
+    """
+    assert get_preset("wendy") is get_preset("willy")
+    assert get_preset("VAL") is get_preset("paul")
+
+
 def test_voice_changes_audible_pitch() -> None:
     """Different voices should produce different waveforms for the same text."""
     paul = speak("hello world", voice="paul")
