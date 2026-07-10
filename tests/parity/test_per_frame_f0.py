@@ -137,8 +137,10 @@ def _c_oracle_f0_series(capi: CAPI, text: str) -> list[float]:
 def _python_f0_series(text: str) -> list[float]:
     """Capture per-frame F0 in Hz from the Python full-pipeline driver.
 
-    Monkey-patches :func:`dectalk.ph.parstochip_to_frames.parstochip_to_llframe_delayed`
-    to record ``parstochip[OUT_T0]`` on each call, then runs
+    Monkey-patches :func:`dectalk.ph.parstochip_to_frames.send_pars_delaypars`
+    (the per-frame packet builder the driver loop calls with the raw
+    current/previous parstochip pair -- the #279 capture seam) to
+    record ``parstochip[OUT_T0]`` on each call, then runs
     :func:`dectalk.speak` under ``DECTALK_DISABLE_CAPI=1`` +
     ``DECTALK_FULL_PIPELINE=1`` so the per-frame driver loop executes
     in Python.
@@ -153,9 +155,9 @@ def _python_f0_series(text: str) -> list[float]:
     from dectalk.ph import parstochip_to_frames as _ptf  # noqa: PLC0415
 
     captured: list[int] = []
-    original = _ptf.parstochip_to_llframe_delayed
+    original = _ptf.send_pars_delaypars
 
-    def _wrap(parstochip: list[int], *args: object, **kwargs: object) -> object:
+    def _wrap(parstochip: list[int], *args: object, **kwargs: object) -> list[int]:
         captured.append(parstochip[OUT_T0])
         return original(parstochip, *args, **kwargs)  # type: ignore[arg-type]
 
@@ -163,13 +165,13 @@ def _python_f0_series(text: str) -> list[float]:
     prev_full = os.environ.get("DECTALK_FULL_PIPELINE")
     os.environ["DECTALK_DISABLE_CAPI"] = "1"
     os.environ["DECTALK_FULL_PIPELINE"] = "1"
-    _ptf.parstochip_to_llframe_delayed = _wrap
+    _ptf.send_pars_delaypars = _wrap
     try:
         import dectalk  # noqa: PLC0415 -- gated import (env-dependent dispatch)
 
         dectalk.speak(text)
     finally:
-        _ptf.parstochip_to_llframe_delayed = original
+        _ptf.send_pars_delaypars = original
         if prev_disable is None:
             os.environ.pop("DECTALK_DISABLE_CAPI", None)
         else:

@@ -38,13 +38,19 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from dectalk.hlsyn.llsyn import LLFrame
 from dectalk.ph.param_indices import OUT_B1, OUT_F1, OUT_T0, OUT_TLT
-from dectalk.ph.spdef_chip import SpdChip
 
 
 def _capture_frames(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[int]]:
-    """Run ``_render_clause_full`` and return all emitted ``parstochip`` snapshots."""
+    """Run ``_render_clause_full`` and return all emitted ``parstochip`` snapshots.
+
+    Monkey-patches ``send_pars_delaypars`` -- the per-frame packet
+    builder the driver loop calls with the raw current/previous
+    parstochip pair (the #279 capture seam, previously doubled by the
+    retired ``parstochip_to_llframe_delayed`` call). The driver binds
+    the name via a function-local ``from ... import ...`` at call time,
+    so patching the source-module attribute intercepts the call site.
+    """
     monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
     monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
 
@@ -52,21 +58,16 @@ def _capture_frames(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[int
     from dectalk.api.speak import _render_clause_full  # noqa: PLC0415
 
     snapshots: list[list[int]] = []
-    real = ptf.parstochip_to_llframe_delayed
+    real = ptf.send_pars_delaypars
 
     def _capture(
         parstochip: list[int],
-        previous: list[int] | None,
-        spd_chip: SpdChip | None = None,
-    ) -> LLFrame:
+        previous_parstochip: list[int],
+    ) -> list[int]:
         snapshots.append(list(parstochip))
-        return real(parstochip, previous, spd_chip)
+        return real(parstochip, previous_parstochip)
 
-    monkeypatch.setattr(ptf, "parstochip_to_llframe_delayed", _capture)
-    import dectalk.api.speak as speak_mod  # noqa: PLC0415
-
-    if hasattr(speak_mod, "parstochip_to_llframe_delayed"):
-        monkeypatch.setattr(speak_mod, "parstochip_to_llframe_delayed", _capture)
+    monkeypatch.setattr(ptf, "send_pars_delaypars", _capture)
 
     samples = _render_clause_full(
         text,
