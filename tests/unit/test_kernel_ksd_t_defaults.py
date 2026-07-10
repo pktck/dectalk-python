@@ -35,7 +35,9 @@ test below.
 | error_table          | None   | table-of-tables ptr       |
 | sprate               | 0      | ``volatile short``        |
 | halting              | 0      | ``volatile int``          |
-| modeflag             | 0      | ``volatile unsigned int`` |
+| modeflag             | 0x0100 | MODE_CITATION — set by    |
+|                      |        | kernel/main.c:188 and     |
+|                      |        | api/ttsapi.c:2039 (#307)  |
 | pitch_delta          | 0      | overwritten to 35 by      |
 |                      |        | ``cmd_init`` reset path   |
 +----------------------+--------+---------------------------+
@@ -48,6 +50,7 @@ import pytest
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.kernel.lang_codes import LANG_none
 from dectalk.kernel.misc_constants import MAX_languages
+from dectalk.kernel.mode_flags import MODE_CITATION
 from dectalk.kernel.sync_primitives import DtSemaphore
 
 
@@ -80,8 +83,24 @@ def test_ksd_t_default_scalars_are_zero() -> None:
     assert ksd.arpa_case == 0
     assert ksd.sprate == 0
     assert ksd.halting == 0
-    assert ksd.modeflag == 0
     assert ksd.pitch_delta == 0
+
+
+def test_ksd_t_modeflag_defaults_to_mode_citation() -> None:
+    """``modeflag`` boots as ``MODE_CITATION``, matching the C engine.
+
+    Kernel start-up (``kernel/main.c:188``) and API start-up
+    (``api/ttsapi.c:2039``) both set ``modeflag = MODE_CITATION``
+    before any text is processed, so the engine never actually runs
+    with the flag cleared. The bit is read only by ``phalloph``:
+    while set, the "flap the initial /t/ of 'to'" allophone rule
+    (``ph_aloph1.c:902-912``) is disabled — its guard is
+    ``(modeflag & MODE_CITATION) == 0``. A zero default made the
+    pure-Python pipeline flap "go to bed" / "easy for Mary to rest"
+    where the binary keeps a full [t] (issue #307).
+    """
+    ksd = KsdT()
+    assert ksd.modeflag == MODE_CITATION
 
 
 def test_ksd_t_default_pointer_fields_are_none() -> None:

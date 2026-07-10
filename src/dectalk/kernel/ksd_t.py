@@ -31,7 +31,7 @@ Currently modelled (with the helper that consumes each):
 - ``pitch_delta`` (``cmd_init`` engine-wide pitch offset)
 
 Field defaults mirror C zero-initialisation of the malloc'd
-``share_data`` struct, with two intentional exceptions:
+``share_data`` struct, with three intentional exceptions:
 
 1. ``lang_curr`` defaults to :data:`LANG_none` (``0xFFFF``) — the
    "no language selected yet" sentinel that
@@ -41,6 +41,14 @@ Field defaults mirror C zero-initialisation of the malloc'd
 2. ``spc_sync`` uses :class:`DtSemaphore`, which initialises the
    counter to 0 internally (matching the C ``DT_SEMAPHORE``
    zero-init).
+3. ``modeflag`` defaults to :data:`MODE_CITATION` — kernel start-up
+   sets ``KS.modeflag = MODE_CITATION`` (``kernel/main.c:188``), and
+   ``TextToSpeechStartup`` does the same (``api/ttsapi.c:2039``;
+   ``| MODE_LATIN`` only for Spanish builds). The bit is *read* only
+   by ``phalloph``, where its being set permanently disables the
+   "flap the initial /t/ of 'to'" allophone rule
+   (``ph_aloph1.c:902-912``, guard ``(modeflag & MODE_CITATION) ==
+   0``) — issue #307.
 
 See :func:`test_kernel_ksd_t_defaults` for the invariant tests
 that lock these defaults in.
@@ -58,6 +66,7 @@ from dataclasses import dataclass, field
 from dectalk.kernel.lang_codes import LANG_none
 from dectalk.kernel.language_tables import DtpcLanguageTables
 from dectalk.kernel.misc_constants import MAX_languages
+from dectalk.kernel.mode_flags import MODE_CITATION
 from dectalk.kernel.spc_packet import SpcPacket
 from dectalk.kernel.sync_primitives import DtSemaphore
 
@@ -120,8 +129,11 @@ class KsdT:
     # out of the synthesis pipeline mid-clause.
     halting: int = 0
     # Mode flag (MODE_CITATION / MODE_LATIN / ... bits from esc.h).
-    # Read by phalloph and others to decide rule-firing.
-    modeflag: int = 0
+    # Read by phalloph to decide rule-firing. The C engine never runs
+    # with this zeroed: kernel/main.c:188 and api/ttsapi.c:2039 both
+    # start it as MODE_CITATION, which keeps phalloph's 'to'-flap rule
+    # (ph_aloph1.c:902) permanently disabled (#307).
+    modeflag: int = MODE_CITATION
     # Pitch delta in semitone units (volatile int in C). Set to 35 by
     # ``cmd_init`` on every full reset and adjusted by ``[:dv]`` /
     # ``[:tonecharact]`` commands.  Cited from
