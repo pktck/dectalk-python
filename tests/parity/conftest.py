@@ -155,10 +155,16 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     fail-fast so the first WAV mismatch ends the run. We do this by
     setting the session's ``stop`` flag from the report hook below; this
     function just records whether fail-fast should be active.
+
+    DECTALK_PARITY_FAIL_FAST=0 explicitly DISABLES the gate even under
+    DECTALK_DISABLE_CAPI=1 — the collect-all escape hatch so a full
+    parity run can enumerate every mismatch instead of halting on the
+    first (issue #311; ``scripts/corpus_wav_sweep.py`` is the faster
+    parallel equivalent for full-corpus enumeration).
     """
-    fail_fast = (
-        os.environ.get("DECTALK_PARITY_FAIL_FAST", "0") == "1"
-        or os.environ.get("DECTALK_DISABLE_CAPI", "0") == "1"
+    fail_fast_env = os.environ.get("DECTALK_PARITY_FAIL_FAST", "")
+    fail_fast = fail_fast_env == "1" or (
+        fail_fast_env != "0" and os.environ.get("DECTALK_DISABLE_CAPI", "0") == "1"
     )
     if not fail_fast:
         return

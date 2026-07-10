@@ -212,11 +212,62 @@ def test_full_pipeline_gate_short_circuits_for_empty_text(
     assert len(samples) == 0
 
 
-def test_full_pipeline_gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Without ``DECTALK_FULL_PIPELINE=1``, the legacy path runs.
+def test_full_pipeline_default_on_with_escape_hatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The full pipeline is the no-``_capi`` default; ``=0`` opts out.
 
-    Tests that the gate is truly opt-in: with the env var unset, the
-    legacy approximate pipeline produces samples without raising.
+    Issue #311 flipped the dispatch: with ``DECTALK_FULL_PIPELINE``
+    unset, US-English audio walks the translated PH chain (the
+    byte-exact parity path); ``DECTALK_FULL_PIPELINE=0`` selects the
+    legacy approximate pipeline (the #272/#274 escape-hatch pattern
+    one level up). The two paths produce different sample counts for
+    the same prompt (full: exact C timing; legacy: sequencer content
+    + fixed silence pads), which is the observable used here.
+    """
+    monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+    monkeypatch.delenv("DECTALK_FULL_PIPELINE", raising=False)
+    default_samples = _speak_via_python(
+        text="hello",
+        rate=1.0,
+        voice=None,
+        lang="us",
+        lts_fallback=True,
+    )
+    assert len(default_samples) > 0
+
+    monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
+    full_samples = _speak_via_python(
+        text="hello",
+        rate=1.0,
+        voice=None,
+        lang="us",
+        lts_fallback=True,
+    )
+    # Unset == "1": both select the full pipeline.
+    assert len(default_samples) == len(full_samples)
+
+    monkeypatch.setenv("DECTALK_FULL_PIPELINE", "0")
+    legacy_samples = _speak_via_python(
+        text="hello",
+        rate=1.0,
+        voice=None,
+        lang="us",
+        lts_fallback=True,
+    )
+    assert len(legacy_samples) > 0
+    # The legacy approximate path renders a different envelope.
+    assert len(legacy_samples) != len(full_samples)
+
+
+def test_full_pipeline_non_us_lang_uses_legacy_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-US languages route to the legacy path even with the default on.
+
+    The full PH chain only wires ``lang="us"`` (it raises
+    ``NotImplementedError`` for others); the dispatch must keep
+    serving other languages through the approximate pipeline.
     """
     monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
     monkeypatch.delenv("DECTALK_FULL_PIPELINE", raising=False)
@@ -224,7 +275,7 @@ def test_full_pipeline_gate_off_by_default(monkeypatch: pytest.MonkeyPatch) -> N
         text="hello",
         rate=1.0,
         voice=None,
-        lang="us",
+        lang="uk",
         lts_fallback=True,
     )
     assert len(samples) > 0
