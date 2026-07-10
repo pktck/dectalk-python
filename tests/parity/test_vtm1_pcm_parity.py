@@ -256,6 +256,79 @@ def test_vtm1_pcm_byte_identical_to_oracle(text: str, monkeypatch: pytest.Monkey
     np.testing.assert_array_equal(py, ref)
 
 
+# --- issue #315: spoken-punctuation-name lane -----------------------
+# Punctuation-only input does NOT synthesize a silence clause: the C
+# cmd stage forwards an isolated mark as its own one-char word and the
+# LTS spells it through the language typing table (``usa_type.tab``),
+# so the binary SPEAKS the mark's name — bare ``...`` renders the
+# 182-frame "period" clause, not ~1 frame. Rules pinned here (each
+# verified byte-exact vs the shipped binary):
+#   - punctuation-only input speaks the name: ``...``/``.`` ->
+#     "period", ``!`` -> "exclamation point", ``?`` -> "question
+#     mark", ``,`` -> "comma", ``;`` -> "semi#colon", ``:`` -> "colon";
+#   - ``..`` is the LTS word ``.`` + attached ``.`` right-punct
+#     ("period." — same WAV as ``...`` whose utterance-final PERIOD
+#     comes from the ph_task flush instead);
+#   - isolated multi-dot runs after a word speak the name too
+#     (``hello ...`` / ``text with trailing ...``), while a SINGLE
+#     isolated mark after a word attaches as the ordinary marker
+#     (``hello .`` / ``one . two`` — cm_text.c rev 074 space removal);
+#   - a name closes the clause, so marks after a name are spoken by
+#     name as well (``... !`` / ``... , hello``).
+# Deliberately NOT pinned (pre-existing divergence, out of #315's
+# scope): shapes where the say binary's char-stream feed disagrees
+# with the C library's own single-buffer path — ``. hello`` (say takes
+# the cm_util_sendat ``pcnt==1`` branch and speaks "dot"), ``. .``,
+# ``... .``, ``. . .``, and 5+ dot runs (a cm_pars buffer bug
+# degenerates them to a lone ``t`` word).
+_PUNCT_NAME_BYTE_EXACT_PROMPTS: tuple[str, ...] = (
+    "...",
+    ".",
+    "!",
+    "?",
+    "..",
+    "....",
+    "... ...",
+    "text with trailing ...",
+    ",",
+    ";",
+    ":",
+    "hello ...",
+    "hello ..",
+    "hello .",
+    "one . two",
+    "one, .",
+    ", hello",
+    "; hello",
+    ": hello",
+    "! hello",
+    "? hello",
+    "hello ... world",
+    "... !",
+    "... , hello",
+)
+
+
+@pytest.mark.parametrize("text", _PUNCT_NAME_BYTE_EXACT_PROMPTS)
+def test_vtm1_pcm_byte_identical_punct_names(
+    text: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Spoken-punctuation-name prompts are byte-identical to the binary.
+
+    The #315 lane: isolated punctuation is spoken by name (typing-table
+    spell path), single marks attach to a preceding word, and dot runs
+    follow the C parser's collapse rules — see the block comment on
+    ``_PUNCT_NAME_BYTE_EXACT_PROMPTS``.
+    """
+    ref = _binary_pcm_int16(text)
+    py = _python_vtm1_pcm(text, monkeypatch)
+    assert py.size == ref.size, f"length mismatch {py.size} vs {ref.size}"
+    np.testing.assert_array_equal(py, ref)
+
+
+# --- end issue #315 lane ---------------------------------------------
+
+
 # Frame size at the active 11025 Hz build (vtm1.c uiNumberOfSamplesPerFrame).
 _SAMPLES_PER_FRAME = 71
 
