@@ -597,12 +597,12 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     from dectalk.ph.init_phclause import init_phclause  # noqa: PLC0415
     from dectalk.ph.init_timing import init_timing  # noqa: PLC0415
     from dectalk.ph.phsettar import phsettar  # noqa: PLC0415
-    from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
     from dectalk.ph.setspdef import (  # noqa: PLC0415
         C_SPEAKER_INDEX,
         seed_dph_scalars,
         spd_chip_from_row,
     )
+    from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
     from dectalk.ph.us_phtiming import us_phtiming  # noqa: PLC0415
     from dectalk.ph.voice_definitions import VOICES_BY_NAME, voice_paul  # noqa: PLC0415
 

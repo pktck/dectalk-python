@@ -159,6 +159,20 @@ def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch)
 #   - "listen down" / "my dog is near the bedroom": primary-only
 #     stress counting in remaining_stresses_til (ph_aloph1.c:1566)
 #     placing the FHAT_ENDS hat fall on the last *primary* stress.
+#   - "999" / "1234567890": the non-HLSYN all_phsort cleanup rules
+#     (ph_sort.c 536-556 compound-destress + SPECIALWORD zap;
+#     1234-1264 zap_weaker_bound) — the digit-expansion "hundred
+#     WBOUND VPSTART and" boundary pair must merge to one VPSTART so
+#     get_next_bound_type stamps FVPNEXT on the "-dred" phones
+#     (issue #302 cluster 1; +144 byte-exact prompts on the
+#     500-sample).
+#   - "[:nr] rita rough" / "[:nw] wendy whispery" / "[:nk] kit the
+#     kid": per-voice setspdef seeding (ph_vset.c 541-831 via
+#     dectalk.ph.setspdef) + the [:nX] voice-name shortcuts in the
+#     light command parser (issue #302 cluster 3).
+#   - "we color the car pink": trailing-silence formant draw toward
+#     the one-past-end allophons context — fixed by #303's
+#     phonemes->allophons[SAFETY] alias replay (issue #302 cluster 2).
 _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "hi",
     "hello",
@@ -173,6 +187,12 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "wait, he is honest",
     "listen down",
     "my dog is near the bedroom",
+    "999",
+    "1234567890",
+    "[:nr] rita rough",
+    "[:nw] wendy whispery",
+    "[:nk] kit the kid",
+    "we color the car pink",
 )
 
 
