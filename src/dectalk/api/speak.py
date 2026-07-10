@@ -1086,7 +1086,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             "SINGS",
             "SINGING",
             "PUT",
-            "PUTS",
+            # "PUTS" is deliberately NOT here: its own runtime
+            # dictionary row (``puts,N,p`Uts``) carries a noun+verb
+            # mask, so the C emitter sends no ``)`` for it — unlike
+            # bare PUT and PUTTING whose rows are pure-verb (issue
+            # #310 batch verification).
             "PUTTING",
             "HEAR",
             "HEARS",
@@ -1340,6 +1344,27 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # "dalmatians" -- Python's LTS spuriously emits T+IH+AE+N+S
         # for "-tians". DECtalk has SH+IX+N (with -s -> Z plural).
         "DALMATIANS": ["D", "AH0", "L", "M", "AE1", "SH", "IX", "N", "S"],
+        # Doubled-consonant -ed/-ing/-er forms (issue #310) whose stems
+        # are outside both dictionaries and whose C rendering leans on
+        # compiled LTS rules the Python heuristic engine lacks: the
+        # ``wa`` -> AO letter rule (swap/swat/swab/wad families) and
+        # the second-syllable stress assignment (commit/regret
+        # families). Each entry is verified byte-exact against the C
+        # oracle; the matching bare stems carry aligned rows in
+        # ``lexicon_us_full.txt``.
+        "SWAPPED": ["S", "W", "AO1", "P", "T"],
+        "SWAPPING": ["S", "W", "AO1", "P", "IX", "NG"],
+        "SWAPPER": ["S", "W", "AO1", "P", "ER0"],
+        "SWATTED": ["S", "W", "AO1", "T", "IX", "D"],
+        "SWATTING": ["S", "W", "AO1", "T", "IX", "NG"],
+        "SWABBED": ["S", "W", "AO1", "B", "D"],
+        "SWABBING": ["S", "W", "AO1", "B", "IX", "NG"],
+        "WADDED": ["W", "AO1", "D", "IX", "D"],
+        "WADDING": ["W", "AO1", "D", "IX", "NG"],
+        "COMMITTED": ["K", "AH0", "M", "IH1", "T", "IX", "D"],
+        "COMMITTING": ["K", "AH0", "M", "IH1", "T", "IX", "NG"],
+        "REGRETTED": ["R", "IX0", "G", "R", "EH1", "T", "IX", "D"],
+        "REGRETTING": ["R", "IX0", "G", "R", "EH1", "T", "IX", "NG"],
         # Literal "forty" reads via the lexicon as ``f ' aor t iy``
         # (AO + R). Digit-expanded ``40`` / ``42`` uses the OR
         # r-coloured single vowel and so gets its own sentinel.
@@ -1640,6 +1665,59 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             if tail_base in {"D", "T"}:
                 _maybe_convert(last - 1)
         return out
+
+    def _lts_inflection_stem(stem: str, *, attach_e: bool) -> list[str] | None:
+        """LTS phonemes for an inflectional-suffix stem (issue #310).
+
+        Mirrors how the C LTS rule engine renders the stem letters of
+        an unknown ``-ed`` / ``-ing`` / ``-er`` word (oracle-verified
+        black-box; the C tables in ``l_us_rta.c`` are compiled and
+        opaque):
+
+        - Doubled final consonant collapses to one before the rules
+          run (``vrabbed`` reads as ``vrab`` + suffix; C emits a
+          single B and the short stem vowel).
+        - For ``-ed`` (``attach_e=True``) the suffix's ``e`` is part
+          of the letter stream, so silent-e contexts fire: magic-e
+          vowel lengthening (``vraked`` -> V R EY K) and c/g
+          softening (``vaged`` -> V EY JH). Re-attach an ``E`` so the
+          Python rules see the same context -- except after ``X``,
+          where the C rules keep the short vowel (``faxed`` ->
+          F AE K S T).
+        - For ``-ing`` / ``-er`` the ``e``-context does not reliably
+          fire in C (``voning`` keeps the short vowel while
+          ``vroking`` lengthens -- letter-pair specific), so only the
+          un-doubling case is safe to model; return ``None``
+          otherwise and let the whole-word LTS handle it as before.
+
+        Args:
+            stem: Upper-cased orthographic stem (suffix stripped).
+            attach_e: Whether the stripped suffix began with ``e``.
+
+        Returns:
+            De-duplicated LTS phonemes for the massaged stem, or
+            ``None`` when the stem shape is out of the rule's domain
+            (vowel-final, vowel-less, non-alphabetic, too short).
+        """
+        min_stem = 2
+        if len(stem) < min_stem or not stem.isalpha():
+            return None
+        vowels = "AEIOU"
+        # Vowel-final stems (``agreed`` -> AGRE, ``screeed``) and
+        # vowel-less stems (``vryed`` -> VRY; C's ``str_vowel`` guard
+        # keeps the suffix match off the word's only vowel) stay on
+        # the whole-word LTS path.
+        if stem[-1] in vowels or not any(v in stem for v in vowels):
+            return None
+        if stem[-1] == stem[-2]:
+            base = stem[:-1]
+        elif not attach_e:
+            return None
+        elif stem[-1] == "X":
+            base = stem
+        else:
+            base = stem + "E"
+        return _dedupe_consecutive_phonemes(lts(base))
 
     # Inflectional -s (plural / 3rd-person sg) voices to Z when the
     # preceding phoneme is voiced (any vowel, or a voiced consonant).
@@ -1958,6 +2036,20 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 # ``)`` from the static sidecar/curated set as before.
                 homo_reading: str | None = None
                 homo_stem_reading: tuple[str, str] | None = None
+                # Runtime-dictionary root + rule suffix from the ACTIVE
+                # ``l_us_suf.c`` strip-rule walk (issue #310). Set when
+                # the word itself is outside the runtime dictionary but
+                # a suffix rule re-derives a root inside it (``stopped``
+                # -> STOP via the ``pp`` -> ``p`` un-doubling variant).
+                # The stem-strip branches below use the root as the
+                # C-faithful stem source and emit the ``)`` VPSTART
+                # marker per the *root* entry's mask -- in C the marker
+                # comes from ``ls_dict_find_word`` when the suffix
+                # engine looks the stripped root up (``ls_suff.c`` line
+                # 266 -> ``ls_dict.c`` lines 759-763).
+                suffix_root: str | None = None
+                suffix_rule_suffix: str | None = None
+                vpstart_emitted = False
                 if token.text in spell_out_words:
                     # ``ls_task_spell_word`` tags spelled words FC_NOUN.
                     this_word_fc = FC_NOUN
@@ -1966,10 +2058,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     homo_reading = homo_fc_reading
                     if emits_vpstart(selected_fc):
                         flat.append(f"{punct_prefix})")
+                        vpstart_emitted = True
                 elif token.text in formclass_lex:
                     this_word_fc = formclass_lex[token.text]
                 else:
-                    suffix_fc, stem_root, _suffix = suffix_form_class(token.text, formclass_words)
+                    suffix_fc, stem_root, rule_suffix = suffix_form_class(
+                        token.text, formclass_words
+                    )
                     if stem_root is not None and stem_root in homograph_pair_words:
                         homo_fc_reading, selected_fc, this_word_fc = _select_pair(
                             stem_root, suffix_fc
@@ -1977,8 +2072,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         homo_stem_reading = (stem_root, homo_fc_reading)
                         if emits_vpstart(selected_fc):
                             flat.append(f"{punct_prefix})")
+                            vpstart_emitted = True
                     else:
                         this_word_fc = suffix_fc
+                        suffix_root = stem_root
+                        suffix_rule_suffix = rule_suffix
                 word_fcs.append(this_word_fc)
                 if (
                     homo_reading is None
@@ -1986,6 +2084,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     and token.text in vpstart_words
                 ):
                     flat.append(f"{punct_prefix})")
+                    vpstart_emitted = True
                 # Function-word destressing / phrase-marker injection.
                 # For "A": apply only when followed by another WORD
                 # (mid-sentence). For "AND": apply unconditionally
@@ -2088,6 +2187,20 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             else:
                                 phones = [*base_phones, "S"]
                             stem_stripped = True
+                            # Pure-verb runtime-dictionary bases emit
+                            # ``)`` before the base phonemes, exactly
+                            # as C's suffix engine does when the
+                            # ``-'s`` strip rule's stem lookup hits
+                            # the main dictionary (``let's`` ->
+                            # ``) ll` eht s``, issue #310).
+                            if (
+                                not vpstart_emitted
+                                and suffix_root is not None
+                                and suffix_rule_suffix == "'s"
+                                and emits_vpstart(formclass_lex.get(suffix_root, 0))
+                            ):
+                                phones.insert(0, f"{punct_prefix})")
+                                vpstart_emitted = True
                     # Plural / 3rd-person -s stem stripping: if the word
                     # isn't in the lexicon but its singular form is, use
                     # the singular's phonemes and append S (the encoder's
@@ -2158,6 +2271,20 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             else:
                                 phones = [*stem_phones, "S"]
                             stem_stripped = True
+                            # Pure-verb runtime-dictionary roots emit
+                            # the ``)`` VPSTART marker before the stem
+                            # phonemes (``begins`` -> ``) b axg ' ihn
+                            # z``), exactly as C's suffix engine does
+                            # when its stripped-stem lookup hits the
+                            # main dictionary (issue #310).
+                            if (
+                                not vpstart_emitted
+                                and suffix_root is not None
+                                and suffix_rule_suffix in ("s", "es", "ies")
+                                and emits_vpstart(formclass_lex.get(suffix_root, 0))
+                            ):
+                                phones.insert(0, f"{punct_prefix})")
+                                vpstart_emitted = True
                     # ``-er`` agentive / comparative suffix: strip and
                     # look up the bare stem, then append ER0. Handles
                     # ``LATER`` (LATE+R), ``FASTER`` (FAST+ER), etc.
@@ -2169,8 +2296,31 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     ):
                         stem = token.text[:-2]
                         stem_phones = lookup(stem + "E", lang=lang) or lookup(stem, lang=lang)
+                        # Doubled-final-consonant stems re-derive the
+                        # runtime-dictionary root via the ACTIVE
+                        # ``l_us_suf.c`` ``-er`` rule's un-doubling
+                        # variants (``stopper`` -> STOP + ER, keeping
+                        # the dictionary's AO vowel), with the C LTS
+                        # engine's un-doubling as the fallback for
+                        # roots outside the dictionaries (issue #310).
+                        if (
+                            stem_phones is None
+                            and suffix_root is not None
+                            and suffix_rule_suffix == "er"
+                        ):
+                            stem_phones = lookup(suffix_root, lang=lang)
+                        if stem_phones is None and lts_fallback:
+                            stem_phones = _lts_inflection_stem(stem, attach_e=False)
                         if stem_phones is not None:
                             phones = [*stem_phones, "ER0"]
+                            if (
+                                not vpstart_emitted
+                                and suffix_root is not None
+                                and suffix_rule_suffix == "er"
+                                and emits_vpstart(formclass_lex.get(suffix_root, 0))
+                            ):
+                                phones.insert(0, f"{punct_prefix})")
+                                vpstart_emitted = True
                     # ``-tion`` / ``-sion`` noun suffix: strip and append
                     # ``SH + AH0 + N`` (AH0 -> IX by the encoder's
                     # post-SH rule). Catches PENSION / MANSION / TENSION
@@ -2351,8 +2501,34 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             stem_phones = lookup(ing_stem + "E", lang=lang) or lookup(
                                 ing_stem, lang=lang
                             )
+                        # Doubled-final-consonant stems re-derive the
+                        # runtime-dictionary root via the ACTIVE
+                        # ``l_us_suf.c`` ``-ing`` rule's un-doubling
+                        # variants (``stopping`` -> STOP + IX NG,
+                        # keeping the dictionary's AO vowel). The
+                        # ``-ing`` rule's variant list has no ``rr``
+                        # pair, so ``stirring``-type words never get a
+                        # dictionary root -- they fall through to the
+                        # C LTS engine's own un-doubling, mirrored by
+                        # ``_lts_inflection_stem`` (issue #310).
+                        if (
+                            stem_phones is None
+                            and suffix_root is not None
+                            and suffix_rule_suffix == "ing"
+                        ):
+                            stem_phones = lookup(suffix_root, lang=lang)
+                        if stem_phones is None and lts_fallback:
+                            stem_phones = _lts_inflection_stem(ing_stem, attach_e=False)
                         if stem_phones is not None:
                             phones = [*stem_phones, "IX", "NG"]
+                            if (
+                                not vpstart_emitted
+                                and suffix_root is not None
+                                and suffix_rule_suffix == "ing"
+                                and emits_vpstart(formclass_lex.get(suffix_root, 0))
+                            ):
+                                phones.insert(0, f"{punct_prefix})")
+                                vpstart_emitted = True
                     # ``-ed`` past-tense suffix: strip and apply the
                     # voicing+epenthesis rule:
                     #   stem ends in T / D   -> append IX + D
@@ -2378,6 +2554,25 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             )
                         if stem_phones is None and ed_stem.endswith("I"):
                             stem_phones = lookup(ed_stem[:-1] + "Y", lang=lang)
+                        # Doubled-final-consonant stems re-derive the
+                        # runtime-dictionary root via the ACTIVE
+                        # ``l_us_suf.c`` ``-ed`` rule's un-doubling
+                        # variants (``stopped`` -> STOP + T, keeping
+                        # the dictionary's AO vowel); roots outside
+                        # the dictionaries fall through to the C LTS
+                        # engine's behaviour -- un-doubling plus the
+                        # silent-e letter context -- mirrored by
+                        # ``_lts_inflection_stem`` (``grabbed`` ->
+                        # GRAB + D, ``vraked`` -> V R EY K + T)
+                        # (issue #310).
+                        if (
+                            stem_phones is None
+                            and suffix_root is not None
+                            and suffix_rule_suffix == "ed"
+                        ):
+                            stem_phones = lookup(suffix_root, lang=lang)
+                        if stem_phones is None and lts_fallback:
+                            stem_phones = _lts_inflection_stem(ed_stem, attach_e=True)
                         if stem_phones is not None:
                             last_base = stem_phones[-1].rstrip("0123456789")
                             if last_base in ("T", "D"):
@@ -2386,6 +2581,14 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                                 phones = [*stem_phones, "T"]
                             else:
                                 phones = [*stem_phones, "D"]
+                            if (
+                                not vpstart_emitted
+                                and suffix_root is not None
+                                and suffix_rule_suffix == "ed"
+                                and emits_vpstart(formclass_lex.get(suffix_root, 0))
+                            ):
+                                phones.insert(0, f"{punct_prefix})")
+                                vpstart_emitted = True
                     if phones is None:
                         if not lts_fallback:
                             raise UnknownWordError(
