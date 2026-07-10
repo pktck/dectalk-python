@@ -30,7 +30,11 @@ smoothing framework:
   on ``begtyp`` of the next phone, computes ``vot`` (NF40MS default,
   NF25MS unstressed, NF15MS in s-clusters, longer in sonorant
   consonants) and writes it into ``PAV.tspesh`` / ``PAP.tspesh`` /
-  ``PB1.tspesh`` / ``PB2.tspesh`` plus ``pspesh`` of B1/B2.
+  ``PB1.tspesh`` / ``PB2.tspesh`` plus ``pspesh`` of B1/B2. The
+  s-cluster kluge reads ``allophons[nphone - 2]``, which the C source
+  leaves unguarded (out-of-bounds at nphone < 2); the read is proven
+  unreachable clause-initially and modelled with an explicit GEN_SIL
+  sentinel — see the inline comment and issue #291.
 - **Rule 3: Voicebar** in voiced-plosive context to avoid pops.
   Sets ``PAV.tspesh`` (pspesh 63) and B1/B2/B3 tspesh+pspesh.
 """
@@ -75,6 +79,7 @@ from dectalk.ph.rom_tables import us_place
 from dectalk.ph.task_helpers import mstofr
 from dectalk.ph.timing import begtyp, burdr, phone_feature
 from dectalk.ph.tts_handle import TtsHandle
+from dectalk.ph.utterance_constants import GEN_SIL
 
 
 def us_special_rules(  # noqa: PLR0912, PLR0915
@@ -158,7 +163,33 @@ def us_special_rules(  # noqa: PLR0912, PLR0915
         # the phone two back for exact FOBST+FCONSON equality and the
         # struclm2 boundary bits (st1 compared against USP_S and read
         # allofeats[nphone-2] directly).
-        if phone_feature(p_dph_t.allophons[p_dph_t.nphone - 2]) == (FOBST + FCONSON):
+        #
+        # The C source reads ``allophons[pDph_t->nphone - 2]`` with NO
+        # bounds guard; at nphone < 2 the shipped binary reads
+        # out-of-bounds struct memory (the ``short addjit`` / ``short
+        # sprate`` fields precede ``allophons`` in DPH_T, ph_data.h
+        # line 526). That read is unreachable on real input: Rule 2
+        # requires the *previous* phone (fealas) to be a voiceless
+        # plosive, but ``init_variables`` hardwires pholas = GEN_SIL at
+        # nphone == 0, and every clause's ``allophons[0]`` is the
+        # leading GEN_SIL emitted by phsort/us_phalloph — whose feature
+        # word in the active ROM (``us_featb[0]`` = FSONOR = 16 in
+        # p_us_rom_dectalk_1996m_43f.c) has no FPLOSV bit. So the guard
+        # can never pass at nphone < 2 (issue #291; pinned by
+        # tests/parity/test_us_special_rules_oob.py, which also shows
+        # the packet stream is invariant to the value this read would
+        # yield). The explicit ``nphone >= 2`` guard below replaces the
+        # earlier silent Python list-tail wrap (``allophons[-1]`` /
+        # ``[-2]``) with the C codebase's own out-of-range convention
+        # (the ``get_phone`` macro in ph_defs.h returns GEN_SIL); both
+        # sentinel and wrap fail the FOBST+FCONSON equality, so the
+        # (unreachable) branch outcome is unchanged.
+        phonm2 = (
+            p_dph_t.allophons[p_dph_t.nphone - 2]
+            if p_dph_t.nphone >= 2  # noqa: PLR2004 -- the C source's literal [nphone - 2] offset
+            else GEN_SIL
+        )
+        if phone_feature(phonm2) == (FOBST + FCONSON):
             if (struclm2 & FBOUNDARY) == 0:
                 vot = NF15MS
         elif (feacur & FSYLL) == 0:
