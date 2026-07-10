@@ -436,10 +436,11 @@ gap is purely in PH.
 The ~133K-prompt corpus phoneme gate
 (`tests/parity/test_python_phonemes_vs_c_parity.py`) runs in the
 16-shard c-oracle lane on a deterministic 2000-prompt strided
-subsample (`DECTALK_CORPUS_GATE_SAMPLE`). Measured 2026-07-09 (issue
-#281): **133,585 / 133,641 prompts byte-identical (99.96%)**; the 56
-known-divergent prompts (homographs, positional stress) are xfailed
-via `tests/parity/data/corpus_phoneme_known_divergent.txt`. Full-corpus
+subsample (`DECTALK_CORPUS_GATE_SAMPLE`). Measured 2026-07-10 (issue
+#280): **133,641 / 133,641 prompts byte-identical (100%)**; the
+known-divergent allowlist
+(`tests/parity/data/corpus_phoneme_known_divergent.txt`) is empty
+after the #295 homograph and #280 stress close-outs. Full-corpus
 sweeps go through `scripts/corpus_phoneme_sweep.py` — bulk in-process
 oracle use segfaults, so the sweep slices across fresh subprocesses.
 Do not call the corpus "strict-pass" without re-measuring; the gate

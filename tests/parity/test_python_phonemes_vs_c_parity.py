@@ -7,19 +7,20 @@ the phoneme stream that drives the downstream PH/VTM stages. The pure
 Python pipeline is byte-compared against it across a deterministic
 subsample of the shared bit-parity corpus (``tests/parity/_corpus.py``).
 
-**Current status (measured 2026-07-10, issue #295):** 133,639 / 133,641
-corpus prompts are byte-identical (99.999%). The #295 homograph
-burn-down closed the POS-resolution class (close/lead/tears/wind/
-object/subject/contrast/produce via the faithful ``ls_homo_homo``
-port), the ``ours``/``al``/``fewer`` lexicon rows, and the
-swing/string IH-before-NG nuance. The 2 remaining divergent prompts
-are possessive-``its`` secondary-stress residue owned by the #280
-runtime stress-rules work; they are listed in
-``tests/parity/data/corpus_phoneme_known_divergent.txt`` and xfailed
-(non-strict) here. The gate enforced by this module is therefore: **no
-prompt outside the known-divergent list may regress**. Shrink the list
-as the backlog burns down — regenerate it with
-``scripts/corpus_phoneme_sweep.py --update-known-list`` after a fix.
+**Current status (measured 2026-07-10, issue #280):** 133,641 / 133,641
+corpus prompts are byte-identical (100%) and the known-divergent list
+is empty. The #295 homograph burn-down closed the POS-resolution class
+(close/lead/tears/wind/object/subject/contrast/produce via the faithful
+``ls_homo_homo`` port), the ``ours``/``al``/``fewer`` lexicon rows, and
+the swing/string IH-before-NG nuance; #280 closed the final
+possessive-``its`` residue (the runtime ``Dic_us.txt`` row stores the
+stress: ``its,N,`Its``) and aligned the first-verbs S2 rule to C's
+per-sentence ``wstate`` reset. The gate enforced by this module is
+therefore: **every sampled prompt must match byte-for-byte**. If a
+divergence class ever reopens, xfail it by adding the prompts to
+``tests/parity/data/corpus_phoneme_known_divergent.txt`` (regenerate
+with ``scripts/corpus_phoneme_sweep.py --update-known-list``) and file
+the burn-down issue.
 
 Sampling: parametrising all ~133K corpus prompts into every CI shard is
 wasteful, and bulk-querying the C oracle from one process is impossible
@@ -151,8 +152,8 @@ def _get_oracle(text: str) -> bytes:
 def _params() -> list[object]:
     known = _known_divergent()
     xfail = pytest.mark.xfail(
-        reason="known divergence — possessive-its stress residue, #280 "
-        "(tests/parity/data/corpus_phoneme_known_divergent.txt)",
+        reason="known divergence — allow-listed in "
+        "tests/parity/data/corpus_phoneme_known_divergent.txt",
         strict=False,
     )
     return [
@@ -167,13 +168,12 @@ def test_python_phonemes_match_c_phonemes(text: str) -> None:
 
     Prompts outside the known-divergent list must match byte-for-byte;
     a mismatch there is a fresh regression in the Python front end and
-    needs a Python-side fix, not an xfail. Prompts inside the list are
-    the measured residue after the #295 homograph burn-down —
-    possessive-``its`` secondary stress, owned by the #280 runtime
-    stress-rules work; they xfail non-strictly so fixes can land
-    incrementally, after which
-    ``scripts/corpus_phoneme_sweep.py --update-known-list`` re-shrinks
-    the list.
+    needs a Python-side fix, not an xfail. The list is empty as of the
+    #280 possessive-``its`` / first-verbs close-out (2026-07-10) — the
+    full 133,641-prompt corpus is byte-identical. Should a class
+    reopen, allow-listed prompts xfail non-strictly so fixes can land
+    incrementally; ``scripts/corpus_phoneme_sweep.py
+    --update-known-list`` re-shrinks the list after each fix.
     """
     expected = _get_oracle(text)
     actual = _python_phonemes(text)
