@@ -257,7 +257,7 @@ from dectalk.ph.utterance_constants import GEN_SIL
 # Stub the VTM pump: the phsettar driver loop runs in full before the
 # pump, so this keeps every us_special_rules call while skipping the
 # (dominant) synthesis cost.
-pump_mod.pump_frames_via_vtm1 = lambda frames, preset: np.zeros(0, dtype=np.int16)
+pump_mod.pump_frames_via_vtm1 = lambda frames, preset, **kw: np.zeros(0, dtype=np.int16)
 
 stats = {"fires": 0, "fires_lt2": 0, "min_nphone": None, "clauses": 0}
 allophons0 = set()

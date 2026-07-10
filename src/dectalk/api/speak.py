@@ -598,16 +598,22 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     from dectalk.ph.init_timing import init_timing  # noqa: PLC0415
     from dectalk.ph.phsettar import phsettar  # noqa: PLC0415
     from dectalk.ph.tts_handle import TtsHandle  # noqa: PLC0415
+    from dectalk.ph.setspdef import (  # noqa: PLC0415
+        C_SPEAKER_INDEX,
+        seed_dph_scalars,
+        spd_chip_from_row,
+    )
     from dectalk.ph.us_phtiming import us_phtiming  # noqa: PLC0415
-    from dectalk.ph.voice_definitions import spdefs_for_voice  # noqa: PLC0415
+    from dectalk.ph.voice_definitions import VOICES_BY_NAME, voice_paul  # noqa: PLC0415
 
     voice_preset = _resolve_voice(voice)
-    # Per-voice scalar table (Spdefs). Threading these through the
-    # phinton / pht0draw scalars below removes the Paul-only literals
-    # that used to live here (issue #164): non-Paul voices like Betty
-    # (AS=35, HR=0, SR=20, AP=208, PR=240, QU=80) now get their
-    # documented C voice-table values rather than Paul's defaults.
-    spdefs = spdefs_for_voice(_voice_name_for_spdefs(voice))
+    # Per-voice ``SPDEF`` row from the active DECtalk 4.3 voice table
+    # (``p_us_vdf_dectalk43.c``; issue #164 / #302). The ``usevoice``
+    # tune-table addition is a no-op on this build (the active
+    # ``p_us_vdf_oldtune.c`` rows are all-zero at 11025 Hz — see
+    # ``dectalk.ph.setspdef``), so the raw row IS ``curspdef``.
+    voice_name = _voice_name_for_spdefs(voice) or "paul"
+    voice_row = VOICES_BY_NAME.get(voice_name, voice_paul)
 
     # 1. Text -> the byte-exact DECtalk phoneme stream. This is the same
     # ASCII stream the LTS+dic oracle path emits — byte-identical to the C
@@ -642,138 +648,31 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # timeref / sprat0 / sprat1 / sprat2 etc.
     wpm = _rate_multiplier_to_wpm(rate)
 
-    from dectalk.vtm.spd_chip import default_us_paul_spd  # noqa: PLC0415
-
-    _us_paul_spd = default_us_paul_spd()
-
     p_dph_t = DphT()
     p_dph_t.dipspec = [0] * 256
     p_dph_t.parstochip = [0] * 64
-    p_dph_t.last_lang = 0  # forces gettar to load tables on first call.
     p_dph_t.sprate = wpm
-    # ``fnscale`` is the per-voice Q12 formant-frequency scaler loaded
-    # from the speaker-definition table (vtm_i.c line 625 reads it from
-    # SPD_CHIP.fnscale). Load it from the US-Paul defaults so the value
-    # is tied to the canonical voice-table source rather than a bare
-    # literal. For Paul, fnscale = 4096 (Q12 unity, HS = 100 = nominal
-    # head size), so phdraw's ``frac4mul(F_n, fnscale) + complement_n``
-    # reduces to the identity and the formant trajectory flows through
-    # unchanged. Without this seed, fnscale stays 0 and every formant
-    # collapses to ``(4096 - 0) >> N`` regardless of the per-phone target.
-    p_dph_t.fnscale = _us_paul_spd.fnscale
-    # malfem: 1=MALE, 0=FEMALE. The C kernel loads it from the SPD_CHIP
-    # source-section (vtm-side struct) but the value mirrors the
-    # public-side ``Spdefs.sex`` field — both are derived from the same
-    # SEX entry in the voice-definition row. We keep the SPD_CHIP load
-    # here (it's the canonical vtm seed) and assert/observe the
-    # equivalent on Spdefs in the parity tests.
-    p_dph_t.malfem = _us_paul_spd.sex
-    # F0 parameters derived from speaker definition (ph_vset.c
-    # ``setspdef``, lines 610-619).
-    # f0_lp_filter = 1500 + 15 * QU       (QU = quickness, % of max)
-    # f0minimum   = AP * 10               (AP = average pitch, Hz)
-    # f0scalefac  = PR * 41               (PR = pitch range, %)
-    # ``f0minimum`` has TWO build variants in the C source (issue #259):
-    #
-    #   #if defined(HLSYN) || defined(CHANGES_AFTER_V43)
-    #       f0minimum = (curspdef[SPD_AP] - 12) * 10;   // ph_vset.c:615
-    #   #else
-    #       f0minimum = (curspdef[SPD_AP])     * 10;    // ph_vset.c:617
-    #   #endif
-    #
-    # The shipped/oracle library is built from ``dectalkf.h`` which
-    # ``#include``s ``dectalkf_klsyn.h`` (the ``dectalkf_hlsyn.h`` line is
-    # commented out) and defines NEITHER ``HLSYN`` nor ``CHANGES_AFTER_V43``
-    # anywhere in the tree — so the ACTIVE branch is the plain
-    # ``AP * 10`` (line 617). The ``-12`` "fudge factor to keep it
-    # similiar to 260" only applies to the HLSYN/post-v43 build. Using
-    # the ``-12`` here drove the rendered mean F0 ~20 Hz low (Py ~100 vs
-    # C ~122 Hz on ``hello world``) — this is the byte-exact unlock after
-    # the #257 F0-dynamics re-port. ``f0scalefac = PR * 41`` is identical
-    # in both branches (line 619), so it is unchanged.
-    # All three thread through the per-voice :class:`Spdefs` so non-Paul
-    # voices pick up their documented C voice-table scalars.
-    p_dph_t.f0_lp_filter = 1500 + 15 * spdefs.quickness
-    p_dph_t.f0minimum = spdefs.average_pitch * 10
-    p_dph_t.f0scalefac = spdefs.pitch_range * 41
-    # Hat-rise / stress-rise scalars. ``phinton`` Rule 1 reads
-    # ``pDph_t->size_hat_rise`` for the hat-pattern F0 rise amplitude
-    # (the STEP injected into ``tarhat``); Rule 2 scales the
-    # stress-impulse height by ``pDph_t->scale_str_rise``. The C
-    # derivation in ``ph_vset.c`` lines 611-612 is **not** a bare copy:
-    #
-    #   pDph_t->size_hat_rise  = curspdef[SPD_HR] * 10;  // HR Hz -> Hz*10
-    #   pDph_t->scale_str_rise = curspdef[SPD_SR];       // SR -> mult. fac
-    #
-    # ``size_hat_rise`` carries the ``* 10`` (HR is stored in Hz but the
-    # F0 contour runs in Hz*10), so Paul's HR=18 becomes **180**, not 18.
-    # Omitting the ``* 10`` flattened the hat rise to a tenth of its
-    # amplitude -- a major contributor to the ~0.7x per-frame F0
-    # range/std compression (issue #261). ``scale_str_rise`` is a bare
-    # SR copy (it is a multiplier consumed by ``muldv(SR, targf0, 32)``
-    # in Rule 2), so it carries no ``* 10``.
-    # (Per-voice SPDEF rows in ``p_us_vdf_dectalk43.c`` -- Paul: HR=18,
-    # SR=32; Betty: HR=14, SR=20; Harry: HR=20, SR=30; Frank: HR=20,
-    # SR=22.)
-    p_dph_t.size_hat_rise = spdefs.hat_rise * 10
-    p_dph_t.scale_str_rise = spdefs.stress_rise
-    # Baseline F0 fall. ``ph_vset.c`` line 620 derives
-    # ``pDph_t->f0basefall = curspdef[SPD_BF] * 10`` (BF in Hz -> Hz*10).
-    # ``pht0draw`` hard-init splits it about the 107 Hz nominal centre:
-    # ``f0beginfall = 1070 + (f0basefall >> 1)`` and
-    # ``f0endfall = 1070 - (f0basefall >> 1)`` (ph_drwt01.c:2417-2418),
-    # so the clause's baseline declines from ``beginfall`` toward
-    # ``endfall`` at 0.1 Hz/frame. For Paul (BF=18) this is 180 -> a
-    # ~18 Hz total declination span (1160 -> 980 deciHz). Left unset the
-    # field defaulted to 0, collapsing ``beginfall == endfall == 1070``
-    # so the baseline never declined -- the contour was flat across the
-    # clause, the other half of the ~0.7x F0 range compression (#261).
-    p_dph_t.f0basefall = spdefs.baseline_fall * 10
-    # Assertiveness: SPD AS (final F0-fall, % of full fall) scaled to the
-    # Q12-style multiplier ``phinton`` Rules 3/4/6 pass to ``frac4mul`` on
-    # the rule's f0fall / targf0 magnitude. The C bridge in ``phram.c``
-    # derives it as ``pDph_t->assertiveness = pDph_t->curspdef[SPD_AS] * 41``
-    # — so AS = 100 (Paul's default) becomes 4100, just above Q12 unity
-    # (4096) for a full final fall. Without this seed the field stays 0
-    # and the ``frac4mul(*, 0)`` calls in ``phinton.py`` lines 514/611/650
-    # zero out every Rule 3/4/6 final-fall target — visible in traces as
-    # ``tar=0`` for every Rule 6 event (issue #122 / F0 contour follow-up).
-    p_dph_t.assertiveness = spdefs.assertiveness * 41
-    # Speaker-tuning scalars consulted by ``phdraw``'s per-frame
-    # bandwidth computations. C's ``ph_vset.c`` (lines 607-630) loads
-    # these from ``curspdef[]`` once per voice change; without the seeds
-    # the breathy-voice B1 modifier ``frac4mul(B1, 0)`` zeros OUT_B1 on
-    # every frame (issue #148 / frame-parity audit §2). ``f0_dep_tilt``
-    # feeds the source-spectral-tilt formula in ``phdraw``: on the US
-    # build (HLSYN / CHANGES_AFTER_V43 undefined) the active branch at
-    # ``ph_draw.c`` lines 617-742 computes ``OUT_TLT`` as
-    # ``(12 - frac4mul(1400 - f0, f0_dep_tilt)) + (spdeftltoff - 6)``
-    # clamped to [0, 31] (issue #226). ``spdeftltoff`` is left at the
-    # DphT default of 0 because Paul's ``SM`` (smoothness) is 3 in the
-    # active SPDEF row and C's ``ph_vset.c`` line 625 computes
-    # ``spdeftltoff = (SM * 25) / 100`` = ``75 / 100`` = 0 in integer
-    # division. Paul's SPDEF row in the **active** voice-definition
-    # variant ``p_us_vdf_dectalk43.c`` (selected by ``ph_vdefi.c`` lines
-    # 80-81 under ``VDF_DECTALK_43``; ``paul`` line 410 and ``paul_8``
-    # line 32 agree on FT) supplies:
-    #
-    # - ``FT = 75`` → ``f0_dep_tilt = 75`` (Q12-style multiplier on the
-    #   ``(1400 - f0)`` tilt-vs-f0 slope; the ``(f0 - 900)`` MALE variant
-    #   at ``ph_draw.c`` lines 640-643 is ``#if HLSYN||CHANGES_AFTER_V43``
-    #   dead on this build). The previous seed of 73 came from the
-    #   *inactive* ``p_us_vdf1.c`` row — the wrong-variant defect behind
-    #   the last 11-13 OUT_TLT mismatching cells per gate prompt (issue
-    #   #289): the shallower 73-slope crossed each ``>> 12`` quantum
-    #   boundary a few frames later than the oracle's 75-slope on F0
-    #   decays, leaving ``temptilt`` one raw unit high on exactly the
-    #   crossing frames. ``ph/voice_definitions.py`` (the dectalk43
-    #   port) already carried FT=75.
-    # - ``BR = 0`` → ``spdefb1off = (0*0)>>1 + 4096 = 4096`` (Q12 unity;
-    #   ``ph_draw.c`` line 417 multiplies parstochip[OUT_B1] by this so
-    #   any non-unity value scales the first-formant bandwidth — at 4096
-    #   it's a passthrough, at 0 it zeros B1).
-    p_dph_t.f0_dep_tilt = 75  # FT for Paul (p_us_vdf_dectalk43.c lines 32/410)
-    p_dph_t.spdefb1off = 4096  # BR=0 for Paul → (0*0)>>1 + 4096 (ph_vset.c line 629)
+    # Per-voice speaker seeding — the full ``setspdef`` scalar reload
+    # (``ph_vset.c`` lines 541-831) ported in ``dectalk.ph.setspdef``
+    # (issue #302). Seeds malfem (male/female target-table select in
+    # ``gettar``), fnscale (Q12 head-size formant scaler), the F0
+    # scalars (f0_lp_filter / f0minimum / f0scalefac / size_hat_rise /
+    # scale_str_rise / f0basefall / assertiveness — the #259/#261
+    # wrong-variant and missing-scale defects live in the derivations,
+    # documented at the port), the ``phdraw`` tilt/bandwidth scalars
+    # (f0_dep_tilt=FT, spdeftltoff=(SM*25)/100, spdefb1off=(BR²>>1)+4096
+    # — #226/#289), the breathy-AH scalar (spdeflaxprcnt=LX*41, #148),
+    # and last_lang=0 (forces gettar table reload on first call).
+    # Replaces the Paul-only literals that used to live here: non-Paul
+    # voices (rita FT=0 BR=46 SM=24, wendy LX=80 BR=55 SM=100, kit
+    # HS=80 SEX=0, ...) now derive every scalar from their own row.
+    seed_dph_scalars(p_dph_t, voice_row)
+    # Matching per-voice SPD_CHIP block (same setspdef pass, chip side):
+    # feeds phdraw's llframe conversion (F4/B4/F5/B5) and the vtm1
+    # speaker seed (gains / nopen / aturb / t0jit / fnscale). For Paul
+    # this equals the oracle-packet-verified ``default_us_paul_spd()``
+    # block (issue #284).
+    _spd_chip = spd_chip_from_row(voice_row, speaker=C_SPEAKER_INDEX.get(voice_name, 0))
     # Seed F0 to the speaker's f0minimum so the very first ``pht0draw``
     # frame's ``f0prime = f0 + f0s`` reflects the voice's baseline rather
     # than the calloc'd zero (which scales below LOWEST_F0 = 500 deciHz
@@ -1010,7 +909,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             if previous_parstochip is not None:
                 frames.append(
                     parstochip_to_llframe_delayed(
-                        p_dph_t.parstochip, previous_parstochip, _us_paul_spd
+                        p_dph_t.parstochip, previous_parstochip, _spd_chip
                     )
                 )
                 delaypars_frames.append(
@@ -1036,7 +935,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     if _use_vtm1():
         from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
 
-        return pump_frames_via_vtm1(list(delaypars_frames), voice_preset)
+        return pump_frames_via_vtm1(list(delaypars_frames), voice_preset, spd_chip=_spd_chip)
     return _pump_frames_to_samples(frames, voice_preset, p_ksd_t.vol_att)
 
 
