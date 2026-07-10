@@ -193,6 +193,12 @@ def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch)
 #     rules ("a"->EY at 718, "for"->OR at 725, "to"->UW at 889) for
 #     short clauses; cleared per clause at ph_claus.c:307 —
 #     issue #309.
+#   - "stopped" / "the rain stopped." / "she grabbed it" / "we
+#     planned a trip" / "he admitted it": the -ed suffix on
+#     doubled-final-consonant stems — the l_us_suf.c un-doubling
+#     variants re-derive the runtime-dictionary root (STOP's AO
+#     vowel, the devoiced T tail) and pure-verb roots emit the
+#     root entry's ``)`` VPSTART marker (issue #310).
 _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "hi",
     "hello",
@@ -225,6 +231,11 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "a. b? c!",
     "for. and? to!",
     "a, for, and, to.",
+    "stopped",
+    "the rain stopped.",
+    "she grabbed it",
+    "we planned a trip",
+    "he admitted it",
 )
 
 
