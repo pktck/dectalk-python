@@ -13,17 +13,18 @@ dictionary get their mask from the suffix engine
   ls_suff.c line 248). A miss resets the mask to 0 and the chain walk
   continues.
 - **FC-tag rules** (``SF_FC``): the suffix match alone assigns the
-  mask (``man`` → ``FC_NOUN`` via the ``-man`` rule) without any
+  mask (``postman`` → ``FC_NOUN`` via the ``-man`` rule) without any
   dictionary lookup.
 
-:data:`_SUFFIX_CHAINS` is a faithful extraction of the generated
-``suffix_table[]`` / ``suffix_index[]`` arrays in
-``src/dapi/src/lts/l_us_suf.c`` (rule text, per-rule fc, replacement
-alternatives, chain order). The walk in :func:`suffix_form_class`
-mirrors the C matcher: chains are selected by the word's final letter,
-rules are tried in chain order, and the suffix match may not consume
-the word's first vowel (the ``str_vowel`` guard in
-``ls_suff_suffix_find``).
+The rule chains are decoded at import time from the byte-verbatim
+``suffix_table`` / ``suffix_index`` arrays in
+:mod:`dectalk.lts.suffix_data` (parity-tested byte-for-byte against
+``l_us_suf.c`` by ``tests/unit/test_lts_suffix_data.py``), so this
+module carries no duplicate copy of the table. The walk in
+:func:`suffix_form_class` mirrors the C matcher: chains are selected
+by the word's final letter, rules are tried in linked-list order, and
+the suffix match may not consume the word's first vowel (the
+``str_vowel`` guard in ``ls_suff_suffix_find``).
 
 Phoneme derivation is *not* modelled here — only the form-class mask
 (and the stripped root, so the caller can resolve homograph roots like
@@ -37,9 +38,30 @@ from collections.abc import Container
 from dataclasses import dataclass
 from typing import Final
 
+from dectalk.lts.suffix_data import suffix_index, suffix_table
+
 _VOWELS: Final[str] = "aeiou"
 """Letters flagged ``OO`` (vowel) in the US ``lsctype[]`` table
 (``l_us_con.c``); ``y`` is explicitly not a vowel there."""
+
+# Parse-table tokens from ls_suff.c (must match the suffix dictionary
+# compiler).
+_SF_END: Final[int] = 0xFF
+_SF_STRIP: Final[int] = 0xFE
+_SF_FC: Final[int] = 0xFD
+_SF_REPLACE: Final[int] = 0xFC
+_SF_REPLACE_WITH: Final[int] = 0xFB
+_SF_REPLACE_END: Final[int] = 0xFA
+_SF_RECURSE: Final[int] = 0xF9
+_SF_PHONES: Final[int] = 0xF8
+_SF_PHONES_END: Final[int] = 0xF7
+
+_CHAIN_TERMINATOR: Final[int] = 0xFFFF
+"""``suffix_index`` / ``next`` value marking the end of a chain."""
+
+_ALPHA_CHAINS: Final[int] = 26
+"""Chains 0-25 are ``a``-``z``; index 26 serves non-alphabetic finals
+(apostrophes — ``suffix_index[26]`` in ``ls_suff_suffix_find``)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,464 +87,99 @@ class SuffixRule:
     replacements: tuple[tuple[str, str], ...] | None
 
 
-# Faithful extraction of l_us_suf.c suffix_table[] (rule text, fc,
-# replacement alternatives, chain order). Keys are the word-final
-# letter (suffix_index[] is indexed by last letter; non a-z characters
-# share the index-26 chain, keyed "'" here).
-_SUFFIX_CHAINS: Final[dict[str, tuple[SuffixRule, ...]]] = {
-    "'": (
-        SuffixRule("s'", 0x00000001, (("", ""), ("", ""))),
-        SuffixRule("dell'", 0x00000400, None),
-    ),
-    "a": (SuffixRule("a", 0x00000400, None),),
-    "c": (
-        SuffixRule("otic", 0x00000001, None),
-        SuffixRule("obic", 0x00000001, None),
-        SuffixRule("ostic", 0x00000001, None),
-        SuffixRule("istic", 0x00000001, None),
-        SuffixRule("atric", 0x00000001, None),
-        SuffixRule("scopic", 0x00000001, None),
-        SuffixRule("metric", 0x00000001, None),
-        SuffixRule("graphic", 0x00000001, None),
-        SuffixRule("ic", 0x00000401, None),
-    ),
-    "d": (
-        SuffixRule(
-            "ed",
-            0x00000080,
-            (
-                ("", "e"),
-                ("", ""),
-                ("i", "y"),
-                ("bb", "b"),
-                ("cc", "c"),
-                ("dd", "d"),
-                ("gg", "g"),
-                ("hh", "h"),
-                ("jj", "j"),
-                ("kk", "k"),
-                ("mm", "m"),
-                ("nn", "n"),
-                ("pp", "p"),
-                ("rr", "r"),
-                ("tt", "t"),
-                ("vv", "v"),
-                ("xx", "x"),
-                ("zz", "z"),
-            ),
-        ),
-        SuffixRule("hood", 0x00000400, (("", ""),)),
-        SuffixRule("yard", 0x00000400, None),
-        SuffixRule("ward", 0x00000001, None),
-        SuffixRule("hand", 0x00000400, None),
-        SuffixRule("wald", 0x00000400, None),
-        SuffixRule("feld", 0x00000400, None),
-        SuffixRule("gaard", 0x00000400, None),
-        SuffixRule("chord", 0x00000400, None),
-        SuffixRule("id", 0x00000401, None),
-    ),
-    "e": (
-        SuffixRule("able", 0x00000001, (("", ""), ("", "e"))),
-        SuffixRule("ize", 0x00020000, (("", ""),)),
-        SuffixRule("cle", 0x00000400, None),
-        SuffixRule("cede", 0x00020000, None),
-        SuffixRule("edge", 0x00000400, None),
-        SuffixRule("some", 0x00000001, None),
-        SuffixRule("wise", 0x00000001, None),
-        SuffixRule("ware", 0x00000400, None),
-        SuffixRule("trouble", 0x00000400, None),
-        SuffixRule("uble", 0x00000001, None),
-        SuffixRule("ture", 0x00000400, None),
-        SuffixRule("tude", 0x00000400, None),
-        SuffixRule("time", 0x00000400, None),
-        SuffixRule("sure", 0x00000400, None),
-        SuffixRule("stle", 0x00000001, None),
-        SuffixRule("pose", 0x00020000, None),
-        SuffixRule("otte", 0x00000400, None),
-        SuffixRule("oire", 0x00000400, None),
-        SuffixRule("like", 0x00000001, None),
-        SuffixRule("iqe", 0x00000400, None),
-        SuffixRule("iere", 0x00000400, None),
-        SuffixRule("ible", 0x00000001, None),
-        SuffixRule("iate", 0x00000001, None),
-        SuffixRule("iage", 0x00000400, None),
-        SuffixRule("hole", 0x00000400, None),
-        SuffixRule("ette", 0x00000400, None),
-        SuffixRule("esse", 0x00000400, None),
-        SuffixRule("ence", 0x00000400, None),
-        SuffixRule("dale", 0x00000400, None),
-        SuffixRule("cake", 0x00000400, None),
-        SuffixRule("ance", 0x00000400, None),
-        SuffixRule("aise", 0x00000400, None),
-        SuffixRule("aire", 0x00000001, None),
-        SuffixRule("ville", 0x00000400, None),
-        SuffixRule("utive", 0x00000001, None),
-        SuffixRule("uance", 0x00000400, None),
-        SuffixRule("stone", 0x00000400, None),
-        SuffixRule("scope", 0x00000400, None),
-        SuffixRule("plane", 0x00000400, None),
-        SuffixRule("phone", 0x00000400, None),
-        SuffixRule("phobe", 0x00000400, None),
-        SuffixRule("place", 0x00000400, None),
-        SuffixRule("metre", 0x00000400, None),
-        SuffixRule("loge", 0x00000400, None),
-        SuffixRule("litre", 0x00000400, None),
-        SuffixRule("ienne", 0x00000400, None),
-        SuffixRule("ielle", 0x00000400, None),
-        SuffixRule("icide", 0x00000400, None),
-        SuffixRule("grade", 0x00000001, None),
-        SuffixRule("esqe", 0x00000001, None),
-        SuffixRule("vande", 0x00000400, None),
-        SuffixRule("delle", 0x00000400, None),
-        SuffixRule("scape", 0x00000400, None),
-        SuffixRule("logue", 0x00000400, None),
-        SuffixRule("eille", 0x00000400, None),
-        SuffixRule("ceive", 0x00020000, None),
-        SuffixRule("sphere", 0x00000400, None),
-        SuffixRule("finkle", 0x00000400, None),
-        SuffixRule("culture", 0x00000001, None),
-        SuffixRule("machine", 0x00000400, None),
-        SuffixRule("se", 0x00020400, None),
-        SuffixRule("que", 0x00000401, None),
-        SuffixRule("ile", 0x00000401, None),
-        SuffixRule("ime", 0x00000401, None),
-        SuffixRule("ive", 0x00000401, None),
-        SuffixRule("ese", 0x00000401, None),
-        SuffixRule("ice", 0x00020400, None),
-        SuffixRule("ace", 0x00020400, None),
-        SuffixRule("age", 0x00020400, None),
-        SuffixRule("ale", 0x00000401, None),
-        SuffixRule("type", 0x00000401, None),
-        SuffixRule("oge", 0x00000401, None),
-        SuffixRule("ige", 0x00020400, None),
-        SuffixRule("ease", 0x00020400, None),
-    ),
-    "f": (
-        SuffixRule("kopf", 0x00000400, None),
-        SuffixRule("dorf", 0x00000400, None),
-    ),
-    "g": (
-        SuffixRule(
-            "ing",
-            0x00000200,
-            (
-                ("", "e"),
-                ("", ""),
-                ("i", "y"),
-                ("bb", "b"),
-                ("cc", "c"),
-                ("dd", "d"),
-                ("gg", "g"),
-                ("hh", "h"),
-                ("jj", "j"),
-                ("kk", "k"),
-                ("mm", "m"),
-                ("nn", "n"),
-                ("pp", "p"),
-                ("tt", "t"),
-                ("vv", "v"),
-                ("xx", "x"),
-                ("zz", "z"),
-            ),
-        ),
-        SuffixRule("berg", 0x00000400, None),
-    ),
-    "h": (
-        SuffixRule("ish", 0x00020001, (("", ""),)),
-        SuffixRule("tsch", 0x00000400, None),
-        SuffixRule("ghth", 0x00000400, None),
-        SuffixRule("vich", 0x00000400, None),
-        SuffixRule("path", 0x00000400, None),
-        SuffixRule("ieth", 0x00000001, None),
-        SuffixRule("fish", 0x00000400, None),
-        SuffixRule("bach", 0x00000400, None),
-        SuffixRule("augh", 0x00000400, None),
-        SuffixRule("vitch", 0x00000400, None),
-        SuffixRule("graph", 0x00000400, None),
-        SuffixRule("burgh", 0x00000400, None),
-        SuffixRule("baugh", 0x00000400, None),
-        SuffixRule("evitch", 0x00000400, None),
-        SuffixRule("borough", 0x00000400, None),
-    ),
-    "i": (
-        SuffixRule("ski", 0x00000400, None),
-        SuffixRule("uchi", 0x00000400, None),
-        SuffixRule("olli", 0x00000400, None),
-        SuffixRule("ishi", 0x00000400, None),
-        SuffixRule("etti", 0x00000400, None),
-        SuffixRule("elli", 0x00000400, None),
-    ),
-    "k": (
-        SuffixRule("mark", 0x00000400, None),
-        SuffixRule("szek", 0x00000400, None),
-        SuffixRule("neck", 0x00000400, None),
-        SuffixRule("czyk", 0x00000400, None),
-        SuffixRule("czuk", 0x00000400, None),
-        SuffixRule("czek", 0x00000400, None),
-        SuffixRule("czak", 0x00000400, None),
-        SuffixRule("book", 0x00000400, None),
-        SuffixRule("beck", 0x00000400, None),
-    ),
-    "l": (
-        SuffixRule("ful", 0x00000001, (("", ""), ("i", "y"))),
-        SuffixRule("cal", 0x00000001, None),
-        SuffixRule("pel", 0x00020000, None),
-        SuffixRule("will", 0x00000400, None),
-        SuffixRule("tual", 0x00000001, None),
-        SuffixRule("tial", 0x00000001, None),
-        SuffixRule("tail", 0x00000400, None),
-        SuffixRule("sual", 0x00000001, None),
-        SuffixRule("mail", 0x00000400, None),
-        SuffixRule("inal", 0x00000001, None),
-        SuffixRule("hill", 0x00000400, None),
-        SuffixRule("bell", 0x00000400, None),
-        SuffixRule("ball", 0x00000400, None),
-        SuffixRule("tural", 0x00000001, None),
-        SuffixRule("gonal", 0x00000001, None),
-        SuffixRule("ional", 0x00000001, None),
-        SuffixRule("mental", 0x00000001, None),
-        SuffixRule("icidal", 0x00000001, None),
-        SuffixRule("ennial", 0x00000001, None),
-        SuffixRule("ational", 0x00000001, None),
-        SuffixRule("ational", 0x00000001, None),
-        SuffixRule("cultural", 0x00000001, None),
-        SuffixRule("al", 0x00000401, None),
-        SuffixRule("cial", 0x00000401, None),
-    ),
-    "m": (
-        SuffixRule("dom", 0x00000400, (("", ""),)),
-        SuffixRule("ism", 0x00000400, (("", ""),)),
-        SuffixRule("sm", 0x00000400, None),
-        SuffixRule("gram", 0x00000400, None),
-        SuffixRule("heim", 0x00000400, None),
-        SuffixRule("baum", 0x00000400, None),
-        SuffixRule("ingham", 0x00000400, None),
-    ),
-    "n": (
-        SuffixRule("men", 0x00000400, None),
-        SuffixRule("man", 0x00000400, None),
-        SuffixRule("ion", 0x00000400, None),
-        SuffixRule("teen", 0x00000400, None),
-        SuffixRule("sten", 0x00000400, None),
-        SuffixRule("sohn", 0x00000400, None),
-        SuffixRule("sian", 0x00000400, None),
-        SuffixRule("mann", 0x00000400, None),
-        SuffixRule("lian", 0x00000400, None),
-        SuffixRule("ican", 0x00000400, None),
-        SuffixRule("geon", 0x00000400, None),
-        SuffixRule("cian", 0x00000400, None),
-        SuffixRule("lein", 0x00000400, None),
-        SuffixRule("bahn", 0x00000400, None),
-        SuffixRule("auen", 0x00000400, None),
-        SuffixRule("ghlin", 0x00000400, None),
-        SuffixRule("arian", 0x00000001, None),
-        SuffixRule("stein", 0x00000400, None),
-        SuffixRule("ington", 0x00000400, None),
-        SuffixRule("vanden", 0x00000400, None),
-        SuffixRule("hausen", 0x00000400, None),
-        SuffixRule("children", 0x00000400, None),
-        SuffixRule("an", 0x00000401, None),
-        SuffixRule("ain", 0x00020400, None),
-        SuffixRule("tian", 0x00000401, None),
-    ),
-    "o": (
-        SuffixRule("moto", 0x00000400, None),
-        SuffixRule("illo", 0x00000400, None),
-        SuffixRule("etto", 0x00000400, None),
-        SuffixRule("enko", 0x00000400, None),
-        SuffixRule("ello", 0x00000400, None),
-        SuffixRule("eiro", 0x00000400, None),
-        SuffixRule("boro", 0x00000400, None),
-        SuffixRule("pseudo", 0x00000001, None),
-    ),
-    "p": (
-        SuffixRule("ship", 0x00000400, (("", ""),)),
-        SuffixRule("shop", 0x00000400, None),
-    ),
-    "r": (
-        SuffixRule(
-            "er",
-            0x00000403,
-            (
-                ("", "e"),
-                ("", ""),
-                ("i", "y"),
-                ("bb", "b"),
-                ("cc", "c"),
-                ("dd", "d"),
-                ("gg", "g"),
-                ("hh", "h"),
-                ("jj", "j"),
-                ("kk", "k"),
-                ("mm", "m"),
-                ("nn", "n"),
-                ("pp", "p"),
-                ("rr", "r"),
-                ("tt", "t"),
-                ("vv", "v"),
-                ("xx", "x"),
-                ("zz", "z"),
-            ),
-        ),
-        SuffixRule("or", 0x00000401, (("", "e"),)),
-        SuffixRule("cur", 0x00020000, None),
-        SuffixRule("fer", 0x00020000, None),
-        SuffixRule("oir", 0x00000400, None),
-        SuffixRule("tor", 0x00000400, None),
-        SuffixRule("euer", 0x00000400, None),
-        SuffixRule("eier", 0x00000400, None),
-        SuffixRule("ular", 0x00000001, None),
-        SuffixRule("izer", 0x00000400, None),
-        SuffixRule("iour", 0x00000400, None),
-        SuffixRule("auer", 0x00000400, None),
-        SuffixRule("meter", 0x00000400, None),
-        SuffixRule("maker", 0x00000400, None),
-        SuffixRule("liter", 0x00000400, None),
-        SuffixRule("color", 0x00000001, None),
-        SuffixRule("aier", 0x00000400, None),
-        SuffixRule("meyer", 0x00000400, None),
-        SuffixRule("meier", 0x00000400, None),
-        SuffixRule("coeur", 0x00000400, None),
-        SuffixRule("soever", 0x00002000, None),
-        SuffixRule("vander", 0x00000400, None),
-        SuffixRule("ometer", 0x00000400, None),
-        SuffixRule("hoffer", 0x00000400, None),
-        SuffixRule("hauser", 0x00000400, None),
-        SuffixRule("felder", 0x00000400, None),
-        SuffixRule("dorfer", 0x00000400, None),
-        SuffixRule("burger", 0x00000400, None),
-        SuffixRule("berger", 0x00000400, None),
-        SuffixRule("becker", 0x00000400, None),
-        SuffixRule("grapher", 0x00000400, None),
-        SuffixRule("weather", 0x00000400, None),
-        SuffixRule("thunder", 0x00000400, None),
-        SuffixRule("meister", 0x00000400, None),
-        SuffixRule("counter", 0x00000400, None),
-        SuffixRule("doerffer", 0x00000400, None),
-        SuffixRule("ar", 0x00000401, None),
-    ),
-    "s": (
-        SuffixRule("s", 0x00020400, (("", ""), ("", ""))),
-        SuffixRule("'s", 0x00020001, (("", ""), ("", ""))),
-        SuffixRule("es", 0x00020400, (("", "e"), ("", ""))),
-        SuffixRule("ies", 0x00020400, (("", "y"), ("", ""))),
-        SuffixRule("ers", 0x00020400, (("", "e"), ("", ""), ("i", "y"))),
-        SuffixRule(
-            "ings",
-            0x00000400,
-            (
-                ("", "e"),
-                ("", ""),
-                ("i", "y"),
-                ("bb", "b"),
-                ("cc", "c"),
-                ("dd", "d"),
-                ("gg", "g"),
-                ("hh", "h"),
-                ("jj", "j"),
-                ("kk", "k"),
-                ("mm", "m"),
-                ("nn", "n"),
-                ("pp", "p"),
-                ("rr", "r"),
-                ("tt", "t"),
-                ("vv", "v"),
-                ("xx", "x"),
-                ("zz", "z"),
-            ),
-        ),
-        SuffixRule("less", 0x00000001, (("", ""),)),
-        SuffixRule("ness", 0x00000400, (("", ""), ("i", "y"))),
-        SuffixRule("ous", 0x00000001, None),
-        SuffixRule("us", 0x00000400, None),
-        SuffixRule("is", 0x00000400, None),
-        SuffixRule("ics", 0x00000400, None),
-        SuffixRule("polos", 0x00000400, None),
-        SuffixRule("selves", 0x00002000, None),
-        SuffixRule("poulos", 0x00000400, None),
-    ),
-    "t": (
-        SuffixRule("ment", 0x00000400, (("", ""), ("i", "y"))),
-        SuffixRule("mit", 0x00020000, None),
-        SuffixRule("iest", 0x00000001, None),
-        SuffixRule("uent", 0x00000001, None),
-        SuffixRule("uant", 0x00000001, None),
-        SuffixRule("stat", 0x00000400, None),
-        SuffixRule("port", 0x00000400, None),
-        SuffixRule("iett", 0x00000400, None),
-        SuffixRule("cient", 0x00000001, None),
-        SuffixRule("ient", 0x00000400, None),
-        SuffixRule("iant", 0x00000001, None),
-        SuffixRule("crat", 0x00000400, None),
-        SuffixRule("cast", 0x00000400, None),
-        SuffixRule("ault", 0x00000400, None),
-        SuffixRule("uplet", 0x00000400, None),
-        SuffixRule("sight", 0x00000400, None),
-        SuffixRule("qist", 0x00000400, None),
-        SuffixRule("qent", 0x00000001, None),
-        SuffixRule("olent", 0x00000001, None),
-        SuffixRule("eault", 0x00000400, None),
-        SuffixRule("veldt", 0x00000400, None),
-        SuffixRule("stadt", 0x00000400, None),
-        SuffixRule("horst", 0x00000400, None),
-        SuffixRule("plicit", 0x00000001, None),
-        SuffixRule("logist", 0x00000400, None),
-        SuffixRule("thought", 0x00000400, None),
-        SuffixRule("schmidt", 0x00000400, None),
-        SuffixRule("ent", 0x00000401, None),
-        SuffixRule("ant", 0x00000401, None),
-        SuffixRule("ident", 0x00000401, None),
-    ),
-    "u": (
-        SuffixRule("sshiuu", 0x00000400, (("", ""),)),
-        SuffixRule("ieau", 0x00000400, None),
-        SuffixRule("chau", 0x00000400, None),
-    ),
-    "x": (
-        SuffixRule("eaux", 0x00000400, None),
-        SuffixRule("flex", 0x00000400, None),
-    ),
-    "y": (
-        SuffixRule("ify", 0x00020000, (("", ""),)),
-        SuffixRule("ly", 0x00000002, (("", ""), ("b", "ble"))),
-        SuffixRule("ogy", 0x00000400, None),
-        SuffixRule("ity", 0x00000400, None),
-        SuffixRule("pathy", 0x00000400, None),
-        SuffixRule("thy", 0x00000001, None),
-        SuffixRule("tory", 0x00000001, None),
-        SuffixRule("mony", 0x00000400, None),
-        SuffixRule("iety", 0x00000400, None),
-        SuffixRule("ency", 0x00000400, None),
-        SuffixRule("ancy", 0x00000400, None),
-        SuffixRule("bury", 0x00000400, None),
-        SuffixRule("body", 0x00002000, None),
-        SuffixRule("scopy", 0x00000400, None),
-        SuffixRule("metry", 0x00000400, None),
-        SuffixRule("berry", 0x00000400, None),
-        SuffixRule("archy", 0x00000400, None),
-        SuffixRule("ansky", 0x00000400, None),
-        SuffixRule("ocracy", 0x00000400, None),
-        SuffixRule("graphy", 0x00000400, None),
-        SuffixRule("ography", 0x00000400, None),
-        SuffixRule("country", 0x00000400, None),
-        SuffixRule("ty", 0x00000401, None),
-        SuffixRule("cy", 0x00000401, None),
-        SuffixRule("fy", 0x00020001, None),
-        SuffixRule("gy", 0x00000401, None),
-        SuffixRule("chy", 0x00000401, None),
-        SuffixRule("tuary", 0x00000401, None),
-    ),
-    "z": (
-        SuffixRule("szcz", 0x00000400, None),
-        SuffixRule("witz", 0x00000400, None),
-        SuffixRule("wicz", 0x00000400, None),
-        SuffixRule("vitz", 0x00000400, None),
-        SuffixRule("fitz", 0x00000400, None),
-        SuffixRule("iewicz", 0x00000400, None),
-        SuffixRule("kiewicz", 0x00000400, None),
-    ),
-}
-"""Per-final-letter suffix rule chains, verbatim from ``l_us_suf.c``."""
+def _decode_rule(offset: int) -> tuple[int, SuffixRule | None]:  # noqa: PLR0912 - mirrors the C record layout's per-token branches
+    """Decode one ``struct suff_rule`` record at ``offset``.
+
+    The record layout (``ls_dict.h``) is ``U32 next``, ``U32 fc``,
+    then the byte-coded rule: the reversed suffix text, an
+    ``SF_STRIP``/``SF_FC`` marker, and (for strip rules) the
+    ``SF_REPLACE`` alternatives with optional ``SF_RECURSE`` and
+    ``SF_PHONES`` payloads.
+
+    Args:
+        offset: Byte offset of the record in :data:`suffix_table`.
+
+    Returns:
+        ``(next_offset, rule)``; ``rule`` is ``None`` for the empty
+        sentinel record at the end of the table.
+    """
+    nxt = int.from_bytes(suffix_table[offset : offset + 4], "little")
+    fc = int.from_bytes(suffix_table[offset + 4 : offset + 8], "little")
+    j = offset + 8
+    suffix_rev: list[str] = []
+    while j < len(suffix_table) and suffix_table[j] < _SF_PHONES_END:
+        suffix_rev.append(chr(suffix_table[j]))
+        j += 1
+    if j >= len(suffix_table) or not suffix_rev:
+        return nxt, None
+    suffix = "".join(reversed(suffix_rev))
+    kind = suffix_table[j]
+    if kind == _SF_FC:
+        return nxt, SuffixRule(suffix, fc, None)
+    if kind != _SF_STRIP:
+        return nxt, None
+    j += 1
+    repls: list[tuple[str, str]] = []
+    while j < len(suffix_table) and suffix_table[j] != _SF_END:
+        if suffix_table[j] == _SF_REPLACE:
+            j += 1
+            extra: list[str] = []
+            while j < len(suffix_table) and suffix_table[j] < _SF_PHONES_END:
+                extra.append(chr(suffix_table[j]))
+                j += 1
+            if j >= len(suffix_table) or suffix_table[j] != _SF_REPLACE_WITH:
+                break
+            j += 1
+            repl: list[str] = []
+            while j < len(suffix_table) and suffix_table[j] < _SF_PHONES_END:
+                repl.append(chr(suffix_table[j]))
+                j += 1
+            if j >= len(suffix_table) or suffix_table[j] != _SF_REPLACE_END:
+                break
+            j += 1
+            if j < len(suffix_table) and suffix_table[j] == _SF_RECURSE:
+                j += 1
+            # ``extra`` is matched backwards from the strip point,
+            # so it reverses like the suffix; ``repl`` is stored
+            # forward (it is copied verbatim into the buffer).
+            repls.append(("".join(reversed(extra)), "".join(repl)))
+        elif suffix_table[j] == _SF_PHONES:
+            while j < len(suffix_table) and suffix_table[j] != _SF_PHONES_END:
+                j += 1
+            j += 1
+        else:
+            j += 1
+    return nxt, SuffixRule(suffix, fc, tuple(repls))
+
+
+def _decode_chains() -> dict[str, tuple[SuffixRule, ...]]:
+    """Decode all 27 per-letter chains from the verbatim byte table."""
+    chains: dict[str, tuple[SuffixRule, ...]] = {}
+    for letter_i, start in enumerate(suffix_index):
+        if start == _CHAIN_TERMINATOR:
+            continue
+        letter = chr(ord("a") + letter_i) if letter_i < _ALPHA_CHAINS else "'"
+        rules: list[SuffixRule] = []
+        offset = start
+        first = True
+        # Offset 0 is a valid first record (the 's' chain); a zero
+        # ``next`` pointer otherwise terminates the walk.
+        while (offset != _CHAIN_TERMINATOR and (offset != 0 or first)) and offset < len(
+            suffix_table
+        ):
+            first = False
+            offset, rule = _decode_rule(offset)
+            if rule is not None:
+                rules.append(rule)
+        if rules:
+            chains[letter] = tuple(rules)
+    return chains
+
+
+_SUFFIX_CHAINS: Final[dict[str, tuple[SuffixRule, ...]]] = _decode_chains()
+"""Per-final-letter suffix rule chains, decoded from ``l_us_suf.c``'s
+byte-verbatim ``suffix_table`` (non-alphabetic finals share the
+index-26 chain, keyed ``"'"``)."""
 
 
 def suffix_form_class(
