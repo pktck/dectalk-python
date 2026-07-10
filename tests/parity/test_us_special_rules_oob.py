@@ -64,6 +64,12 @@ _ST0 = _SRC_ROOT / "src/dapi/src/ph/p_us_st0.c"
 _SETAR = _SRC_ROOT / "src/dapi/src/ph/ph_setar.c"
 _ROM = _SRC_ROOT / "src/dapi/src/ph/p_us_rom_dectalk_1996m_43f.c"
 
+# The three C-re-parse tests double-mark ``parity`` + ``c_oracle``:
+# ``parity`` documents the source-re-parse contract (and skips locally
+# without the tree), while ``c_oracle`` gets them SELECTED in the CI
+# oracle lane (``pytest -m c_oracle`` with DECTALK_SRC set) — the 9-way
+# matrix has no C source, so without the second marker they would skip
+# everywhere in CI and never assert.
 _c_source = pytest.mark.skipif(
     not (_ST0.is_file() and _SETAR.is_file() and _ROM.is_file()),
     reason="DECtalk C source not available at DECTALK_SRC",
@@ -93,6 +99,7 @@ def _extract_body(path: Path, pattern: str) -> str:
 
 
 @pytest.mark.parity
+@pytest.mark.c_oracle
 @_c_source
 def test_c_kluge_read_is_unguarded() -> None:
     """The st0 Rule 2 kluge still reads ``allophons[nphone - 2]`` raw.
@@ -118,6 +125,7 @@ def test_c_kluge_read_is_unguarded() -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.c_oracle
 @_c_source
 def test_c_init_variables_hardwires_clause_start() -> None:
     """``init_variables`` forces ``pholas = GEN_SIL`` / ``struclm2 = 0`` at nphone 0.
@@ -141,6 +149,7 @@ def test_c_init_variables_hardwires_clause_start() -> None:
 
 
 @pytest.mark.parity
+@pytest.mark.c_oracle
 @_c_source
 def test_c_active_rom_silence_lacks_fplosv() -> None:
     """The active ROM's ``us_featb`` silence entry is ``FSONOR`` — no FPLOSV.
