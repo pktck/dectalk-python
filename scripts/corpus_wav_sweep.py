@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Full-corpus WAV bit-parity sweep: pure-Python pipeline vs the C binary.
+r"""WAV bit-parity sweep: pure-Python pipeline vs the C binary.
 
 Byte-compares ``dectalk.to_wav`` (under ``DECTALK_DISABLE_CAPI=1`` +
 FULL+VTM1 — the byte-exact-capable pure-Python path) against the
 shipped ``say`` binary for every prompt in ``tests/parity/_corpus.py``
-(~133K prompts). This is the collect-all companion to the goalpost test
+(~133K prompts) or, with ``--prompts FILE``, for an arbitrary prompt
+set. This is the collect-all companion to the goalpost test
 ``tests/parity/test_binary_wav_parity.py``, whose stop-hook fail-fast
 gate halts on the FIRST mismatch: one sweep run enumerates the WHOLE
 residual tail so the burn-down can be batched by divergence cluster
-(issue #311).
+(issue #311), and the same harness drives out-of-corpus divergence
+discovery over generated prompt sets (issue #316,
+``scripts/build_discovery_prompts.py``).
 
-Design mirrors ``scripts/corpus_phoneme_sweep.py``: the corpus is
+Design mirrors ``scripts/corpus_phoneme_sweep.py``: the prompt set is
 walked in slices, each slice in a **fresh subprocess**, with
 crash-victim resume. The Python side here never touches the in-process
 C library (the segfault driver behind the phoneme sweep's design), but
@@ -24,12 +27,19 @@ Usage::
     uv run python scripts/corpus_wav_sweep.py                 # full sweep
     uv run python scripts/corpus_wav_sweep.py --sample 2000   # strided subsample
     uv run python scripts/corpus_wav_sweep.py --from-list /tmp/residuals.txt
+    uv run python scripts/corpus_wav_sweep.py \\
+        --prompts /tmp/discovery-prompts/dict_bare.txt \\
+        --out-dir /tmp/wav-sweep-dict-bare
 
-``--from-list FILE`` re-sweeps only the prompts listed in FILE (one per
-line) — the post-fix re-verification loop. Mismatch rows land in
-``<out-dir>/mismatches.txt`` (prompt text) and the per-prompt JSONL
+``--prompts FILE`` swaps the corpus for FILE's prompt set: every
+non-blank line is one prompt (no comment syntax — ``#`` is legitimate
+prompt text). Indices in the result rows refer to positions in that
+set. ``--from-list FILE`` re-sweeps only the prompts listed in FILE
+(one per line) — the post-fix re-verification loop. Mismatch rows land
+in ``<out-dir>/mismatches.txt`` (prompt text) and the per-prompt JSONL
 rows (sample counts, first divergent sample) in
-``<out-dir>/results_w*.jsonl`` for clustering.
+``<out-dir>/results_w*.jsonl`` for clustering
+(``scripts/cluster_wav_divergences.py``).
 
 Runtime: ~2 h for the full corpus with the default 4 workers (~5
 prompts/s/worker; the pure-Python render dominates at ~200 ms).
@@ -58,13 +68,27 @@ def _load_corpus() -> tuple[str, ...]:
     return CORPUS
 
 
+def _load_prompts(prompts_file: Path | None) -> tuple[str, ...]:
+    """The active prompt set: ``prompts_file`` lines, or the corpus.
+
+    Every non-blank line of ``prompts_file`` is one prompt, taken
+    verbatim (only the newline is stripped). There is deliberately no
+    comment syntax: ``#``/``;`` are legitimate prompt characters for
+    the discovery sets.
+    """
+    if prompts_file is None:
+        return _load_corpus()
+    lines = prompts_file.read_text(encoding="utf-8").splitlines()
+    return tuple(line for line in lines if line.strip())
+
+
 # --------------------------------------------------------------------------
 # Worker mode: compare one batch of corpus indices inside a fresh process.
 # --------------------------------------------------------------------------
 
 
-def _worker(idx_file: str, out_path: str) -> None:
-    """Compare the corpus indices listed in ``idx_file`` (one per line).
+def _worker(idx_file: str, out_path: str, prompts_file: Path | None) -> None:
+    """Compare the prompt indices listed in ``idx_file`` (one per line).
 
     Appends JSONL rows to ``out_path`` and prints a ``DONE <i>`` marker
     per prompt so the driver can locate the victim if this process dies.
@@ -85,10 +109,10 @@ def _worker(idx_file: str, out_path: str) -> None:
     say = bin_root / "say"
 
     indices = [int(line) for line in Path(idx_file).read_text(encoding="utf-8").split()]
-    corpus = _load_corpus()
+    prompts = _load_prompts(prompts_file)
     with open(out_path, "a", encoding="utf-8") as out:
         for i in indices:
-            text = corpus[i]
+            text = prompts[i]
             row: dict[str, object]
             try:
                 with tempfile.TemporaryDirectory(prefix="wav-sweep-") as td:
@@ -144,11 +168,16 @@ def _mismatch_stats(py_b: bytes, bin_b: bytes) -> dict[str, object]:
 # --------------------------------------------------------------------------
 
 
-def _run_batch(indices: list[int], idx_file: Path, out_path: str) -> tuple[int, int]:
+def _run_batch(
+    indices: list[int], idx_file: Path, out_path: str, prompts_file: Path | None
+) -> tuple[int, int]:
     """Run one worker subprocess over ``indices``; return (rc, last_done_pos)."""
     idx_file.write_text("\n".join(map(str, indices)) + "\n", encoding="utf-8")
+    cmd = [sys.executable, __file__, "--worker", str(idx_file), out_path]
+    if prompts_file is not None:
+        cmd += ["--prompts", str(prompts_file)]
     proc = subprocess.run(
-        [sys.executable, __file__, "--worker", str(idx_file), out_path],
+        cmd,
         capture_output=True,
         text=True,
         timeout=3600,
@@ -162,7 +191,12 @@ def _run_batch(indices: list[int], idx_file: Path, out_path: str) -> tuple[int, 
 
 
 def _run_band(
-    indices: list[int], wid: int, out_dir: Path, crash_victims: list[int], slice_size: int
+    indices: list[int],
+    wid: int,
+    out_dir: Path,
+    crash_victims: list[int],
+    slice_size: int,
+    prompts_file: Path | None,
 ) -> None:
     """Walk ``indices`` in ``slice_size`` batches, resuming past crashes."""
     out_path = str(out_dir / f"results_w{wid}.jsonl")
@@ -170,7 +204,7 @@ def _run_band(
     pos = 0
     while pos < len(indices):
         batch = indices[pos : pos + slice_size]
-        rc, last_done_pos = _run_batch(batch, idx_file, out_path)
+        rc, last_done_pos = _run_batch(batch, idx_file, out_path, prompts_file)
         if rc == 0 or last_done_pos == len(batch) - 1:
             pos += len(batch)
             continue
@@ -179,19 +213,19 @@ def _run_band(
     idx_file.unlink(missing_ok=True)
 
 
-def _select_indices(args: argparse.Namespace, corpus: tuple[str, ...]) -> list[int]:
-    """Corpus indices to sweep: full corpus, strided sample, or prompt list."""
-    n = len(corpus)
+def _select_indices(args: argparse.Namespace, prompts: tuple[str, ...]) -> list[int]:
+    """Prompt indices to sweep: full set, strided sample, or prompt list."""
+    n = len(prompts)
     if args.from_list is not None:
         wanted = {
             line
             for line in args.from_list.read_text(encoding="utf-8").splitlines()
             if line and not line.startswith("#")
         }
-        indices = [i for i, text in enumerate(corpus) if text in wanted]
-        missing = wanted - {corpus[i] for i in indices}
+        indices = [i for i, text in enumerate(prompts) if text in wanted]
+        missing = wanted - {prompts[i] for i in indices}
         if missing:
-            print(f"WARNING: {len(missing)} prompts from --from-list not in corpus")
+            print(f"WARNING: {len(missing)} prompts from --from-list not in the prompt set")
         return indices
     if args.sample and args.sample < n:
         step = -(-n // args.sample)
@@ -221,7 +255,16 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--worker", nargs=2, metavar=("IDX_FILE", "OUT"), help=argparse.SUPPRESS)
     parser.add_argument(
-        "--sample", type=int, default=0, help="strided subsample size (0 = full corpus)"
+        "--prompts",
+        type=Path,
+        default=None,
+        help=(
+            "sweep this prompt file instead of tests/parity/_corpus.py "
+            "(one prompt per non-blank line, no comment syntax)"
+        ),
+    )
+    parser.add_argument(
+        "--sample", type=int, default=0, help="strided subsample size (0 = full prompt set)"
     )
     parser.add_argument(
         "--from-list",
@@ -255,11 +298,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.worker:
-        _worker(args.worker[0], args.worker[1])
+        _worker(args.worker[0], args.worker[1], args.prompts)
         return 0
 
-    corpus = _load_corpus()
-    indices = _select_indices(args, corpus)
+    prompts = _load_prompts(args.prompts)
+    indices = _select_indices(args, prompts)
 
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -278,7 +321,8 @@ def main(argv: list[str] | None = None) -> int:
         if not chunk:
             continue
         t = threading.Thread(
-            target=_run_band, args=(chunk, wid, out_dir, crash_victims, args.slice_size)
+            target=_run_band,
+            args=(chunk, wid, out_dir, crash_victims, args.slice_size, args.prompts),
         )
         t.start()
         threads.append(t)
@@ -293,16 +337,16 @@ def main(argv: list[str] | None = None) -> int:
                 rows[row["i"]] = row
 
     for idx in crash_victims:
-        rows.setdefault(idx, {"i": idx, "text": corpus[idx], "error": "worker crash"})
+        rows.setdefault(idx, {"i": idx, "text": prompts[idx], "error": "worker crash"})
     for idx in indices:
-        rows.setdefault(idx, {"i": idx, "text": corpus[idx], "error": "no result"})
+        rows.setdefault(idx, {"i": idx, "text": prompts[idx], "error": "no result"})
 
     print(f"sweep done in {time.time() - t0:.0f}s")
-    return _report(corpus, rows, out_dir)
+    return _report(prompts, rows, out_dir)
 
 
 def _report(
-    corpus: tuple[str, ...],
+    prompts: tuple[str, ...],
     rows: dict[int, dict[str, object]],
     out_dir: Path,
 ) -> int:
@@ -310,7 +354,7 @@ def _report(
     n_pass = sum(1 for r in rows.values() if r.get("ok"))
     fails = {i: r for i, r in rows.items() if not r.get("ok")}
     total = len(rows)
-    print(f"\ncorpus WAV parity: {n_pass}/{total} byte-exact ({100 * n_pass / max(total, 1):.3f}%)")
+    print(f"\nWAV parity: {n_pass}/{total} byte-exact ({100 * n_pass / max(total, 1):.3f}%)")
 
     classes: Counter[str] = Counter()
     for r in fails.values():
@@ -323,7 +367,7 @@ def _report(
     for cls, cnt in classes.most_common():
         print(f"  {cnt:6d}  {cls}")
 
-    mismatch_texts = sorted({str(r.get("text", corpus[i])) for i, r in fails.items()})
+    mismatch_texts = sorted({str(r.get("text", prompts[i])) for i, r in fails.items()})
     (out_dir / "mismatches.txt").write_text(
         "\n".join(mismatch_texts) + ("\n" if mismatch_texts else ""), encoding="utf-8"
     )
