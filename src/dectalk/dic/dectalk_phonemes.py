@@ -290,6 +290,13 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
         if not tok or tok == "_":
             out_parts.append(word_break)
             continue
+        # Pre-rendered raw segment -- the numeric-format expansion
+        # (``lts.numeric_formats``) already stringified its phoneme
+        # codes through ``usa_arpa`` exactly like the C oracle, so the
+        # payload passes through byte-for-byte.
+        if tok.startswith("__RAW__"):
+            out_parts.append(tok[len("__RAW__") :])
+            continue
         # Punctuation marker -- the calling layer wraps the actual
         # character in ``__PUNCT__<ch>`` so we can route it through
         # the canonical 2-byte-per-symbol emit (char + trailing space).

@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 from dectalk.cmd import SpeechState, parse
 from dectalk.data.voices import PRESETS, VoicePreset, get_preset
 from dectalk.dic import lookup
-from dectalk.dic.form_class_bits import FC_NOUN
+from dectalk.dic.form_class_bits import FC_ADJ, FC_NOUN
 from dectalk.dic.markers import (
     emits_vpstart,
     load_formclass_lexicon,
@@ -2201,10 +2201,20 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     return True
             return True
 
+        from dectalk.lts.numeric_formats import (  # noqa: PLC0415 — local like the helpers above
+            am_pm_phonemes,
+            numeric_chunk_phonemes,
+        )
+
+        raw_prefix = "__RAW__"
         # Tokenize with C-faithful digit-string handling: for each
         # whitespace-delimited chunk, if (after stripping surrounding
         # punctuation) it's a pure digit-string or dotted decimal,
-        # route through ``_digit_expand`` -- otherwise let
+        # route through ``_digit_expand``; if it's one of the C front
+        # end's numeric formats (ordinal / currency / clock time /
+        # fraction / dd-mon date / signed integer / digit-dash part
+        # number — issue #225), splice the pre-rendered oracle-exact
+        # phoneme stream from ``lts.numeric_formats``; otherwise let
         # ``kernel.text.tokenize`` handle it. The chunk queue lets the
         # symbol-splitting pre-pass below re-inject the split parts of
         # a chunk (``one+`` -> ``one`` + ``__SYM_PLUS__``) so each part
@@ -2232,8 +2242,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             # C ``cm_pars``/``ls_spel`` pair does. ``None`` means the
             # chunk is not an isolated mark -- fall through. This lane
             # owns the ``.,;:!?`` mark set; the symbol splitter below
-            # owns the disjoint ``& % @ + = * / # ^`` set, so the two
-            # never contend for the same chunk.
+            # owns the disjoint ``& % @ + = * / # ^`` set, and the
+            # numeric dispatch (issue #225) owns digit-bearing chunks
+            # (the boundary #244's digit-guard already coordinates
+            # toward), so the three never contend for the same chunk.
             punct_tokens = _isolated_punct_tokens(
                 chunk, clause_has_word=_open_clause_has_word(tokens)
             )
@@ -2325,9 +2337,64 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             while inner and not inner[-1].isalnum():
                 trailing.insert(0, inner[-1])
                 inner = inner[:-1]
-            _ = leading  # leading-punct ignored (matches tokenize)
-            if inner and _digits_strict.match(inner):
+            # C keeps sign characters through its punctuation strip
+            # (``ls_task_strip_left_punctuation`` LS class excludes
+            # them; ``ls_task_set_sign_flag`` consumes them later) —
+            # recover a stripped sign for the numeric dispatch. Pure
+            # unsigned digit strings return None from the dispatcher
+            # (the corpus-proven ``_digit_expand`` path owns them);
+            # signed ones are C's do_sign + do_number ("minus five").
+            # --- Numeric formats (issue #225) -----------------------
+            # After the symbol splitter (which skips digit/``$`` chunks),
+            # route the C front end's numeric shapes through the ported
+            # LTS dispatch. Lookahead uses the chunk queue: ``$5
+            # million`` peeks/consumes the nwdtab scale word and a clock
+            # time peeks/consumes a following am/pm word — both mirror
+            # the C ``ls_task_readword`` consumption.
+            numeric_expansion = None
+            if inner:
+                sign_prefix = leading[-1] if leading and leading[-1] in "-+" else ""
+                is_plain_digits = bool(_digits_strict.match(inner) or _dotted.match(inner))
+                if sign_prefix or not is_plain_digits:
+                    next_chunk = chunk_queue[0] if (not trailing and chunk_queue) else None
+                    numeric_expansion = numeric_chunk_phonemes(
+                        inner,
+                        sign_prefix=sign_prefix,
+                        next_word=next_chunk,
+                        had_leading_punct=len(leading) > (1 if sign_prefix else 0),
+                    )
+            if numeric_expansion is None and inner and _digits_strict.match(inner):
                 tokens.extend(_digit_expand(int(inner.replace(",", ""))))
+            elif numeric_expansion is not None:
+                tokens.append(
+                    Token(
+                        TokenKind.WORD,
+                        raw_prefix + numeric_expansion.phonemes.decode("latin-1"),
+                    )
+                )
+                if numeric_expansion.consumed_next:
+                    # "$5 million" folded the scale word in.
+                    chunk_queue.popleft()
+                elif numeric_expansion.is_time and not trailing and chunk_queue:
+                    # C's after-time lookahead spells a following
+                    # am/pm word (``ls_task.c:3616-3646``). Only when
+                    # the time chunk carried no trailing punctuation —
+                    # the pause token must stay between the two words.
+                    ampm_chunk = chunk_queue[0]
+                    ampm_inner = ampm_chunk
+                    ampm_trailing: list[str] = []
+                    has_leading = False
+                    while ampm_inner and not ampm_inner[0].isalnum():
+                        has_leading = True
+                        ampm_inner = ampm_inner[1:]
+                    while ampm_inner and not ampm_inner[-1].isalnum():
+                        ampm_trailing.insert(0, ampm_inner[-1])
+                        ampm_inner = ampm_inner[:-1]
+                    spelled = None if has_leading else am_pm_phonemes(ampm_inner)
+                    if spelled is not None:
+                        chunk_queue.popleft()
+                        tokens.append(Token(TokenKind.WORD, raw_prefix + spelled.decode("latin-1")))
+                        trailing = ampm_trailing
             elif inner and _dotted.match(inner):
                 # Dotted decimal (``3.14`` / ``1,234.56`` / ``6.2.0``).
                 # The C kernel speaks the integer part as a whole number
@@ -2470,6 +2537,16 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 # ``? ``) already carries its own trailing space.
                 if flat and not flat[-1].startswith(punct_prefix):
                     flat.append("_")
+                # Numeric-format splice (issue #225): the chunk loop
+                # pre-rendered ordinals / currency / times / fractions
+                # / dates / ranges to the oracle's exact ASCII stream
+                # via ``lts.numeric_formats``. Pass the payload through
+                # untouched and expose the C number form class
+                # (``ls_task.c:3773`` marks numbers FC_ADJ).
+                if token.text.startswith(raw_prefix):
+                    flat.append(token.text)
+                    word_fcs.append(FC_ADJ)
+                    continue
                 # --- Homograph resolution + form-class tracking -----
                 # (issue #295). For P/S homograph pairs — whether the
                 # token itself (``close``) or its suffix-stripped root
