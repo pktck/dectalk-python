@@ -24,8 +24,10 @@ Supported commands (subset of the full DECtalk command vocabulary):
   milliseconds, clamped to [-420, 30000] at the command layer
   (``cm_copt.c`` lines 2526-2530, the BTS#10100 fix) like the C
   ``cm_cmd_period``; threaded into ``DphT.perpause``.
-- ``[:phoneme on]`` / ``[:phoneme off]`` — switch between text and direct
-  ARPABET phoneme input.
+- ``[:phoneme on|off|asky|arpabet|speak|silent]`` — mutate the phoneme-mode
+  bitfield that governs how ``[...]`` bracket blocks are read (see
+  :func:`_cmd_phoneme`). Plain text outside brackets is always spoken via
+  LTS regardless, so ``[:phoneme on] hello`` still says the word "hello".
 - ``[:say TYPE]`` — segmentation hint (currently parsed and ignored).
 
 Unrecognised commands are passed through silently rather than aborting,
@@ -39,7 +41,13 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from typing import Final
 
-from dectalk.cmd.cmd_states import MAX_PERIOD_PAUSE, MIN_PERIOD_PAUSE
+from dectalk.cmd.cmd_states import (
+    MAX_PERIOD_PAUSE,
+    MIN_PERIOD_PAUSE,
+    PHONEME_ASCKY,
+    PHONEME_OFF,
+    PHONEME_SPEAK,
+)
 from dectalk.cmd.option_tables import define_options
 
 _Handler = Callable[["SpeechState", list[str]], "SpeechState"]
@@ -64,6 +72,26 @@ _DEFAULT_WPM: Final[int] = 180
 _MIN_WPM: Final[int] = 75
 _MAX_WPM: Final[int] = 600
 
+# ``[:phoneme ...]`` mode bitfield (mirrors the C ``pKsd_t->phoneme_mode``
+# 3-bit field). The DECtalk front-end initialises it to
+# ``PHONEME_OFF | PHONEME_SPEAK`` (``cmd/cmd_init.c:87``). Only the
+# ``PHONEME_OFF``-cleared state enables phonemic interpretation of ``[...]``
+# bracket blocks (``cmd/cm_pars.c:361`` / ``:1454``); plain text outside
+# brackets is ALWAYS run through LTS regardless of the bits.
+_DEFAULT_PHONEME_MODE: Final[int] = PHONEME_OFF | PHONEME_SPEAK
+
+# ``[:phoneme <kw>]`` keyword -> (bitmask, set?) — one row per ``switch``
+# case in the C handler ``cm_cmd_phoneme`` (``cmd/cm_copt.c:238-260``).
+# Keyword order matches :data:`dectalk.cmd.option_tables.phoneme_modes`.
+_PHONEME_MODE_OPS: Final[dict[str, tuple[int, bool]]] = {
+    "asky": (PHONEME_ASCKY, True),  # case 0: |= PHONEME_ASCKY
+    "arpabet": (PHONEME_ASCKY, False),  # case 1: &= ~PHONEME_ASCKY
+    "speak": (PHONEME_SPEAK, True),  # case 2: |= PHONEME_SPEAK
+    "silent": (PHONEME_SPEAK, False),  # case 3: &= ~PHONEME_SPEAK
+    "off": (PHONEME_OFF, True),  # case 4: |= PHONEME_OFF
+    "on": (PHONEME_OFF, False),  # case 5: &= ~PHONEME_OFF
+}
+
 
 @dataclass(frozen=True, slots=True)
 class SpeechState:
@@ -72,8 +100,11 @@ class SpeechState:
     Attributes:
         voice: Active voice short name, or None for the default preset.
         rate: Speaking-rate multiplier (1.0 = nominal).
-        phoneme_mode: When True, the body is interpreted as ARPABET
-            phonemes rather than text.
+        phoneme_mode: The DECtalk ``[:phoneme ...]`` mode bitfield
+            (``PHONEME_OFF`` / ``PHONEME_ASCKY`` / ``PHONEME_SPEAK``),
+            mirroring the C ``pKsd_t->phoneme_mode``. It only selects how
+            ``[...]`` bracket blocks are read; it never turns a plain
+            segment body into phonemes.
         comma_pause: ``[:comma N]`` / ``[:cp N]`` extra comma-boundary
             pause in milliseconds, or None when unset (issue #249).
             Raw command value — the C ``cm_cmd_comma`` sends it
@@ -87,7 +118,7 @@ class SpeechState:
 
     voice: str | None = None
     rate: float = 1.0
-    phoneme_mode: bool = False
+    phoneme_mode: int = _DEFAULT_PHONEME_MODE
     comma_pause: int | None = None
     period_pause: int | None = None
 
@@ -97,7 +128,8 @@ class Segment:
     """One chunk of text or phonemes paired with the state to render it under.
 
     Attributes:
-        body: The text (or phoneme string when ``state.phoneme_mode``).
+        body: The text to speak (always plain text; the
+            ``[:phoneme ...]`` modes never turn a body into phonemes).
         state: The :class:`SpeechState` active for this segment.
     """
 
@@ -264,15 +296,36 @@ def _cmd_period(state: SpeechState, args: list[str]) -> SpeechState:
 
 
 def _cmd_phoneme(state: SpeechState, args: list[str]) -> SpeechState:
-    """Handle ``[:phoneme on/off]``."""
-    if not args:
+    """Handle ``[:phoneme <kw> ...]`` by mutating the phoneme-mode bitfield.
+
+    Faithful to the C handler ``cm_cmd_phoneme`` (``cmd/cm_copt.c:226``):
+    each space-separated keyword sets or clears one bit of
+    ``pKsd_t->phoneme_mode`` via the ``switch (value)`` at
+    ``cm_copt.c:238-260``. ``on``/``off`` toggle ``PHONEME_OFF``,
+    ``asky``/``arpabet`` select the bracket alphabet (``PHONEME_ASCKY``),
+    and ``speak``/``silent`` toggle ``PHONEME_SPEAK``.
+
+    An unrecognised keyword makes the C handler return ``CMD_bad_string``
+    and stop, keeping the bits applied by any earlier keywords
+    (``cm_copt.c:234-236``); we mirror that by breaking out of the loop.
+
+    Crucially the bitfield only governs whether ``[...]`` bracket blocks
+    are read as phonemes (``cm_pars.c:361`` / ``:1454``). Plain text
+    outside brackets is always spoken via LTS, so this handler never
+    causes a segment body to be re-interpreted as a raw phoneme stream
+    (issue #248: ``[:phoneme on] hello`` speaks the word "hello", stream
+    ``hxaxll' ow``, exactly like bare ``hello``).
+    """
+    mode = state.phoneme_mode
+    for keyword in args:
+        op = _PHONEME_MODE_OPS.get(keyword.lower())
+        if op is None:
+            break  # C: NO_STRING_MATCH -> CMD_bad_string (stops; prior bits kept)
+        mask, set_bit = op
+        mode = mode | mask if set_bit else mode & ~mask
+    if mode == state.phoneme_mode:
         return state
-    flag = args[0].lower()
-    if flag == "on":
-        return replace(state, phoneme_mode=True)
-    if flag == "off":
-        return replace(state, phoneme_mode=False)
-    return state
+    return replace(state, phoneme_mode=mode)
 
 
 def _cmd_noop(state: SpeechState, args: list[str]) -> SpeechState:
