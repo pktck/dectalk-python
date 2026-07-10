@@ -173,6 +173,20 @@ def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch)
 #   - "we color the car pink": trailing-silence formant draw toward
 #     the one-past-end allophons context — fixed by #303's
 #     phonemes->allophons[SAFETY] alias replay (issue #302 cluster 2).
+#   - "this book tells it" / "he must tell" / "the boy knows that it
+#     is gone": the clause-final hat fall is the *else* of the
+#     promote_last_2 test (ph_aloph1.c:1391-1452 preprocessed on
+#     ENGLISH_US) — a promoted following secondary stress keeps the
+#     hat up until that stress (issue #307 verb-form trio).
+#   - "this is easy for Mary to rest" / "go to bed": modeflag boots
+#     as MODE_CITATION (kernel/main.c:188), permanently disabling
+#     phalloph's 'to'-flap rule (ph_aloph1.c:902-912) — issue #307.
+#   - "hello! how are you?" / "wait... what just happened?" /
+#     "well, no..." / "one. two. three.": one continuous
+#     PH->send_pars->vtm1 stream per utterance — sentence-terminated
+#     clauses share the delay pipeline / F0 declination / synth
+#     state; ph_task's empty-clause suppression (nsymbtot > 1) drops
+#     the "..." empty clause — issue #307.
 _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "hi",
     "hello",
@@ -193,6 +207,15 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "[:nw] wendy whispery",
     "[:nk] kit the kid",
     "we color the car pink",
+    "this book tells it",
+    "he must tell",
+    "the boy knows that it is gone",
+    "this is easy for Mary to rest",
+    "go to bed",
+    "hello! how are you?",
+    "wait... what just happened?",
+    "well, no...",
+    "one. two. three.",
 )
 
 

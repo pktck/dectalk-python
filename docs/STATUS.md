@@ -181,22 +181,24 @@ Under `DECTALK_DISABLE_CAPI=1` + `DECTALK_FULL_PIPELINE=1` the
 pipeline runs end-to-end and renders through the `vtm1.c`-ported
 `speech_waveform_generator` by default (issue #272) — the same
 synthesiser the shipped `libtts_us.so` uses. This is the
-byte-exact-capable parity path. State as of 2026-07-06 (dev
-`f2aab30`, post #282/#283/#285):
+byte-exact-capable parity path. State as of 2026-07-10 (branch
+`claude/fix-307-final-residuals`, post #297/#302/#306/#307):
 
-- **255/500** corpus prompts render the **exact** C sample count
-  (median |Δsamples| = 0; max 1491); the residual timing mass is the
-  function-word runtime-S2 cluster (#280).
-- On `hello world` F0 is frame-exact, **all 16 formant / bandwidth /
-  amplitude per-frame parameters are byte-exact** (settar re-port
-  from the active `p_us_st0.c`, PR #285), and packets reach the VTM
-  through the C `send_pars` delay + `lineartilt` transform (#283).
-- The first divergent **byte** is sample **214**: the VTM-internal
-  voicing-onset residual (#284), followed by the last 11-13 `OUT_TLT`
-  cells (#289). Those two issues are the remaining gates to the
-  first byte-exact prompt; corpus-wide byte parity then follows the
-  count-exact set. Bit-exact across the corpus is otherwise
-  **not yet reached** (0/500).
+- **500/500 (100%) of the stratified corpus sample renders
+  byte-identical WAVs** vs the shipped binary (p50 = p90 = p99 =
+  max |Δsamples| = 0; `scripts/measure_full_vtm1_sample.py`). The
+  final three root-cause clusters (#307): the hat-fall-as-else of
+  `promote_last_2` (ph_aloph1.c:1391-1452), the `MODE_CITATION`
+  boot default gating off the 'to'-flap (kernel/main.c:188 →
+  ph_aloph1.c:902), and per-sentence pipeline chunking vs the C's
+  single continuous `send_pars`→VTM stream.
+- 28 named prompts are pinned as the **hard** byte-identical gate
+  (`tests/parity/test_vtm1_pcm_parity.py::_BYTE_EXACT_PROMPTS`),
+  one group per historical divergence cluster; per-frame F0,
+  packet-metadata, and dump-feed suites are hard gates alongside.
+- History: 0/500 byte-exact as of 2026-07-06 (`f2aab30`); the #297
+  wave reached 348/500; dev `2873d97` (post-#302/#306) measured
+  493/500; #307 closed the final 7.
 Setting `DECTALK_USE_VTM1=0` restores the legacy hlsyn render — it
 over-runs the C reference uniformly (`hello world`: 21450 vs 13845
 samples) and is retained only as a diagnostic escape hatch after
