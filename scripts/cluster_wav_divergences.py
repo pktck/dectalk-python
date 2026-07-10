@@ -85,9 +85,7 @@ def _worker(job_file: str, out_path: str) -> None:
             print(f"DONE {i}", flush=True)
 
 
-def _phoneme_compare(
-    texts: list[str], work_dir: Path, batch_size: int = 150
-) -> dict[str, Row]:
+def _phoneme_compare(texts: list[str], work_dir: Path, batch_size: int = 150) -> dict[str, Row]:
     """{text: worker row} for every text, via sliced fresh subprocesses.
 
     A batch whose worker dies resumes one text past the victim; the
