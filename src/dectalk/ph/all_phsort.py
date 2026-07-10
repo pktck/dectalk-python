@@ -73,6 +73,15 @@ from dectalk.include.phoneme_codes import (
     VPSTART,
     WBOUND,
 )
+from dectalk.include.usp_codes import (
+    USP_F,
+    USP_OR,
+    USP_RR,
+    USP_T,
+    USP_UH,
+    USP_UW,
+    USP_W,
+)
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.kernel.lang_codes import LANG_english
 from dectalk.ph.delete_symbol import delete_symbol
@@ -285,13 +294,37 @@ def all_phsort(phTTS: TtsHandle) -> int:
                     if next_val >= COMMA or (
                         next_val == PPSTART
                         and m + 1 < len(p_dph_t.symbols)
-                        and p_dph_t.symbols[m + 1] != 0  # USP_W placeholder
+                        and p_dph_t.symbols[m + 1] != USP_W
                     ):
                         # C lines 1135-1140: replace [(] by [ ], raise
                         # PPSTART to VPSTART for verbal-particle.
                         p_dph_t.symbols[n] = WBOUND
                         if (p_dph_t.symbols[m] & PVALUE) == PPSTART:
                             p_dph_t.symbols[m] = VPSTART
+                        # C lines 1142-1160: "Unreduce the vowel in
+                        # 'for, to, into'". The C compares the FULL
+                        # symbol value (font bits included) against
+                        # ``USP_*`` / ``UKP_*``; the Python stream is
+                        # US-font-only plain codes, so the ``UKP_*``
+                        # pair (PFUK-prefixed, disjoint values) can
+                        # never match and is dropped. Note the "to"
+                        # rule reads the two symbols BEFORE the
+                        # boundary at ``m`` but writes ``n + 2`` —
+                        # exactly as C does (for the 2-phone "to",
+                        # ``m - 1 == n + 2``).
+                        if (
+                            n + 2 < len(p_dph_t.symbols)
+                            and p_dph_t.symbols[n + 1] == USP_F
+                            and p_dph_t.symbols[n + 2] == USP_RR
+                        ):
+                            p_dph_t.symbols[n + 2] = USP_OR
+                        if (
+                            m >= 2
+                            and n + 2 < len(p_dph_t.symbols)
+                            and p_dph_t.symbols[m - 2] == USP_T
+                            and p_dph_t.symbols[m - 1] == USP_UH
+                        ):
+                            p_dph_t.symbols[n + 2] = USP_UW
                         # C lines 1163-1171: promote secondary stress to
                         # primary, or insert a dangling [']
                         if n + 1 < len(p_dph_t.symbols) and p_dph_t.symbols[n + 1] == S2:
