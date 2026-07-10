@@ -20,7 +20,7 @@ from dectalk.lts.phoneme_words import (
     pordin,
     ptens,
     pthousand,
-    upunits,
+    punits,
 )
 
 
@@ -59,10 +59,14 @@ def test_3_digit_leading_zero_returns_none() -> None:
 
 
 def test_3_digit_round_hundred() -> None:
-    """``200`` returns upunits[2] + WBOUND + phundred (no trailing)."""
+    """``200`` returns punits[2] + WBOUND + phundred (no trailing).
+
+    Stressed punits — the C upunits branch is HLSYN-only and the
+    shipped oracle binary compiles without it (PARITY-METHOD §3).
+    """
     result = speak_3_digits(2, 0, 0)
     assert result is not None
-    expected_prefix = iter_phone_list_until_sil(upunits[2])
+    expected_prefix = iter_phone_list_until_sil(punits[2])
     assert result[: len(expected_prefix)] == expected_prefix
     hundred = iter_phone_list_until_sil(phundred)
     assert hundred[0] in result
@@ -77,7 +81,7 @@ def test_3_digit_xyy_form() -> None:
     """
     result = speak_3_digits(2, 3, 4)
     assert result is not None
-    # No phundred token in this result — just upunits[2] + WBOUND + 2-digit(34).
+    # No phundred token in this result — just punits[2] + WBOUND + 2-digit(34).
     hundred = iter_phone_list_until_sil(phundred)
     # Verify result does not contain the phundred substring.
     if hundred:
@@ -92,10 +96,10 @@ def test_4_digit_leading_zero_returns_none() -> None:
 
 
 def test_4_digit_thousands_round() -> None:
-    """``5000`` → upunits[5] WBOUND pthousand."""
+    """``5000`` → punits[5] WBOUND pthousand (stressed, binary variant)."""
     result = speak_4_digits(5, 0, 0, 0)
     assert result is not None
-    expected_unit = iter_phone_list_until_sil(upunits[5])
+    expected_unit = iter_phone_list_until_sil(punits[5])
     expected_thousand = iter_phone_list_until_sil(pthousand)
     assert result[: len(expected_unit)] == expected_unit
     assert result[-len(expected_thousand) :] == expected_thousand
@@ -121,9 +125,9 @@ def test_4_digit_year_style() -> None:
 
 
 def test_digit_group_round_hundreds() -> None:
-    """``500`` → 'five hundred'."""
+    """``500`` → 'five hundred' (stressed punits, binary variant)."""
     result = speak_digit_group(5, 0, 0)
-    expected_unit = iter_phone_list_until_sil(upunits[5])
+    expected_unit = iter_phone_list_until_sil(punits[5])
     expected_hundred = iter_phone_list_until_sil(phundred)
     assert result[: len(expected_unit)] == expected_unit
     assert result[-len(expected_hundred) :] == expected_hundred

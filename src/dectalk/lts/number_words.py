@@ -26,7 +26,6 @@ from dectalk.lts.phoneme_words import (
     ptens,
     pthousand,
     punits,
-    upunits,
 )
 
 _US_IX: int = int(USPhoneme.IX)
@@ -122,7 +121,11 @@ def speak_3_digits(d1: int, d2: int, d3: int) -> list[int] | None:
     """
     if d1 == 0:
         return None
-    out = _list_until_sil(upunits[d1])
+    # Stressed punits: the C source's upunits branch is guarded by
+    # #if defined(HLSYN) || defined(CHANGES_AFTER_V43); the shipped
+    # oracle binary defines neither (docs/PARITY-METHOD.md §3), so
+    # the active variant is the stressed form.
+    out = _list_until_sil(punits[d1])
     out.append(_WBOUND)
     if d2 == 0 and d3 == 0:
         # X00 → "X hundred"
@@ -167,9 +170,11 @@ def speak_4_digits(d1: int, d2: int, d3: int, d4: int) -> list[int] | None:
 
     Three forms:
 
-    * ``X000`` → ``upunits[X] thousand`` (unstressed leading digit for
-      HLSYN builds — falls back to ``punits[X]`` otherwise; we use the
-      HLSYN form since it's the modern build).
+    * ``X000`` → ``punits[X] thousand``. The C source's ``upunits``
+      variant is guarded by ``#if defined(HLSYN) ||
+      defined(CHANGES_AFTER_V43)``; the shipped oracle binary defines
+      neither, so the stressed ``punits`` branch is the active one
+      (docs/PARITY-METHOD.md §3 — the binary wins).
     * ``XY00`` → ``2-digit(XY) hundred``.
     * ``XXYY`` → ``2-digit(XX) WBOUND 2-digit(YY)`` (year-style).
 
@@ -186,8 +191,9 @@ def speak_4_digits(d1: int, d2: int, d3: int, d4: int) -> list[int] | None:
         return None
     if d3 == 0 and d4 == 0:
         if d2 == 0:
-            # X000 — "X thousand"
-            out = list(iter_phone_list_until_sil(upunits[d1]))
+            # X000 — "X thousand". Stressed punits — the binary has
+            # no HLSYN/CHANGES_AFTER_V43, so upunits is dead code.
+            out = list(iter_phone_list_until_sil(punits[d1]))
             out.append(_WBOUND)
             out.extend(iter_phone_list_until_sil(pthousand))
             return out
@@ -267,7 +273,11 @@ def speak_digit_group(d1: int, d2: int, d3: int, *, ordinal: bool = False) -> li
     """
     out: list[int] = []
     if d1 != 0:
-        out.extend(_list_until_sil(upunits[d1]))
+        # Stressed punits: the C ``upunits`` alternative is inside
+        # #if defined(HLSYN) || defined(CHANGES_AFTER_V43), which the
+        # shipped oracle binary does not define ("one hundred" carries
+        # S1 in convert_to_phonemes output for e.g. "103rd").
+        out.extend(_list_until_sil(punits[d1]))
         out.append(_WBOUND)
         out.extend(_list_until_sil(phundred))
         if d2 == 0 and d3 == 0:

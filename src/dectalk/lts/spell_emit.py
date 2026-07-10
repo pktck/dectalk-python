@@ -20,7 +20,7 @@ from dectalk.lts.phoneme_words import punits
 _US_EY: int = int(USPhoneme.EY)
 
 
-def ls_spel_spell(emitter: LtsEmitter, word: bytes) -> None:
+def ls_spel_spell(emitter: LtsEmitter, word: bytes, *, math_mode: bool = False) -> None:
     """Emit the phoneme sequence for each character in ``word``.
 
     Faithful translation of:
@@ -54,13 +54,22 @@ def ls_spel_spell(emitter: LtsEmitter, word: bytes) -> None:
     All other letters use the typing table (``usa_type``) which
     maps each character to a sequence of ASCKY glyphs.
 
+    The C ``ls_math_do_math`` call is a no-op unless the kernel's
+    ``MODE_MATH`` flag is set (``ls_math.c:83`` returns false before
+    consulting the symbol table otherwise). MODE_MATH is **off** by
+    default, so ``-`` spells as "dash" (``usa_type`` row 0x2D) rather
+    than the math-mode "minus". Pass ``math_mode=True`` to model a
+    ``[:mode math on]`` session.
+
     Args:
         emitter: The LTS emitter state.
         word: The word to spell out, as bytes.
+        math_mode: Mirror of ``pKsd_t->modeflag & MODE_MATH``.
     """
     for i, ch in enumerate(word):
-        # Math symbols get their dedicated phoneme sequence.
-        math_phones = do_math(ch)
+        # Math symbols get their dedicated phoneme sequence — but only
+        # when MODE_MATH is on, exactly as ls_math_do_math gates it.
+        math_phones = do_math(ch) if math_mode else None
         if math_phones:
             for p in math_phones:
                 emitter.send_phone(p)

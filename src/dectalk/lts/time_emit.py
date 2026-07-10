@@ -12,7 +12,8 @@ from dectalk.include.phoneme_codes import VPSTART, WBOUND
 from dectalk.lts.char_features import is_digit
 from dectalk.lts.emitter import LtsEmitter
 from dectalk.lts.phoneme_words import ppoint, punits
-from dectalk.lts.proc_emit import ls_proc_do_2_digits
+from dectalk.lts.proc_emit import ls_proc_do_2_digits_full
+from dectalk.lts.spell_emit import ls_spel_spell
 
 
 def ls_proc_do_time(emitter: LtsEmitter, word: bytes) -> None:
@@ -61,10 +62,10 @@ def ls_proc_do_time(emitter: LtsEmitter, word: bytes) -> None:
     phrase-internal pause by the prosody layer). Fractional seconds
     after a ``.`` are read as ``"point one two three"``.
 
-    The C source's catch-all ``ls_spel_spell`` path for non-period
-    trailing characters is not yet ported — the Python version
-    stops emitting at that boundary instead of spelling. Callers
-    should normalise their input via :func:`ls_proc_is_time` first.
+    Leading-zero minute/second pairs go through the full C
+    ``ls_proc_do_2_digits`` (``3:05`` spells the minutes as "zero
+    five"); a non-``.`` trailing remainder is spelled out, both
+    exactly as the C source.
 
     Args:
         emitter: The LTS emitter state.
@@ -82,21 +83,21 @@ def ls_proc_do_time(emitter: LtsEmitter, word: bytes) -> None:
         i = 2  # past 'D:'
     else:
         # DD:DD
-        ls_proc_do_2_digits(emitter, word[0] - ord("0"), word[1] - ord("0"))
+        ls_proc_do_2_digits_full(emitter, word[0] - ord("0"), word[1] - ord("0"))
         i = 3  # past 'DD:'
 
     emitter.send_phone(VPSTART)
 
     # Minutes: 2 digits. Skip emission if both are 0.
     if i + 1 < n and not (word[i] == ord("0") and word[i + 1] == ord("0")):
-        ls_proc_do_2_digits(emitter, word[i] - ord("0"), word[i + 1] - ord("0"))
+        ls_proc_do_2_digits_full(emitter, word[i] - ord("0"), word[i + 1] - ord("0"))
     i += 2
 
     # Optional :SS seconds.
     if i < n and word[i] == ord(":"):
         emitter.send_phone(VPSTART)
         if i + 2 < n:
-            ls_proc_do_2_digits(
+            ls_proc_do_2_digits_full(
                 emitter,
                 word[i + 1] - ord("0"),
                 word[i + 2] - ord("0"),
@@ -112,8 +113,9 @@ def ls_proc_do_time(emitter: LtsEmitter, word: bytes) -> None:
             emitter.send_phone(WBOUND)
             emitter.send_phone_list(punits[word[i] - ord("0")])
             i += 1
-
-    # Anything else: the C source spells it out (not yet ported).
+    elif i < n:
+        # Anything else: the C source spells the remainder out.
+        ls_spel_spell(emitter, word[i:])
 
 
 __all__ = ["ls_proc_do_time"]
