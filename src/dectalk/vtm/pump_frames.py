@@ -62,6 +62,17 @@ from dectalk.vtm.seed_speaker_state import PC_SAMPLE_RATE, seed_speaker_state
 from dectalk.vtm.spd_chip import default_us_paul_spd
 from dectalk.vtm.speech_waveform_generator import speech_waveform_generator
 from dectalk.vtm.synth_state import SynthState
+from dectalk.vtm.volume_table import int_volume_table
+
+# Default ``pKsd_t->vol_att`` value the C kernel sets at every full
+# reset (``ttsapi.c`` lines 2050 / 6609: ``pKsd_t->vol_att = 100;``).
+# ``int_volume_table[100] = 32767`` is Q15 unity within 1 LSB, so the
+# default-volume post-scale in :func:`pump_frames_via_vtm1` is a no-op.
+# The constant lets the post-scale branch skip the (allocation +
+# multiply + clip) work entirely when the caller hasn't changed
+# volume — keeping the byte-parity hot path bit-identical AND
+# zero-cost.
+_DEFAULT_VOL_ATT_INDEX: int = 100
 
 # Amplitude-DB slot indices that need clamping before vtm1 indexes them
 # into the 88-entry :data:`~dectalk.vtm.amp_table.amptable`. The hlsyn
@@ -109,12 +120,12 @@ def pump_frames_via_vtm1(
     *,
     spd_chip: SpdChip | None = None,
     sample_rate: int = PC_SAMPLE_RATE,
+    vol_att: int = _DEFAULT_VOL_ATT_INDEX,
 ) -> NDArray[np.int16]:
     """Synthesize a sequence of voice packets through ``speech_waveform_generator``.
 
-    Alternative to
-    :func:`dectalk.api.speak._pump_frames_to_samples`. Feeds each
-    packet through the integer Klatt synthesiser from ``vtm1.c``.
+    Feeds each packet through the integer Klatt synthesiser from
+    ``vtm1.c``.
 
     This function is the Python mirror of the C VTM's packet consumer
     (``vtmiont.c`` ``case SPC_type_voice``): it copies each packet
@@ -124,6 +135,20 @@ def pump_frames_via_vtm1(
     the post-``send_pars`` ``delaypars`` level (the level of the C
     oracle's ``vtm_frames.dump``; feeding that dump through here is
     the #263/#266 byte-parity experiment).
+
+    After synthesis, applies the per-clause ``vol_att`` post-scale
+    (``vtm3.c`` line 1642 / ``vtm2.c`` line 1721: ``out =
+    frac1mul(out, vol_att)`` with ``vol_att =
+    int_volume_table[pKsd_t->vol_att]``, a Q15 multiply). ``vtm1.c``
+    itself carries no volume stage — in the VTM1 build the kernel's
+    ``vol_att`` is consumed outside the synthesiser — but the
+    capability is kept here (issue #279, carried over from the
+    retired hlsyn-render pump) so a future ``[:volume N]`` port has
+    the post-synthesis hook it needs. With the C kernel's default
+    ``pKsd_t->vol_att = 100`` (``ttsapi.c`` lines 2050 / 6609) and
+    ``int_volume_table[100] = 32767`` (~Q15 unity) the scale is
+    skipped entirely, so the default-volume byte-parity path is
+    bit-identical and zero-cost.
 
     Args:
         frames: Sequence of ``list[int]`` voice packets in parstochip
@@ -147,6 +172,12 @@ def pump_frames_via_vtm1(
             ``vtm1.c::SetSampleRate``; ``MULAW_SAMPLE_RATE`` (8000)
             drives the SAMPLE_RATE_DECREASE branch; other values fall
             back to NO_SAMPLE_RATE_CHANGE.
+        vol_att: ``pKsd_t->vol_att`` index in ``[0, 140]`` (clamped to
+            range per ``vtm3.c`` lines 515-518). Indexed into
+            :data:`~dectalk.vtm.volume_table.int_volume_table` to get
+            the Q15 post-scale. Defaults to ``100`` (the C kernel's
+            initial value, unity-gain Q15 — the post-scale is skipped
+            so byte parity is unaffected).
 
     Returns:
         1-D int16 array of synthesised PCM samples.
@@ -197,6 +228,27 @@ def pump_frames_via_vtm1(
             elif sample < -32768:
                 sample = -32768
             out[start + j] = sample
+
+    # Per-clause vol_att post-scale (vtm3.c line 1642 / vtm2.c line
+    # 1721, applied to every synthesised sample). Clamp the index to
+    # the table range (vtm3.c lines 515-518: ``if (vol_att > 141)
+    # vol_att = 141; if (vol_att <= 0) vol_att = 0;`` — the table has
+    # 141 entries, indices 0..140, so cap at 140). ``int_volume_table
+    # [100]`` is the no-op default (~Q15 unity); skip the multiply in
+    # that case so the default-volume parity path returns the vtm1
+    # output byte-identical. In the C the scale runs *before* the
+    # synthesiser's [-16384, 16383] clamp + ``<< 1``; vtm1.c has no
+    # such stage, so this port applies the Q15 multiply to the emitted
+    # samples with a final int16 clamp — same shape as the retired
+    # hlsyn-render pump (issue #279).
+    vol_att_clamped = max(0, min(vol_att, len(int_volume_table) - 1))
+    if vol_att_clamped != _DEFAULT_VOL_ATT_INDEX:
+        vol_mul = int_volume_table[vol_att_clamped]
+        # Q15 multiply: ``(out * vol_mul) >> 15``. Compute in int32 to
+        # mirror the C ``S32`` cast in frac1mul, then clip to int16.
+        scaled = (out.astype(np.int32) * vol_mul) >> 15
+        np.clip(scaled, -32768, 32767, out=scaled)
+        out = scaled.astype(np.int16)
 
     return out
 
