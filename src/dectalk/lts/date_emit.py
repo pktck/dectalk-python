@@ -22,7 +22,7 @@ from dectalk.lts.char_features import is_digit
 from dectalk.lts.emitter import LtsEmitter
 from dectalk.lts.number_words import speak_digit_group
 from dectalk.lts.phoneme_words import months, pmonths, pof, pOH, pthe, punits
-from dectalk.lts.proc_emit import ls_proc_do_2_digits, ls_proc_do_4_digits
+from dectalk.lts.proc_emit import ls_proc_do_2_digits_full, ls_proc_do_4_digits_full
 
 
 def _find_month_index(word: bytes, mon_start: int) -> int:
@@ -54,7 +54,7 @@ def _emit_year(emitter: LtsEmitter, year: bytes) -> None:
     if n == 2:  # noqa: PLR2004 — 2-digit year
         d1 = year[0] - ord("0")
         d2 = year[1] - ord("0")
-        ls_proc_do_2_digits(emitter, d1, d2)
+        ls_proc_do_2_digits_full(emitter, d1, d2)
         return
     year_4digit = 4
     if n == year_4digit:
@@ -67,13 +67,13 @@ def _emit_year(emitter: LtsEmitter, year: bytes) -> None:
         # C source: (lp1+1)->l_ch != '0' && (lp1+2)->l_ch == '0' &&
         #           (lp1+3)->l_ch == '0' && (lp1+4)->l_ch != '0'
         if d1 != 0 and d2 == 0 and d3 == 0 and d4 != 0:
-            ls_proc_do_2_digits(emitter, d1, d2)
+            ls_proc_do_2_digits_full(emitter, d1, d2)
             emitter.send_phone(WBOUND)
             emitter.send_phone_list(pOH)
             emitter.send_phone_list(punits[d4])
             return
         # Default: full 4-digit year reading.
-        ls_proc_do_4_digits(emitter, d1, d2, d3, d4)
+        ls_proc_do_4_digits_full(emitter, d1, d2, d3, d4)
 
 
 def ls_proc_do_date(

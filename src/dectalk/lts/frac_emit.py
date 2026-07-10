@@ -14,57 +14,11 @@ from __future__ import annotations
 
 from dectalk.include.phoneme_codes import WBOUND, USPhoneme
 from dectalk.lts.emitter import LtsEmitter
-from dectalk.lts.number_words import speak_2_digits, speak_digit_group
-from dectalk.lts.phoneme_words import phalf, phalves, ppercent, punits
+from dectalk.lts.number_emit import ls_proc_do_number_full
+from dectalk.lts.phoneme_words import phalf, phalves, ppercent
 
 _US_S: int = int(USPhoneme.S)
 _US_Z: int = int(USPhoneme.Z)
-
-_DENOM_3_DIGIT = 3
-
-
-def _emit_number(emitter: LtsEmitter, digits: bytes) -> bool:
-    """Emit the digits as a number; return True if plural (>1)."""
-    if not digits:
-        return False
-    n = len(digits)
-    if n == 1:
-        d = digits[0] - ord("0")
-        if d == 0:
-            return False  # zero is singular
-        emitter.send_phone_list(punits[d])
-        return d > 1
-    if n == 2:  # noqa: PLR2004 — 2-digit numerator
-        d1 = digits[0] - ord("0")
-        d2 = digits[1] - ord("0")
-        # >1 if any non-(0,0) and not exactly 01.
-        is_plural = not (d1 == 0 and d2 <= 1)
-        phones = speak_2_digits(d1, d2)
-        if phones is not None:
-            for p in phones:
-                emitter.send_phone(p)
-        return is_plural
-    return False
-
-
-def _emit_denom_ordinal(emitter: LtsEmitter, digits: bytes) -> None:
-    """Emit the denominator as an ordinal (e.g. fourth, hundredth)."""
-    n = len(digits)
-    if n == 1:
-        d = digits[0] - ord("0")
-        for p in speak_digit_group(0, 0, d, ordinal=True):
-            emitter.send_phone(p)
-    elif n == 2:  # noqa: PLR2004 — 2-digit denominator
-        d2 = digits[0] - ord("0")
-        d3 = digits[1] - ord("0")
-        for p in speak_digit_group(0, d2, d3, ordinal=True):
-            emitter.send_phone(p)
-    elif n == _DENOM_3_DIGIT:  # 3-digit denominator (must be 100)
-        d1 = digits[0] - ord("0")
-        d2 = digits[1] - ord("0")
-        d3 = digits[2] - ord("0")
-        for p in speak_digit_group(d1, d2, d3, ordinal=True):
-            emitter.send_phone(p)
 
 
 def ls_proc_do_frac(emitter: LtsEmitter, word: bytes) -> None:
@@ -85,11 +39,10 @@ def ls_proc_do_frac(emitter: LtsEmitter, word: bytes) -> None:
             // If trailing '%', emit ppercent.
         }
 
-    The C source uses ls_proc_do_number for the numerator (which
-    we don't have a full port of). This implementation supports
-    1- and 2-digit numerators and 1-, 2-, or 3-digit denominators
-    — the full set the C source's ``ls_proc_is_frac`` validator
-    accepts.
+    Numerator and denominator go through the full C number reader
+    (:func:`~dectalk.lts.number_emit.ls_proc_do_number_full`) exactly
+    as the C source calls ``ls_proc_do_number`` — the numerator as a
+    cardinal, the denominator as an ordinal.
 
     Args:
         emitter: The LTS emitter state.
@@ -100,8 +53,7 @@ def ls_proc_do_frac(emitter: LtsEmitter, word: bytes) -> None:
         return
 
     # Numerator: word[0:slash]
-    numerator = word[:slash]
-    plural = _emit_number(emitter, numerator)
+    plural = ls_proc_do_number_full(emitter, word[:slash])
     emitter.send_phone(WBOUND)
 
     # Denominator: word[slash+1 .. percent-or-end]
@@ -113,7 +65,7 @@ def ls_proc_do_frac(emitter: LtsEmitter, word: bytes) -> None:
     if denom == b"2":
         emitter.send_phone_list(phalves if plural else phalf)
     else:
-        _emit_denom_ordinal(emitter, denom)
+        ls_proc_do_number_full(emitter, denom, oflag=True)
         if plural:
             # The C source: ud = last digit of denom; if previous
             # digit is '1' (teen form), use '0' instead. Then

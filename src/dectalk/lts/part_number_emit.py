@@ -29,8 +29,11 @@ from dectalk.lts.char_features import is_digit
 from dectalk.lts.emitter import LtsEmitter
 from dectalk.lts.proc_emit import (
     ls_proc_do_2_digits,
+    ls_proc_do_2_digits_full,
     ls_proc_do_3_digits,
+    ls_proc_do_3_digits_full,
     ls_proc_do_4_digits,
+    ls_proc_do_4_digits_full,
 )
 from dectalk.lts.spell_emit import ls_spel_spell
 
@@ -188,12 +191,14 @@ def ls_proc_do_part_number_full(  # noqa: PLR0912 — mirrors C state machine
                 i += 1
             nd = i - b
             d = [word[k] - ord("0") for k in range(b, i)]
+            # The _full digit readers carry the C leading-zero
+            # behaviour ("05" spells as "zero five").
             if nd == _DIGIT_RUN_2:
-                ls_proc_do_2_digits(emitter, d[0], d[1])
+                ls_proc_do_2_digits_full(emitter, d[0], d[1])
             elif nd == _DIGIT_RUN_3:
-                ls_proc_do_3_digits(emitter, d[0], d[1], d[2])
+                ls_proc_do_3_digits_full(emitter, d[0], d[1], d[2])
             elif nd == _DIGIT_RUN_4:
-                ls_proc_do_4_digits(emitter, d[0], d[1], d[2], d[3])
+                ls_proc_do_4_digits_full(emitter, d[0], d[1], d[2], d[3])
             else:
                 ls_spel_spell(emitter, word[b:i])
             if i < n:
