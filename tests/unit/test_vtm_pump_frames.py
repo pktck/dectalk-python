@@ -201,6 +201,114 @@ class TestPumpFramesViaVtm1:
 
 
 # -------------------------------------------------------------------------
+# vol_att Q15 post-scale (vtm3.c line 1642, ported per issue #279 so the
+# capability survives the legacy hlsyn-render retirement).
+# -------------------------------------------------------------------------
+
+
+class TestPumpFramesVolAtt:
+    """``vol_att`` post-scale on the vtm1 pump (issue #279).
+
+    ``vtm2.c``/``vtm3.c`` apply ``out = frac1mul(out, vol_att)`` with
+    ``vol_att = int_volume_table[pKsd_t->vol_att]`` per synthesised
+    sample; ``vtm1.c`` has no volume stage, so the pump carries the
+    hook the future ``[:volume N]`` port needs. The default index
+    (100, the C kernel's reset value) must be a bit-exact no-op so the
+    byte-parity path is unaffected.
+    """
+
+    def _voiced_frames(self, n: int = 20) -> list[list[int]]:
+        return [_make_parstochip_frame(av_db=65, ph_value=1) for _ in range(n)]
+
+    def test_default_vol_att_100_is_bit_exact_noop(self) -> None:
+        """``vol_att=100`` (and omitted) return the raw vtm1 output.
+
+        ``int_volume_table[100] = 32767`` is ~Q15 unity; the pump must
+        skip the multiply entirely so the default-volume parity path
+        stays byte-identical.
+        """
+        frames = self._voiced_frames()
+        base = pump_frames_via_vtm1(list(frames))
+        at_default = pump_frames_via_vtm1(list(frames), vol_att=100)
+        assert np.any(base != 0), "voiced frames produced silence; test is vacuous"
+        np.testing.assert_array_equal(base, at_default)
+
+    def test_vol_att_zero_mutes_output(self) -> None:
+        """``vol_att=0`` mutes (``int_volume_table[0] = 0``)."""
+        frames = self._voiced_frames()
+        base = pump_frames_via_vtm1(list(frames))
+        out = pump_frames_via_vtm1(list(frames), vol_att=0)
+        assert np.any(base != 0), "voiced frames produced silence; test is vacuous"
+        assert int(np.max(np.abs(out.astype(np.int32)))) == 0
+
+    def test_vol_att_below_unity_attenuates_q15_exact(self) -> None:
+        """``vol_att=50`` scales each sample by ``(x * 5826) >> 15`` exactly."""
+        from dectalk.vtm.volume_table import int_volume_table  # noqa: PLC0415
+
+        frames = self._voiced_frames()
+        base = pump_frames_via_vtm1(list(frames))
+        out = pump_frames_via_vtm1(list(frames), vol_att=50)
+        vol_mul = int_volume_table[50]
+        expected = ((base.astype(np.int32) * vol_mul) >> 15).astype(np.int16)
+        np.testing.assert_array_equal(out, expected)
+
+    def test_vol_att_above_unity_amplifies_with_clip(self) -> None:
+        """``vol_att=140`` (+12 dB) scales by ``(x * 131071) >> 15`` with int16 clip."""
+        from dectalk.vtm.volume_table import int_volume_table  # noqa: PLC0415
+
+        frames = self._voiced_frames()
+        base = pump_frames_via_vtm1(list(frames))
+        out = pump_frames_via_vtm1(list(frames), vol_att=140)
+        vol_mul = int_volume_table[140]
+        scaled = (base.astype(np.int32) * vol_mul) >> 15
+        expected = np.clip(scaled, -32768, 32767).astype(np.int16)
+        np.testing.assert_array_equal(out, expected)
+
+    def test_vol_att_clamps_out_of_range_indices(self) -> None:
+        """Indices outside [0, 140] clamp to the table range (vtm3.c 515-518)."""
+        frames = self._voiced_frames(8)
+        neg = pump_frames_via_vtm1(list(frames), vol_att=-99)
+        zero = pump_frames_via_vtm1(list(frames), vol_att=0)
+        np.testing.assert_array_equal(neg, zero)
+
+        huge = pump_frames_via_vtm1(list(frames), vol_att=999)
+        max_idx = pump_frames_via_vtm1(list(frames), vol_att=140)
+        np.testing.assert_array_equal(huge, max_idx)
+
+    def test_render_clause_full_threads_ksd_vol_att(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The driver passes ``KsdT.vol_att`` (default 100) to the pump.
+
+        Pins the ``pKsd_t->vol_att`` read from ``vtm3.c`` line 514 —
+        the seam a future ``[:volume N]`` port will drive.
+        """
+        monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
+        monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
+
+        import dectalk.vtm.pump_frames as pump_frames_mod  # noqa: PLC0415
+        from dectalk.api.speak import _speak_via_python_full  # noqa: PLC0415
+
+        seen: list[object] = []
+        real_pump = pump_frames_mod.pump_frames_via_vtm1
+
+        def _spy(
+            frames: list[list[int]],
+            preset: object = None,
+            **kwargs: object,
+        ) -> np.ndarray:
+            seen.append(kwargs.get("vol_att"))
+            return real_pump(frames, preset, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(pump_frames_mod, "pump_frames_via_vtm1", _spy)
+
+        _speak_via_python_full("hi", 1.0, None, "us", True)
+        assert seen, "vtm1 pump never invoked"
+        assert seen == [100], f"expected KsdT default vol_att=100 threaded, got {seen}"
+
+
+# -------------------------------------------------------------------------
 # C-source parity preconditions: re-parse vtm1.c and assert the constants
 # our Python port depends on still hold.
 # -------------------------------------------------------------------------
@@ -361,16 +469,15 @@ class TestSpeakViaPythonFullVtm1Dispatch:
         Pins the issue #275 wiring invariant: for every emitted frame
         the driver hands the pump exactly ``send_pars_delaypars(cur,
         prev)`` where ``(cur, prev)`` is the raw current/previous
-        parstochip pair the ``parstochip_to_llframe_delayed`` capture
-        hook sees — formant side one frame delayed, ``OUT_TLT``
-        LUT-mapped, ``OUT_AV``/``OUT_T0`` current, and the discarded
-        first driver frame surfacing as packet 0's delayed half. Also
-        re-pins the #279 precondition that the capture hook keeps
-        seeing raw (un-mixed) parstochip pairs.
+        parstochip pair the ``send_pars_delaypars`` capture seam sees
+        — formant side one frame delayed, ``OUT_TLT`` LUT-mapped,
+        ``OUT_AV``/``OUT_T0`` current, and the discarded first driver
+        frame surfacing as packet 0's delayed half. Also re-pins the
+        #279 precondition that the capture seam keeps seeing raw
+        (un-mixed) parstochip pairs.
         """
         monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
         monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
-        monkeypatch.setenv("DECTALK_USE_VTM1", "1")
 
         import dectalk.vtm.pump_frames as pump_frames_mod  # noqa: PLC0415
         from dectalk.api.speak import _speak_via_python_full  # noqa: PLC0415
@@ -387,31 +494,29 @@ class TestSpeakViaPythonFullVtm1Dispatch:
             pump_inputs.extend(list(f) for f in frames)
             return real_pump(frames, preset, **kwargs)  # type: ignore[arg-type]
 
-        hook_pairs: list[tuple[list[int], list[int]]] = []
-        real_hook = ptf_mod.parstochip_to_llframe_delayed
+        seam_pairs: list[tuple[list[int], list[int]]] = []
+        real_seam = ptf_mod.send_pars_delaypars
 
-        def _hook_spy(
+        def _seam_spy(
             parstochip: list[int],
-            previous_parstochip: list[int] | None,
-            *args: object,
-            **kwargs: object,
-        ) -> object:
+            previous_parstochip: list[int],
+        ) -> list[int]:
             # The driver never emits before the first frame seeded the
-            # delay buffer, so the hook must keep seeing a real pair.
+            # delay buffer, so the seam must keep seeing a real pair.
             assert previous_parstochip is not None
-            hook_pairs.append((list(parstochip), list(previous_parstochip)))
-            return real_hook(parstochip, previous_parstochip, *args, **kwargs)  # type: ignore[arg-type]
+            seam_pairs.append((list(parstochip), list(previous_parstochip)))
+            return real_seam(parstochip, previous_parstochip)
 
         # Both call sites import lazily at call time, so patching the
         # module attributes intercepts the dispatch.
         monkeypatch.setattr(pump_frames_mod, "pump_frames_via_vtm1", _pump_spy)
-        monkeypatch.setattr(ptf_mod, "parstochip_to_llframe_delayed", _hook_spy)
+        monkeypatch.setattr(ptf_mod, "send_pars_delaypars", _seam_spy)
 
         _speak_via_python_full("hi", 1.0, None, "us", True)
 
         assert pump_inputs, "vtm1 pump never invoked"
-        assert len(pump_inputs) == len(hook_pairs)
-        expected = [ptf_mod.send_pars_delaypars(cur, prev) for cur, prev in hook_pairs]
+        assert len(pump_inputs) == len(seam_pairs)
+        expected = [real_seam(cur, prev) for cur, prev in seam_pairs]
         assert pump_inputs == expected
 
     def test_escape_hatch_zero_selects_legacy_hlsyn(

@@ -944,7 +944,12 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     if _use_vtm1():
         from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
 
-        return pump_frames_via_vtm1(list(delaypars_frames), voice_preset, spd_chip=_spd_chip)
+        return pump_frames_via_vtm1(
+            list(delaypars_frames),
+            voice_preset,
+            spd_chip=_spd_chip,
+            vol_att=p_ksd_t.vol_att,
+        )
     return _pump_frames_to_samples(frames, voice_preset, p_ksd_t.vol_att)
 
 
