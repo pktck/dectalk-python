@@ -224,7 +224,7 @@ def main() -> None:
             deltas.append(int(r["delta_samples"]))  # type: ignore[arg-type]
 
     # Histogram of |delta_samples|.
-    deltas_all = [int(r["delta_samples"]) for r in records if r["delta_samples"] is not None]
+    deltas_all = [d for r in records if isinstance(d := r["delta_samples"], int)]
     abs_deltas = sorted(abs(d) for d in deltas_all)
     bins = [0, 1, 10, 100, 500, 1000, 5000, 10000, 50000, 10_000_000]
     hist = [0] * (len(bins) - 1)
@@ -237,7 +237,25 @@ def main() -> None:
             hist[-1] += 1
 
     pct_exact = 100 * n_exact / len(prompts)
-    summary = {
+
+    def _cat_summary(b: dict[str, object]) -> dict[str, object]:
+        deltas = b["deltas"]
+        assert isinstance(deltas, list)
+        cat_deltas: list[int] = [d for d in deltas if isinstance(d, int)]  # pyright: ignore[reportUnknownVariableType]
+        return {
+            "n": b["n"],
+            "n_exact": b["n_exact"],
+            "n_err": b["n_err"],
+            "pct_exact": 100 * int(b["n_exact"]) / int(b["n"]),  # type: ignore[arg-type]
+            "abs_delta_median": (
+                sorted(abs(d) for d in cat_deltas)[len(cat_deltas) // 2] if cat_deltas else None
+            ),
+            "delta_min": min(cat_deltas) if cat_deltas else None,
+            "delta_max": max(cat_deltas) if cat_deltas else None,
+        }
+
+    by_category: dict[str, dict[str, object]] = {cat: _cat_summary(b) for cat, b in by_cat.items()}
+    summary: dict[str, object] = {
         "n_prompts": len(prompts),
         "n_exact": n_exact,
         "pct_exact": pct_exact,
@@ -248,22 +266,7 @@ def main() -> None:
         "abs_delta_max": abs_deltas[-1] if abs_deltas else None,
         "abs_delta_mean": (sum(abs_deltas) / len(abs_deltas)) if abs_deltas else None,
         "abs_delta_bins": [{"lt": bins[i + 1], "n": hist[i]} for i in range(len(hist))],
-        "by_category": {
-            cat: {
-                "n": b["n"],
-                "n_exact": b["n_exact"],
-                "n_err": b["n_err"],
-                "pct_exact": 100 * int(b["n_exact"]) / int(b["n"]),  # type: ignore[arg-type]
-                "abs_delta_median": (
-                    sorted(abs(d) for d in b["deltas"])[len(b["deltas"]) // 2]  # type: ignore[arg-type]
-                    if b["deltas"]
-                    else None  # type: ignore[arg-type]
-                ),
-                "delta_min": min(b["deltas"]) if b["deltas"] else None,  # type: ignore[arg-type]
-                "delta_max": max(b["deltas"]) if b["deltas"] else None,  # type: ignore[arg-type]
-            }
-            for cat, b in by_cat.items()
-        },
+        "by_category": by_category,
         "elapsed_sec": time.time() - t0,
     }
     out_summary.write_text(json.dumps(summary, indent=2))
@@ -287,8 +290,8 @@ def main() -> None:
         print(f"    [{lo:>8} .. {hi:>10}): {h}")
     print()
     print("  By category:")
-    for cat in sorted(by_cat):
-        b = summary["by_category"][cat]
+    for cat in sorted(by_category):
+        b = by_category[cat]
         print(
             f"    {cat:<14}  n={b['n']:>4}  exact={b['n_exact']:>4} "
             f"({b['pct_exact']:5.1f}%)  err={b['n_err']:>3}  "
