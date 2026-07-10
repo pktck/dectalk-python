@@ -127,3 +127,31 @@ def test_parstochip_out_ph2_mirrors_next_allophone(monkeypatch: pytest.MonkeyPat
         f"parstochip[OUT_PH2] stayed 0 across all {len(snaps)} frames -- "
         "ph_claus.c:469/472 mirror is missing"
     )
+
+
+def test_parstochip_out_ph2_final_phone_reads_aliased_scratch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Final-phone ``OUT_PH2`` publishes the one-past-end aliased scratch cell.
+
+    ``ph_claus.c:467``'s ``nphone+1 > nallotot`` guard does not exclude
+    the ``== nallotot`` case, so every frame of the clause's final phone
+    emits ``allophons[nallotot]`` — one past the populated range. In the
+    binary that cell holds phoneme-stream leftovers because ``phonemes``
+    aliases ``&allophons[SAFETY]`` (``ph_claus.c:597``); the port
+    replays the alias in ``us_phalloph2`` (issues #277 / #290).
+
+    For ``hello world`` the exposed cell is ``allophons[11]`` (after
+    ``phinton``'s dummy-schwa insert grows ``nallotot`` to 11) =
+    ``phonemes[3]`` = ``LL`` with its stream flag bits = 7707 — verified
+    byte-equal to the oracle dump's 71 final-phone packets by
+    ``tests/parity/test_packet_metadata_parity.py``. This is the fast
+    in-process pin of the same value so the alias replay can't silently
+    regress in the non-oracle lane.
+    """
+    snaps = _run_full_pipeline("hello world", monkeypatch)
+    assert snaps[-1][OUT_PH2] == 7707, (
+        f"final-phone OUT_PH2 is {snaps[-1][OUT_PH2]}, expected the aliased "
+        "phonemes[3] leftover 7707 (LL) -- the ph_claus.c:597 phonemes->"
+        "allophons[SAFETY] alias replay in us_phalloph2 regressed"
+    )
