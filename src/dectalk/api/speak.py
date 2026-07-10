@@ -24,6 +24,7 @@ from __future__ import annotations
 import io
 import os
 import wave
+from collections import deque
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
@@ -45,6 +46,7 @@ from dectalk.dic.markers import (
     load_marker_lexicon,
     load_vpstart_words,
 )
+from dectalk.kernel.normalize import try_url
 from dectalk.kernel.text import Token, TokenKind, tokenize
 from dectalk.lts import lts
 from dectalk.lts.homo_disambig import (
@@ -88,6 +90,26 @@ def _use_full_pipeline(lang: str) -> bool:
     """
     return lang == "us" and os.environ.get(_FULL_PIPELINE_ENV) != "0"
 
+
+# Symbol characters the DECtalk C kernel splits out of a chunk and
+# speaks via their own runtime-dictionary rows (issue #244). Each maps
+# to a ``__SYM_*__`` sentinel resolved in ``word_phoneme_overrides``
+# with the exact Dic_us.txt phonemes (lines 70-236: ``&,N,'@nd`` /
+# ``+,N,pl'^s`` / ``=,N,'ikwLz`` / ``@,N,'@t`` / ``^,N,k'Erxt`` / ...).
+# ``#`` is handled separately (its row is the two-word ``n'^mbR sAn``).
+# Deliberately absent: ``$`` (currency formats), ``-`` (hyphen
+# compounds + dash/number ranges), ``.``/``,``/``:``/``;`` (pause and
+# decimal syntax) — those belong to other front-end paths.
+_SYMBOL_SENTINELS: Final[dict[str, str]] = {
+    "&": "__SYM_AMPERSAND__",
+    "%": "__SYM_PERCENT__",
+    "@": "__SYM_AT__",
+    "+": "__SYM_PLUS__",
+    "=": "__SYM_EQUALS__",
+    "*": "__SYM_ASTERISK__",
+    "/": "__SYM_SLASH__",
+    "^": "__SYM_CARET__",
+}
 
 # Nominal speaking rate that maps to ``rate=1.0`` in the public API.
 # DECtalk's TextToSpeechSetRate accepts words-per-minute in [75, 600];
@@ -1557,6 +1579,71 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         "__TITLE_MR__": ["M", "IH1", "S", "T", "ER0"],
         "__TITLE_MRS__": ["M", "IH1", "S", "IX", "Z"],
         "__TITLE_MS__": ["M", "IH1", "Z"],
+        # --- Symbol sentinels (issue #244) --------------------------
+        # Emitted by the chunk-loop symbol splitter; phonemes are the
+        # verbatim Dic_us.txt symbol rows (lines 70-236), NOT the
+        # spelled-out words -- the two differ: ``^`` reads
+        # ``k ' ehr axt`` (dic ``k'Erxt``) while the word "caret" is
+        # ``k ' aer ixt``; ``@`` reads stressed ``' aet`` (dic ``'@t``)
+        # while the word "at" destresses to ``eht``; ``&`` reads
+        # ``' aen d`` (dic ``'@nd``) without the ``^ (`` function-word
+        # markers plain "and" gets.
+        "__SYM_AMPERSAND__": ["AE1", "N", "D"],
+        "__SYM_PERCENT__": ["P", "ER0", "S", "EH1", "N", "T"],
+        "__SYM_AT__": ["AE1", "T"],
+        "__SYM_PLUS__": ["P", "L", "AH1", "S"],
+        "__SYM_EQUALS__": ["IY1", "K", "W", "EL", "Z"],
+        "__SYM_ASTERISK__": ["AE1", "S", "T", "ER0", "IX", "S", "K"],
+        "__SYM_SLASH__": ["S", "L", "AE1", "SH"],
+        "__SYM_CARET__": ["K", "EH1", "R", "AX", "T"],
+        # ``#`` = ``n'^mbR sAn`` ("number sign") -- two words, so the
+        # splitter emits two sentinel tokens.
+        "__SYM_NUMBER__": ["N", "AH1", "M", "B", "ER0"],
+        "__SYM_SIGN__": ["S", "AY0", "N"],
+        # The words the ``+`` / ``=`` symbols expand to, fixed to the
+        # C reading (issue #244): the Python LTS voiced the final S of
+        # "plus" (``p ll' ahz``; C LTS keeps ``p ll' ahs``) and read
+        # "equals" with a plain L (``' iyk w llz``; the C dic row
+        # ``equal,N,'ikwL`` carries the syllabic EL -> ``' iyk w elz``).
+        "PLUS": ["P", "L", "AH1", "S"],
+        "EQUALS": ["IY1", "K", "W", "EL", "Z"],
+        # --- Single-letter words (issue #244) -----------------------
+        # A standalone letter reads as its letter name with PRIMARY
+        # stress in the C front end, in every position (``a = b`` ->
+        # ``b ' iy``, ``vitamin C`` -> ``s ' iy``, ``x / y`` ->
+        # ``' ehk s   w ' ay``; all verified against the oracle). The
+        # bundled lexicon carried unstressed forms (``B`` -> ``b iy``)
+        # and the LTS mangled the rest (``x`` -> ``k s``, ``q`` ->
+        # ``k``). ``A`` and ``I`` are NOT letters here -- they keep
+        # their article / pronoun word paths, which already match C.
+        # ``Q`` and ``W`` differ from the acronym spell-out table
+        # (``_LETTER_NAMES``): standalone Q reads the ``yu`` diphthong
+        # (``k ' yu``) and W reads the syllabic-EL + MBOUND compound
+        # form ``d ' ahb el* yxuw`` (both oracle-verified).
+        "B": ["B", "IY1"],
+        "C": ["S", "IY1"],
+        "D": ["D", "IY1"],
+        "E": ["IY1"],
+        "F": ["EH1", "F"],
+        "G": ["JH", "IY1"],
+        "H": ["EY1", "CH"],
+        "J": ["JH", "EY1"],
+        "K": ["K", "EY1"],
+        "L": ["EH1", "L"],
+        "M": ["EH1", "M"],
+        "N": ["EH1", "N"],
+        "O": ["OW1"],
+        "P": ["P", "IY1"],
+        "Q": ["K", "YU1"],
+        "R": ["AA1", "R"],
+        "S": ["EH1", "S"],
+        "T": ["T", "IY1"],
+        "U": ["Y", "UW1"],
+        "V": ["V", "IY1"],
+        "W": ["D", "AH1", "B", "EL", "__PUNCT__*", "Y", "UW0"],
+        "X": ["EH1", "K", "S"],
+        "Y": ["W", "AY1"],
+        "Z": ["Z", "IY1"],
         # "DECtalk" -- the C source's kernel marks the SYL_BREAK between
         # "DEC" and "talk" so the encoder emits the ``#`` syllable-
         # boundary token. The Python lexicon stores ``D EH1 K T AO0 K``
@@ -2015,18 +2102,74 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # whitespace-delimited chunk, if (after stripping surrounding
         # punctuation) it's a pure digit-string or dotted decimal,
         # route through ``_digit_expand`` -- otherwise let
-        # ``kernel.text.tokenize`` handle it.
+        # ``kernel.text.tokenize`` handle it. The chunk queue lets the
+        # symbol-splitting pre-pass below re-inject the split parts of
+        # a chunk (``one+`` -> ``one`` + ``__SYM_PLUS__``) so each part
+        # runs through this same dispatch.
         tokens: list[Token] = []
-        for chunk in seg.body.split():
+        chunk_queue: deque[str] = deque(seg.body.split())
+        while chunk_queue:
+            chunk = chunk_queue.popleft()
+            # Sentinel re-injected by the symbol split below: emit the
+            # WORD token directly (its phonemes live in
+            # ``word_phoneme_overrides``). Checked FIRST -- the
+            # sentinel names contain the very symbol characters the
+            # splitter looks for.
+            if chunk in _SYMBOL_SENTINELS.values():
+                tokens.append(Token(TokenKind.WORD, chunk))
+                continue
+            if chunk == "__SYM_NUMBER_SIGN__":
+                # ``#`` speaks as the two-word dictionary entry
+                # ``n'^mbR sAn`` ("number sign", Dic_us.txt line 70).
+                tokens.append(Token(TokenKind.WORD, "__SYM_NUMBER__"))
+                tokens.append(Token(TokenKind.WORD, "__SYM_SIGN__"))
+                continue
             # Whole-chunk punctuation (issue #315): attach to the open
             # clause's word or speak the mark by name, exactly as the
             # C ``cm_pars``/``ls_spel`` pair does. ``None`` means the
-            # chunk is not an isolated mark -- fall through.
+            # chunk is not an isolated mark -- fall through. This lane
+            # owns the ``.,;:!?`` mark set; the symbol splitter below
+            # owns the disjoint ``& % @ + = * / # ^`` set, so the two
+            # never contend for the same chunk.
             punct_tokens = _isolated_punct_tokens(
                 chunk, clause_has_word=_open_clause_has_word(tokens)
             )
             if punct_tokens is not None:
                 tokens.extend(punct_tokens)
+                continue
+            # --- Symbol splitting (issue #244) ----------------------
+            # The C kernel treats ``& % @ + = * / # ^`` as word
+            # delimiters that speak via their own runtime-dictionary
+            # rows (Dic_us.txt lines 70-236), wherever they sit in the
+            # chunk: ``one+ two`` / ``+one`` / ``a+b`` all read "plus".
+            # Guards mirror the C order of operations:
+            # - whole-token dictionary entries win over splitting
+            #   (``and/or`` is a Dic_us.txt row -> spoken via its own
+            #   entry, never split),
+            # - digit-bearing chunks stay with the numeric formats
+            #   (``10/20`` fraction, ``100%``, ``$0.01`` -- issue #225
+            #   territory),
+            # - URLs keep their ``/`` syntax.
+            if (
+                any(c in _SYMBOL_SENTINELS or c == "#" for c in chunk)
+                and not any(c.isdigit() for c in chunk)
+                and "$" not in chunk
+                and lookup(chunk.rstrip(".,;:!?").upper(), lang=lang) is None
+                and try_url(chunk) is None
+            ):
+                parts: list[str] = []
+                buf: list[str] = []
+                for c in chunk:
+                    if c in _SYMBOL_SENTINELS or c == "#":
+                        if buf:
+                            parts.append("".join(buf))
+                            buf.clear()
+                        parts.append("__SYM_NUMBER_SIGN__" if c == "#" else _SYMBOL_SENTINELS[c])
+                    else:
+                        buf.append(c)
+                if buf:
+                    parts.append("".join(buf))
+                chunk_queue.extendleft(reversed(parts))
                 continue
             # Mimic tokenize's punctuation stripping so we can spot a
             # digit-only payload like ``5.``, ``(123)`` or ``"42"``.

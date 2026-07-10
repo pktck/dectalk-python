@@ -201,6 +201,13 @@ ARPABET_TO_DECTALK: Final[dict[str, str]] = {
     "UW": "uw",  # view
     "ER": "rr",  # burr (r-coloured)
     "AX": "ax",  # schwa
+    # The ``yu`` diphthong (usa_arpa[16]). The encoder synthesises it
+    # from Y+UW in word-internal position (see the collapse rule in
+    # ``encode_to_dectalk``); accepting it as an explicit input symbol
+    # lets word-phoneme overrides use it word-finally, where the
+    # collapse rule deliberately keeps Y+UW apart (standalone letter
+    # ``q`` reads ``k ' yu`` -- issue #244).
+    "YU": "yu",
     # ---- Consonants ----
     "W": "w",
     "Y": "yx",  # consonant Y -- usa_arpa[25] in src/dapi/src/include/usa_phon.tab
