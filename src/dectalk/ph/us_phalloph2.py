@@ -58,6 +58,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from dectalk.include.all_phon_counts import MAX_PHONES
+from dectalk.include.cmd_codes import PVALUE
 from dectalk.include.phoneme_codes import (
     COMMA,
     EXCLAIM,
@@ -66,6 +67,7 @@ from dectalk.include.phoneme_codes import (
     QUEST,
     S1,
     S2,
+    SPECIALWORD,
     WBOUND,
     USPhoneme,
 )
@@ -710,6 +712,20 @@ def phalloph2_from_symbols(phTTS: TtsHandle, symbols: list[int], nsymbtot: int) 
     p_dph_t.symbols = list(symbols)
     p_dph_t.nsymbtot = nsymbtot
 
+    # ph_task.c lines 619-623: as ``kltask`` consumes each pipe item
+    # into symbols[], any item whose PVALUE low byte equals SPECIALWORD
+    # (the ``^`` citation marker the LTS/sdic emits before "a" / "for" /
+    # "and" / "to"; #302 / #309) arms per-clause citation mode BEFORE
+    # the clause is flushed into phsort/phalloph. The marker itself is
+    # later deleted from the stream by all_phsort's cleanup walk; the
+    # command-dispatch ``case SPECIALWORD`` at ph_task.c:773-776 is
+    # unreachable on this build (control-font items carry 0x1F00, so
+    # ``switch (buf[0])`` never sees a bare 120 there).
+    for sym in symbols[:nsymbtot]:
+        if (sym & PVALUE) == SPECIALWORD:
+            p_dph_t.docitation = 1
+            break
+
     # Reallocate phonemes[] / sentstruc[] / user_durs[] / user_f0[] as
     # INDEPENDENT buffers — Python's init_phclause aliases them to
     # allophons[] / allofeats[] / allodurs[] / f0tar[], which us_phalloph
@@ -728,6 +744,14 @@ def phalloph2_from_symbols(phTTS: TtsHandle, symbols: list[int], nsymbtot: int) 
     all_phsort(phTTS)
     _mirror_phsort_scratch_into_allophons(p_dph_t)
     us_phalloph(phTTS)
+
+    # ph_claus.c lines 303-307 (ENGLISH): docitation is cleared after
+    # every phalloph visit — combined with ph_aloph1.c's
+    # ``nphonetot >= 6`` clear inside us_phalloph, the flag is strictly
+    # per-clause and never persists past the allophone pass. (The C
+    # clear sits between phalloph and phtiming; nothing in between
+    # reads it, so clearing here is position-equivalent.)
+    p_dph_t.docitation = 0
 
 
 __all__ = [
