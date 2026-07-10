@@ -16,6 +16,14 @@ Supported commands (subset of the full DECtalk command vocabulary):
   [75, 600], clamped). Translated into the equivalent multiplicative
   ``rate`` on :class:`SpeechState` so downstream renderers can combine
   it with any public-API ``rate=`` multiplier.
+- ``[:comma N]`` / ``[:cp N]`` — extra comma-boundary pause in
+  milliseconds (issue #249). Recorded on :class:`SpeechState`; the
+  full-pipeline renderer threads it into ``DphT.compause`` exactly as
+  the C ``CPAUSE`` control word does (``ph_task.c`` line 785).
+- ``[:period N]`` / ``[:pp N]`` — extra period-boundary pause in
+  milliseconds, clamped to [-420, 30000] at the command layer
+  (``cm_copt.c`` lines 2526-2530, the BTS#10100 fix) like the C
+  ``cm_cmd_period``; threaded into ``DphT.perpause``.
 - ``[:phoneme on]`` / ``[:phoneme off]`` — switch between text and direct
   ARPABET phoneme input.
 - ``[:say TYPE]`` — segmentation hint (currently parsed and ignored).
@@ -31,6 +39,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from typing import Final
 
+from dectalk.cmd.cmd_states import MAX_PERIOD_PAUSE, MIN_PERIOD_PAUSE
 from dectalk.cmd.option_tables import define_options
 
 _Handler = Callable[["SpeechState", list[str]], "SpeechState"]
@@ -65,11 +74,22 @@ class SpeechState:
         rate: Speaking-rate multiplier (1.0 = nominal).
         phoneme_mode: When True, the body is interpreted as ARPABET
             phonemes rather than text.
+        comma_pause: ``[:comma N]`` / ``[:cp N]`` extra comma-boundary
+            pause in milliseconds, or None when unset (issue #249).
+            Raw command value — the C ``cm_cmd_comma`` sends it
+            unclamped; the PH consumer applies the [-280, 30000]
+            deadstop (``ph_task.c`` line 785).
+        period_pause: ``[:period N]`` / ``[:pp N]`` extra
+            period-boundary pause in milliseconds, or None when unset.
+            Already clamped to [-420, 30000] at the command layer like
+            the C ``cm_cmd_period`` (``cm_copt.c`` lines 2526-2530).
     """
 
     voice: str | None = None
     rate: float = 1.0
     phoneme_mode: bool = False
+    comma_pause: int | None = None
+    period_pause: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +222,47 @@ def _cmd_rate(state: SpeechState, args: list[str]) -> SpeechState:
     return replace(state, rate=state.rate * (_DEFAULT_WPM / wpm))
 
 
+def _cmd_comma(state: SpeechState, args: list[str]) -> SpeechState:
+    """Handle ``[:comma N]`` / ``[:cp N]`` — comma-pause milliseconds.
+
+    The C command table (``c_us_cde.h`` lines 417-418) parses one
+    decimal argument and ``cm_cmd_comma`` (``cm_copt.c`` lines
+    2486-2502) forwards it down the LTS pipe **unclamped** as the
+    ``CPAUSE`` control word; the PH consumer applies the
+    [-280, 30000] ms deadstop (``ph_task.c`` line 785), mirrored where
+    :func:`dectalk.api.speak._render_clause_full` seeds
+    ``DphT.compause``. Missing / non-numeric arguments leave the
+    state unchanged (the BATS#628 no-argument guard).
+    """
+    if not args:
+        return state
+    try:
+        pause_ms = int(args[0], 10)
+    except ValueError:
+        return state
+    return replace(state, comma_pause=pause_ms)
+
+
+def _cmd_period(state: SpeechState, args: list[str]) -> SpeechState:
+    """Handle ``[:period N]`` / ``[:pp N]`` — period-pause milliseconds.
+
+    ``cm_cmd_period`` (``cm_copt.c`` lines 2517-2541) clamps the
+    decimal argument to [``MIN_PERIOD_PAUSE``, ``MAX_PERIOD_PAUSE``]
+    = [-420, 30000] at the command layer (the BTS#10100 fix) before
+    sending the ``PPAUSE`` control word. The PH consumer re-applies
+    the same deadstop (``ph_task.c`` lines 786-788), so clamping here
+    is byte-equivalent to the C double-clamp.
+    """
+    if not args:
+        return state
+    try:
+        pause_ms = int(args[0], 10)
+    except ValueError:
+        return state
+    pause_ms = max(MIN_PERIOD_PAUSE, min(MAX_PERIOD_PAUSE, pause_ms))
+    return replace(state, period_pause=pause_ms)
+
+
 def _cmd_phoneme(state: SpeechState, args: list[str]) -> SpeechState:
     """Handle ``[:phoneme on/off]``."""
     if not args:
@@ -246,6 +307,12 @@ _HANDLERS: Final[dict[str, _Handler]] = {
     "dv": _cmd_dv,
     "name": _cmd_dv,
     "rate": _cmd_rate,
+    # Comma / period boundary-pause commands and their two-letter
+    # aliases (C command table ``c_us_cde.h`` lines 417-420).
+    "comma": _cmd_comma,
+    "cp": _cmd_comma,
+    "period": _cmd_period,
+    "pp": _cmd_period,
     "phoneme": _cmd_phoneme,
     "say": _cmd_noop,
     "ap": _cmd_noop,  # average pitch — future: drive preset.f0_x10 directly
