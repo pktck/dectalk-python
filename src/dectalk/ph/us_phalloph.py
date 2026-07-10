@@ -359,11 +359,15 @@ def us_phalloph(phTTS: TtsHandle) -> None:
                             if n + 1 < len(phonemes):
                                 phonemes[n + 1] = USP_UW
                         # Flap initial /t/ of "to" after a syllabic.
-                        # The HLSYN/CHANGES_AFTER_V43 branch uses Cite_It == 0;
-                        # standard US build uses MODE_CITATION == 0. Both are
-                        # equivalent for our purposes (cite_it tracks both
-                        # conditions when SLOWTALK is off). Match the standard
-                        # MODE_CITATION-based branch.
+                        # Wrong-variant hazard (PARITY-METHOD §3): the
+                        # HLSYN/CHANGES_AFTER_V43 branch gates on
+                        # ``Cite_It == 0``; the ACTIVE build's #else gates on
+                        # ``(modeflag & MODE_CITATION) == 0`` (ph_aloph1.c:
+                        # 902-906). NOT equivalent once docitation is live
+                        # (#309): cite_it is MODE_CITATION AND docitation, so
+                        # cite_it == 0 does not imply MODE_CITATION == 0. With
+                        # the #307 boot default this arm is permanently dead
+                        # unless the user clears MODE_CITATION.
                         elif (
                             (p_ksd_t.modeflag & MODE_CITATION) == 0
                             and (phone_feature(last_outph) & FSYLL) != 0
