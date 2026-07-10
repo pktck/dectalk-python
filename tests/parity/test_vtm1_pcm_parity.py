@@ -310,9 +310,7 @@ _PUNCT_NAME_BYTE_EXACT_PROMPTS: tuple[str, ...] = (
 
 
 @pytest.mark.parametrize("text", _PUNCT_NAME_BYTE_EXACT_PROMPTS)
-def test_vtm1_pcm_byte_identical_punct_names(
-    text: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_vtm1_pcm_byte_identical_punct_names(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Spoken-punctuation-name prompts are byte-identical to the binary.
 
     The #315 lane: isolated punctuation is spoken by name (typing-table
