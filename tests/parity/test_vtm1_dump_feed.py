@@ -224,6 +224,19 @@ def test_default_paul_spd_matches_oracle_chip_packet(capi: CAPI) -> None:
     chip = default_us_paul_spd()
     mismatches: list[str] = []
     for idx, c_field in enumerate(_SPD_CHIP_FIELDS):
+        if c_field == "notused":
+            # Chip word 20 is uninitialized C memory: ``setspdef()``
+            # never assigns it (``ph_vset.c:822`` only acknowledges it
+            # with a hardwired debug ``printf("notused is %d", 0)``),
+            # so the oracle packet carries whatever heap the spdef
+            # block landed on. It happened to read 0 under light test
+            # schedules, but scheduling more in-process dump-capture
+            # speaks ahead of this test surfaces recycled stdio buffers
+            # in the word (observed 0x3020, ASCII "0 ") — while the
+            # dump-feed byte-exact gate above stays green in the same
+            # process, proving the VTM never consumes the word. Pinning
+            # uninitialized memory is order-dependent noise; skip it.
+            continue
         py_field = _PY_SWAPPED.get(c_field, c_field)
         py_value = int(getattr(chip, py_field))
         c_value = spdef[idx]
