@@ -38,10 +38,21 @@ if TYPE_CHECKING:
 from dectalk.cmd import SpeechState, parse
 from dectalk.data.voices import PRESETS, VoicePreset, get_preset
 from dectalk.dic import lookup
-from dectalk.dic.markers import load_marker_lexicon, load_vpstart_words
+from dectalk.dic.form_class_bits import FC_NOUN
+from dectalk.dic.markers import (
+    emits_vpstart,
+    load_formclass_lexicon,
+    load_marker_lexicon,
+    load_vpstart_words,
+)
 from dectalk.kernel.text import Token, TokenKind, tokenize
 from dectalk.lts import lts
-from dectalk.lts.homo_disambig import HOMOGRAPH_FC_BITS, disambiguate
+from dectalk.lts.homo_disambig import (
+    BATS705_DEFAULT_FC,
+    resolved_form_class,
+    select_homograph_entry,
+)
+from dectalk.lts.suffix_formclass import suffix_form_class
 from dectalk.nt.audio import write_wav
 from dectalk.ph.prosody import split_sentences
 from dectalk.ph.sequencer import synthesize_phonemes
@@ -1485,6 +1496,24 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     # reductions that the bundled lexicon strips.
     compound_marker_lex = load_marker_lexicon(lang=lang)
 
+    # Sidecar-derived form-class masks (issue #295): the runtime
+    # dictionary's built fc value per entry, keyed ``WORD`` /
+    # ``WORD|P`` / ``WORD|S``. Drives (a) faithful homograph entry
+    # selection via :func:`select_homograph_entry` (the C
+    # ``ls_homo_homo`` port), (b) the context-dependent ``)`` VPSTART
+    # emission for homographs via :func:`emits_vpstart`, and (c) the
+    # per-word context tracking that mirrors the C ``fc_struct``
+    # array.
+    formclass_lex = load_formclass_lexicon(lang=lang)
+    homograph_pair_words = frozenset(
+        key[:-2] for key in formclass_lex if key.endswith("|P") and f"{key[:-2]}|S" in formclass_lex
+    )
+    formclass_words = frozenset(key.split("|", 1)[0] for key in formclass_lex)
+    # Mirror of the C ``fc_struct[]``: one mask per WORD token of the
+    # current sentence, in order. Cleared at sentence-final punctuation
+    # (the C resets ``fc_index`` when ``wstate`` returns to ``UNK_WH``).
+    word_fcs: list[int] = []
+
     # Spell-out: known acronyms that DECtalk reads letter-by-letter
     # (each letter as its own word). When set, we split into separate
     # letter pronunciations using the ``letter_names`` table below.
@@ -2071,6 +2100,48 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         sentence_has_wh = any(
             t.kind is TokenKind.WORD and t.text in wh_question_words for t in tokens
         )
+
+        def _select_pair(word: str, cur_fc: int) -> tuple[str, int, int]:
+            """Resolve a homograph pair's reading from tracked context.
+
+            Applies the C ``ls_homo_homo`` selection against the
+            running ``word_fcs`` mirror of ``fc_struct``: the first
+            word of a sentence takes the primary entry, an unknown
+            previous word noun-defaults (BATS#705 — persisted into
+            ``word_fcs``, matching the C's in-place mutation), and the
+            27-rule table decides the rest.
+
+            Args:
+                word: Upper-cased homograph with ``|P``/``|S`` rows in
+                    the form-class sidecar.
+                cur_fc: The word's pre-hit mask (0 for a direct hit;
+                    the suffix rule's mask for a stripped derivation).
+
+            Returns:
+                ``(reading, selected_fc, exposed_fc)`` — the ``"P"`` /
+                ``"S"`` reading, the selected entry's built mask (for
+                the VPSTART decision), and the mask this word exposes
+                to later context checks.
+            """
+            p_fc = formclass_lex[f"{word}|P"]
+            s_fc = formclass_lex[f"{word}|S"]
+            prev_fc = 0
+            if word_fcs:
+                if word_fcs[-1] == 0:
+                    word_fcs[-1] = BATS705_DEFAULT_FC
+                prev_fc = word_fcs[-1]
+            reading, homo_rule = select_homograph_entry(
+                p_fc,
+                s_fc,
+                cur_fc=cur_fc,
+                prev_fc=prev_fc,
+                prev_prev_fc=word_fcs[-2] if len(word_fcs) >= 2 else None,  # noqa: PLR2004
+                first_word=not word_fcs,
+            )
+            selected_fc = p_fc if reading == "P" else s_fc
+            exposed_fc = resolved_form_class(selected_fc, cur_fc=cur_fc, rule=homo_rule)
+            return reading, selected_fc, exposed_fc
+
         for tok_idx, token in enumerate(tokens):
             if token.kind is TokenKind.WORD:
                 # Only insert an inter-word break if there's no
@@ -2079,7 +2150,45 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 # ``? ``) already carries its own trailing space.
                 if flat and not flat[-1].startswith(punct_prefix):
                     flat.append("_")
-                if token.text in vpstart_words:
+                # --- Homograph resolution + form-class tracking -----
+                # (issue #295). For P/S homograph pairs — whether the
+                # token itself (``close``) or its suffix-stripped root
+                # (``tears`` → ``tear``) — pick the reading from
+                # context and emit the ``)`` VPSTART marker per the
+                # *selected* entry's mask, exactly as
+                # ``ls_dict_find_word`` does. Every other word emits
+                # ``)`` from the static sidecar/curated set as before.
+                homo_reading: str | None = None
+                homo_stem_reading: tuple[str, str] | None = None
+                if token.text in spell_out_words:
+                    # ``ls_task_spell_word`` tags spelled words FC_NOUN.
+                    this_word_fc = FC_NOUN
+                elif token.text in homograph_pair_words:
+                    homo_fc_reading, selected_fc, this_word_fc = _select_pair(token.text, 0)
+                    homo_reading = homo_fc_reading
+                    if emits_vpstart(selected_fc):
+                        flat.append(f"{punct_prefix})")
+                elif token.text in formclass_lex:
+                    this_word_fc = formclass_lex[token.text]
+                else:
+                    suffix_fc, stem_root, _suffix = suffix_form_class(
+                        token.text, formclass_words
+                    )
+                    if stem_root is not None and stem_root in homograph_pair_words:
+                        homo_fc_reading, selected_fc, this_word_fc = _select_pair(
+                            stem_root, suffix_fc
+                        )
+                        homo_stem_reading = (stem_root, homo_fc_reading)
+                        if emits_vpstart(selected_fc):
+                            flat.append(f"{punct_prefix})")
+                    else:
+                        this_word_fc = suffix_fc
+                word_fcs.append(this_word_fc)
+                if (
+                    homo_reading is None
+                    and homo_stem_reading is None
+                    and token.text in vpstart_words
+                ):
                     flat.append(f"{punct_prefix})")
                 # Function-word destressing / phrase-marker injection.
                 # For "A": apply only when followed by another WORD
@@ -2133,31 +2242,15 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     phones = list(compound_marker_lex[token.text])
                 else:
                     # Form-class homograph disambiguation (issue #144 /
-                    # LTS audit §2). Words like RECORD / PRESENT / OBJECT
-                    # ship two readings in the lexicon (``WORD|P`` and
-                    # ``WORD|S``); pick the right one from context.
-                    homo_fc: str | None = None
-                    if token.text in HOMOGRAPH_FC_BITS:
-                        prev_word_text: str | None = None
-                        prev_prev_word_text: str | None = None
-                        for back_tok in reversed(tokens[:tok_idx]):
-                            if back_tok.kind is TokenKind.WORD:
-                                if prev_word_text is None:
-                                    prev_word_text = back_tok.text
-                                else:
-                                    prev_prev_word_text = back_tok.text
-                                    break
-                        homo_fc = disambiguate(
-                            token.text,
-                            prev_word=prev_word_text,
-                            prev_prev_word=prev_prev_word_text,
-                            is_sentence_initial=is_sentence_initial,
-                        )
-                    if homo_fc is not None:
-                        phones = lookup(token.text, lang=lang, form_class=homo_fc)
+                    # #295). Runtime P/S homograph pairs were resolved
+                    # against the C ``ls_homo_homo`` rules at the top
+                    # of the loop; fetch the selected reading's
+                    # phonemes (``CLOSE|P`` vs ``CLOSE|S``).
+                    if homo_reading is not None:
+                        phones = lookup(token.text, lang=lang, form_class=homo_reading)
                         # Fall back to the default reading if the
-                        # specific form-class entry isn't present (e.g.
-                        # an N-only homograph that doesn't ship P/S).
+                        # lexicon doesn't carry this pair (a handful
+                        # of runtime pairs have no 2002 P/S rows).
                         if phones is None:
                             phones = lookup(token.text, lang=lang)
                     else:
@@ -2196,7 +2289,17 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         and not token.text.endswith(("SS", "US", "IS"))
                     ):
                         stem = token.text[:-1]
-                        if stem.endswith("E") and len(stem) > 2:  # noqa: PLR2004
+                        if homo_stem_reading is not None:
+                            # Runtime homograph root (``tears`` →
+                            # TEAR, ``lives`` → LIVE): use the reading
+                            # the ls_homo_homo port selected at the
+                            # top of the loop, against the root the
+                            # suffix engine derived.
+                            homo_root, homo_fc = homo_stem_reading
+                            stem_phones = lookup(
+                                homo_root, lang=lang, form_class=homo_fc
+                            ) or lookup(homo_root, lang=lang)
+                        elif stem.endswith("E") and len(stem) > 2:  # noqa: PLR2004
                             # ``minutes`` -> ``minute`` (drop the trailing
                             # E along with the S so we hit the stem entry).
                             stem_phones = lookup(stem, lang=lang) or lookup(stem[:-1], lang=lang)
@@ -2425,9 +2528,17 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         phones is None and token.text.endswith("ING") and len(token.text) > 4  # noqa: PLR2004
                     ):
                         ing_stem = token.text[:-3]
-                        stem_phones = lookup(ing_stem + "E", lang=lang) or lookup(
-                            ing_stem, lang=lang
-                        )
+                        if homo_stem_reading is not None:
+                            # Runtime homograph root (``winding`` →
+                            # WIND): use the ls_homo_homo reading.
+                            homo_root, homo_fc = homo_stem_reading
+                            stem_phones = lookup(
+                                homo_root, lang=lang, form_class=homo_fc
+                            ) or lookup(homo_root, lang=lang)
+                        else:
+                            stem_phones = lookup(ing_stem + "E", lang=lang) or lookup(
+                                ing_stem, lang=lang
+                            )
                         if stem_phones is not None:
                             phones = [*stem_phones, "IX", "NG"]
                     # ``-ed`` past-tense suffix: strip and apply the
@@ -2442,7 +2553,17 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         # then fall back to the Y -> I alternation
                         # (``married`` -> ``marry``).
                         ed_stem = token.text[:-2]
-                        stem_phones = lookup(ed_stem + "E", lang=lang) or lookup(ed_stem, lang=lang)
+                        if homo_stem_reading is not None:
+                            # Runtime homograph root (``contrasted`` →
+                            # CONTRAST): use the ls_homo_homo reading.
+                            homo_root, homo_fc = homo_stem_reading
+                            stem_phones = lookup(
+                                homo_root, lang=lang, form_class=homo_fc
+                            ) or lookup(homo_root, lang=lang)
+                        else:
+                            stem_phones = lookup(ed_stem + "E", lang=lang) or lookup(
+                                ed_stem, lang=lang
+                            )
                         if stem_phones is None and ed_stem.endswith("I"):
                             stem_phones = lookup(ed_stem[:-1] + "Y", lang=lang)
                         if stem_phones is not None:
@@ -2478,6 +2599,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             elif token.kind in (TokenKind.PAUSE_LONG, TokenKind.PAUSE_SHORT):
                 ch = token.text or ("." if token.kind is TokenKind.PAUSE_LONG else ",")
                 flat.append(_punct_marker(ch, sentence_has_wh=sentence_has_wh))
+                if ch in ".!?":
+                    # Sentence boundary: the C resets ``fc_index`` when
+                    # ``wstate`` returns to UNK_WH, so the next word is
+                    # "first word" again for homograph purposes.
+                    word_fcs.clear()
     return encode_to_dectalk(flat)
 
 
