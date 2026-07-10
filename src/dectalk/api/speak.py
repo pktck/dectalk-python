@@ -987,9 +987,11 @@ def _isolated_punct_tokens(  # noqa: PLR0911 — one return per C dispatch arm
     - With no word in the open clause the mark is spoken by name:
       ``'.'`` -> "period", ``','`` -> "comma", ``':'`` -> "colon",
       ``';'`` -> "semi#colon", ``'!'`` -> "exclamation point",
-      ``'?'`` -> "question mark". Name words are invisible to the
-      attach rule -- marks following a name are spoken by name too
-      (``'... !'`` -> "period exclamation point").
+      ``'?'`` -> "question mark". A name CLOSES the clause for the
+      attach rule (its mark is MARK_clause in the C parser), so marks
+      following a name are spoken by name too, even when a real word
+      opened the clause (``'... !'`` -> "period exclamation point",
+      ``'hello ... !'`` -> "hello period exclamation point").
     - Dot runs never attach. ``..`` becomes "period" + an attached
       ``.`` terminator (the LTS splits the 2-dot word into the ``.``
       word plus ``.`` right-punct) while ``...`` / ``....`` collapse
