@@ -69,6 +69,7 @@ from dectalk.include.phoneme_codes import (
     S3,
     SBOUND,
     SEMPH,
+    SPECIALWORD,
     VPSTART,
     WBOUND,
 )
@@ -206,10 +207,29 @@ def all_phsort(phTTS: TtsHandle) -> int:
 
         sym = p_dph_t.symbols[n]
 
-        # C lines 540-557: ENGLISH/BRITISH compound-destress + special-word
-        # zap. Gated behind !HLSYN && !CHANGES_AFTER_V43 in the C source;
-        # this path runs on the post-V43 build so the block is skipped at
-        # build time. Citation only — see ph_sort.c lines 536-557.
+        # C lines 536-556: ENGLISH/BRITISH compound-destress + special-word
+        # zap. Guard is ``#if !defined(HLSYN) && !defined(CHANGES_AFTER_V43)``
+        # — the shipped/oracle build defines NEITHER, so this block is
+        # ACTIVE (the PARITY-METHOD §3 polarity; issue #302). A ``#``
+        # HYPHEN arms the compound-destress flag, the next S1 in the
+        # cleanup walk is demoted to S2, and ``^`` SPECIALWORD markers
+        # (the citation-mode flag the LTS emits in e.g. number-expansion
+        # "and" clusters) are deleted from the stream.
+        if sym == HYPHEN:
+            compound_destress = 1
+        if sym == S1 and compound_destress:
+            p_dph_t.symbols[n] = S2
+            sym = S2
+            compound_destress = 0
+        if sym == SPECIALWORD:
+            # C falls through the rest of the body with the successor
+            # symbol shifted into slot ``n`` (the did_del back-up at the
+            # loop top re-processes it fully on the next pass).
+            delete_symbol(p_ksd_t, p_dph_t, pst_phsettar, n)
+            if n >= len(p_dph_t.symbols) or n >= p_dph_t.nsymbtot:
+                n += 1
+                continue
+            sym = p_dph_t.symbols[n]
 
         # C lines 592-655: shared language-agnostic phone rewrites that
         # always run.
@@ -287,15 +307,36 @@ def all_phsort(phTTS: TtsHandle) -> int:
         # The HLSYN build doesn't re-walk dangling stress in main loop 1;
         # citation only.
 
-        # C lines 1234-1264 (HLSYN path skipped at build time): zap
-        # weaker of two consecutive boundary markers. Citation only.
-        # The post-V43 HLSYN build skips this; if a future port needs
-        # the pre-V43 behaviour, call ``zap_weaker_bound`` against
-        # ``p_dph_t.symbols[n .. m]``.
-        _ = zap_weaker_bound  # keep reference live for static analysers
+        # C lines 1234-1264: remove the weaker of two boundary symbols
+        # in a row. Guard is ``#if !defined(HLSYN) &&
+        # !defined(CHANGES_AFTER_V43)`` + ``ENGLISH_US`` — ACTIVE on the
+        # shipped/oracle build (issue #302; the previous "skipped at
+        # build time" reading inverted the polarity). The ENGLISH_US
+        # branch only examines the immediate next symbol; chains
+        # resolve via the did_del back-up re-processing the merged
+        # boundary. E.g. the digit-expansion "hundred WBOUND VPSTART
+        # and" cluster merges to a single VPSTART, so
+        # ``get_next_bound_type`` stamps FVPNEXT (not FWBNEXT) on the
+        # "-dred" phones — the AX/DX duration split in ``999`` depends
+        # on it (us_phtiming Rules 3/6/9 all compare against FVPNEXT).
+        if SBOUND <= sym_val <= EXCLAIM:
+            m = n + 1
+            if (
+                m < p_dph_t.nsymbtot
+                and m < len(p_dph_t.symbols)
+                and SBOUND <= (p_dph_t.symbols[m] & PVALUE) <= EXCLAIM
+            ):
+                zap_weaker_bound(p_ksd_t, p_dph_t, pst_phsettar, n, m)
+                # C falls through with the merged symbol now in slot n.
+                sym = p_dph_t.symbols[n] if n < len(p_dph_t.symbols) else 0
+                sym_val = sym & PVALUE
 
-        # C lines 1265-1276 (skipped at build time): promote weak
-        # boundaries at slow rates. Citation only.
+        # C lines 1265-1276 (same active guard): replace weak boundaries
+        # by stronger ones at slow rates.
+        if p_ksd_t.sprate <= 120 and sym_val in (VPSTART, PPSTART):
+            p_dph_t.symbols[n] = COMMA
+            sym = COMMA
+            sym_val = COMMA
 
         # C lines 1278-1284: promote PPSTART -> VPSTART at sprate <= 140.
         if p_ksd_t.sprate <= 140 and sym == PPSTART:

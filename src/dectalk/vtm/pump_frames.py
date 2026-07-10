@@ -107,6 +107,7 @@ def pump_frames_via_vtm1(
     frames: list[list[int]],
     preset: VoicePreset | None = None,
     *,
+    spd_chip: SpdChip | None = None,
     sample_rate: int = PC_SAMPLE_RATE,
 ) -> NDArray[np.int16]:
     """Synthesize a sequence of voice packets through ``speech_waveform_generator``.
@@ -133,7 +134,14 @@ def pump_frames_via_vtm1(
             Each inner list is expected to have length at least
             ``OUT_TLT + 1`` (i.e. all the OUT_* slots vtm1 reads).
         preset: Voice preset, or ``None`` for Paul. Drives the
-            speaker-definition lookup.
+            speaker-definition lookup when ``spd_chip`` is not given.
+        spd_chip: Pre-derived per-voice ``SPD_CHIP`` block (the
+            ``setspdef`` chip side — see
+            :func:`dectalk.ph.setspdef.spd_chip_from_row`). When
+            supplied it seeds the speaker state directly, so non-Paul
+            voices get their own gains / nopen / aturb / t0jit /
+            fnscale (issue #302). ``None`` falls back to the
+            ``preset``-keyed lookup (currently Paul for every preset).
         sample_rate: Output sample rate in Hz. ``PC_SAMPLE_RATE``
             (11025) drives the SAMPLE_RATE_INCREASE branch of
             ``vtm1.c::SetSampleRate``; ``MULAW_SAMPLE_RATE`` (8000)
@@ -147,7 +155,8 @@ def pump_frames_via_vtm1(
         return np.zeros(0, dtype=np.int16)
 
     state = SynthState()
-    seed_speaker_state(state, _spd_chip_for_preset(preset), sample_rate=sample_rate)
+    chip = spd_chip if spd_chip is not None else _spd_chip_for_preset(preset)
+    seed_speaker_state(state, chip, sample_rate=sample_rate)
 
     samples_per_frame = state.uiNumberOfSamplesPerFrame
     out = np.zeros(len(frames) * samples_per_frame, dtype=np.int16)

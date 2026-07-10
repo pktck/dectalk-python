@@ -220,6 +220,28 @@ def _cmd_noop(state: SpeechState, args: list[str]) -> SpeechState:
     return state
 
 
+def _make_name_shortcut(name: str) -> _Handler:
+    """Build a handler for a ``[:nX]`` voice-name shortcut.
+
+    The C command table (``c_us_cde.h`` lines 403-415) maps each
+    two-letter ``nX`` command to a ``DCS_NAME_*`` escape whose low bits
+    are the speaker number fed to ``usevoice`` (``cm_copt.c``
+    ``cm_cmd_name``): ``np``=paul(0), ``nb``=betty(1), ``nh``=harry(2),
+    ``nf``=frank(3), ``nd``=dennis(4), ``nk``=kit(5), ``nu``=ursula(6),
+    ``nr``=rita(7), ``nw``=wendy(8, public preset name ``willy``). The
+    light parser realises the same switch as a per-segment voice-name
+    assignment (issue #302 — non-Paul voice prompts like ``[:nr] rita
+    rough`` previously fell through the unknown-command path and
+    rendered as Paul).
+    """
+
+    def _handler(state: SpeechState, args: list[str]) -> SpeechState:
+        del args
+        return replace(state, voice=name)
+
+    return _handler
+
+
 _HANDLERS: Final[dict[str, _Handler]] = {
     "dv": _cmd_dv,
     "name": _cmd_dv,
@@ -231,6 +253,19 @@ _HANDLERS: Final[dict[str, _Handler]] = {
     "hs": _cmd_noop,  # head size (head_scale on the preset)
     "sm": _cmd_noop,  # smoothness
     "emph": _cmd_noop,  # emphasis
+    # Voice-name shortcuts (C ``DCS_NAME_*`` escapes; the speaker rows
+    # live in ``dectalk.ph.voice_definitions``). ``nv`` (Variable Val,
+    # speaker 9 = the saved var_val row) is not modelled — left to the
+    # unknown-command fallthrough like before.
+    "np": _make_name_shortcut("paul"),
+    "nb": _make_name_shortcut("betty"),
+    "nh": _make_name_shortcut("harry"),
+    "nf": _make_name_shortcut("frank"),
+    "nd": _make_name_shortcut("dennis"),
+    "nk": _make_name_shortcut("kit"),
+    "nu": _make_name_shortcut("ursula"),
+    "nr": _make_name_shortcut("rita"),
+    "nw": _make_name_shortcut("willy"),
 }
 
 
