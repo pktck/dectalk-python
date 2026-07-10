@@ -965,6 +965,109 @@ def text_to_phonemes(text: str, *, lang: str = "us", lts_fallback: bool = True) 
     )
 
 
+def _isolated_punct_tokens(  # noqa: PLR0911 — one return per C dispatch arm
+    chunk: str, *, clause_has_word: bool
+) -> list[Token] | None:
+    """Token expansion for a whole-chunk punctuation mark, or ``None``.
+
+    Mirrors the C treatment of punctuation that arrives as its own
+    whitespace-delimited token (issue #315). In the C front end the
+    ``cm_pars_proc_char`` / ``cm_text_getclause`` pair either folds the
+    mark onto the previous word or forwards it as its own one-char word,
+    which ``ls_spel`` then spells via the language typing table
+    (``usa_type.tab``) -- the binary demonstrably SPEAKS punctuation-only
+    input ("period" for ``...``). Empirical rules, each pinned against
+    ``convert_to_phonemes`` on the flushed stream (the speak path always
+    appends an 8-space flush, resolving the parser's pending-dot state):
+
+    - A single ``.,;:!?`` directly after a word in the open clause
+      attaches to it as the ordinary clause/sentence marker
+      (``cm_text.c`` rev 074 removes the space before clause
+      punctuation): ``'hello .'`` -> ``hxaxll' ow.``.
+    - With no word in the open clause the mark is spoken by name:
+      ``'.'`` -> "period", ``','`` -> "comma", ``':'`` -> "colon",
+      ``';'`` -> "semi#colon", ``'!'`` -> "exclamation point",
+      ``'?'`` -> "question mark". Name words are invisible to the
+      attach rule -- marks following a name are spoken by name too
+      (``'... !'`` -> "period exclamation point").
+    - Dot runs never attach. ``..`` becomes "period" + an attached
+      ``.`` terminator (the LTS splits the 2-dot word into the ``.``
+      word plus ``.`` right-punct) while ``...`` / ``....`` collapse
+      to the bare "period" word with NO terminator even after a word
+      (``'hello ...'`` -> "hello period"; the utterance-final PERIOD
+      then comes from the PH task's flush, ``ph_task.c`` line 738).
+      Runs of 5+ dots hit a C-side parser bug (the ``cm_pars`` dot
+      buffer degenerates to a lone ``t`` word) and stay on the legacy
+      pause path here.
+
+    Returns ``None`` for anything that is not a whole-chunk mark this
+    port models -- the caller falls through to the regular tokenizer.
+    """
+    if not chunk or any(c not in ".,;:!?" for c in chunk):
+        return None
+    if all(c == "." for c in chunk):
+        n_dots = len(chunk)
+        if n_dots == 1:
+            if clause_has_word:
+                return [Token(TokenKind.PAUSE_LONG, ".")]
+            return [Token(TokenKind.WORD, "__PUNCT_NAME_PERIOD__")]
+        if n_dots == 2:  # noqa: PLR2004 — the C parser's 2-dot word
+            return [
+                Token(TokenKind.WORD, "__PUNCT_NAME_PERIOD__"),
+                Token(TokenKind.PAUSE_LONG, "."),
+            ]
+        if n_dots <= 4:  # noqa: PLR2004 — 3-4 dots collapse to one
+            return [Token(TokenKind.WORD, "__PUNCT_NAME_PERIOD__")]
+        return None
+    if len(chunk) != 1:
+        return None  # mixed punctuation run: keep the legacy path.
+    if clause_has_word:
+        kind = TokenKind.PAUSE_LONG if chunk in "!?" else TokenKind.PAUSE_SHORT
+        return [Token(kind, chunk)]
+    if chunk == ",":
+        return [Token(TokenKind.WORD, "__PUNCT_NAME_COMMA__")]
+    if chunk == ":":
+        return [Token(TokenKind.WORD, "__PUNCT_NAME_COLON__")]
+    if chunk == ";":
+        return [
+            Token(TokenKind.WORD, "__PUNCT_NAME_SEMI__"),
+            Token(TokenKind.PAUSE_SHORT, "#"),
+            Token(TokenKind.WORD, "__PUNCT_NAME_SEMI_COLON_TAIL__"),
+        ]
+    if chunk == "!":
+        return [
+            Token(TokenKind.WORD, "__PUNCT_NAME_EXCLAMATION__"),
+            Token(TokenKind.WORD, "__PUNCT_NAME_POINT__"),
+        ]
+    # ``?`` is the only remaining member of the mark set.
+    return [
+        Token(TokenKind.WORD, "__PUNCT_NAME_QUESTION__"),
+        Token(TokenKind.WORD, "__PUNCT_NAME_MARK__"),
+    ]
+
+
+def _open_clause_has_word(tokens: list[Token]) -> bool:
+    """True when the still-open clause already carries a real word.
+
+    Walks ``tokens`` backwards: a WORD closes the search as a hit, any
+    pause/punctuation token closes it as a miss (the clause was
+    terminated). A spoken-punctuation-name word (``__PUNCT_NAME_*__``)
+    also closes it as a miss: the mark it stands for is MARK_clause in
+    the C parser, so the clause dispatches right after it and a
+    following mark is spoken by name too (``'. .'`` -> "period period",
+    ``'hello ... !'`` -> "hello period exclamation point"). The ``#``
+    syllable-break marker is transparent (intra-word, e.g. the hyphen-
+    compound path).
+    """
+    for tok in reversed(tokens):
+        if tok.kind is TokenKind.WORD:
+            return not tok.text.startswith("__PUNCT_NAME_")
+        if tok.text == "#":
+            continue
+        return False
+    return False
+
+
 def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror C's per-token dispatch
     text: str, *, lang: str = "us", lts_fallback: bool = True
 ) -> bytes:
@@ -1399,6 +1502,49 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         ],
         "__NUM_EIGHTEEN__": ["EY1", "__PUNCT__*", "T", "IY1", "N"],
         "__NUM_NINETEEN__": ["N", "AY1", "N", "__PUNCT__*", "T", "IY1", "N"],
+        # Spoken-punctuation-name sentinels (issue #315). A whole-chunk
+        # punctuation mark with no word before it in the open clause is
+        # spoken by name: the C ``cm_pars``/``cm_text`` stage routes the
+        # char through as its own word and ``ls_spel`` spells it via the
+        # language typing table (``usa_type.tab`` -> ``typing_table[c]``
+        # in ``ls_spel.c`` line 164). The table's phonemic strings carry
+        # DIFFERENT stress/vowel patterns than the dictionary words
+        # ("Eksklxm'eSxn pOnt" has an unstressed "point" and the AX
+        # schwa where the dictionary's "exclamation point" uses
+        # ``p ' oyn t`` and IX), so every name is hard-coded here from
+        # the typing-table rendering (each verified byte-identical to
+        # ``convert_to_phonemes`` on the isolated mark).
+        # "p'irixd" -> ``p ' iyr iyaxd``.
+        "__PUNCT_NAME_PERIOD__": ["P", "IY1", "R", "IY0", "AX0", "D"],
+        # "k'amx" -> ``k ' aam ax``.
+        "__PUNCT_NAME_COMMA__": ["K", "AA1", "M", "AX0"],
+        # "k'olxn" -> ``k ' owllaxn``.
+        "__PUNCT_NAME_COLON__": ["K", "OW1", "L", "AX0", "N"],
+        # "s'Emi" -> ``s ' ehm iy`` (first half of "s'Emi#kolxn").
+        "__PUNCT_NAME_SEMI__": ["S", "EH1", "M", "IY0"],
+        # "kolxn" unstressed second half of "s'Emi#kolxn" ->
+        # ``k owllaxn`` (the ``:`` name above is stressed).
+        "__PUNCT_NAME_SEMI_COLON_TAIL__": ["K", "OW0", "L", "AX0", "N"],
+        # "Eksklxm'eSxn" -> ``ehk s k llaxm ' eyshaxn``.
+        "__PUNCT_NAME_EXCLAMATION__": [
+            "EH0",
+            "K",
+            "S",
+            "K",
+            "L",
+            "AX0",
+            "M",
+            "EY1",
+            "SH",
+            "AX0",
+            "N",
+        ],
+        # "pOnt" (unstressed) -> ``p oyn t``.
+        "__PUNCT_NAME_POINT__": ["P", "OY0", "N", "T"],
+        # "kw'EsCxn" -> ``k w ' ehs chaxn``.
+        "__PUNCT_NAME_QUESTION__": ["K", "W", "EH1", "S", "CH", "AX0", "N"],
+        # "mark" (unstressed) -> ``m aar k``.
+        "__PUNCT_NAME_MARK__": ["M", "AA0", "R", "K"],
         # Title-abbreviation sentinels (see ``title_abbrevs`` below).
         # ``Dr.`` reads as ``d aak t rr`` (unstressed AA + K + T + ER)
         # -- subtly different from the spelled-out word "doctor" which
@@ -1870,6 +2016,16 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # ``kernel.text.tokenize`` handle it.
         tokens: list[Token] = []
         for chunk in seg.body.split():
+            # Whole-chunk punctuation (issue #315): attach to the open
+            # clause's word or speak the mark by name, exactly as the
+            # C ``cm_pars``/``ls_spel`` pair does. ``None`` means the
+            # chunk is not an isolated mark -- fall through.
+            punct_tokens = _isolated_punct_tokens(
+                chunk, clause_has_word=_open_clause_has_word(tokens)
+            )
+            if punct_tokens is not None:
+                tokens.extend(punct_tokens)
+                continue
             # Mimic tokenize's punctuation stripping so we can spot a
             # digit-only payload like ``5.``, ``(123)`` or ``"42"``.
             inner = chunk
