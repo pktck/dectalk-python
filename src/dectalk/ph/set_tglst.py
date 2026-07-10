@@ -42,11 +42,10 @@ previously carried (issue #297; both mattered on real prompts):
 
 from __future__ import annotations
 
-from dectalk.include.usp_codes import USP_AX, USP_DX, USP_EH, USP_N, USP_YU
+from dectalk.include.usp_codes import USP_DX, USP_YU
 from dectalk.ph.dph_settar_st import DphSettarSt
 from dectalk.ph.dph_t import DphT
 from dectalk.ph.feature_bits import (
-    F_FUNC,
     FBOUNDARY,
     FFINALSYL,
     FMEDIALSYL,
@@ -64,74 +63,69 @@ _TGLST_CANCEL: int = -200
 _TGLST_PROMOTE_FRAME: int = 8
 
 
-def set_tglst(p_dph_t: DphT) -> None:  # noqa: PLR0912
+def set_tglst(p_dph_t: DphT) -> None:
     """Tick / trigger the glottal-stop gesture timer.
 
     Branch count exceeds Ruff's PLR0912 threshold; the cascade
     mirrors the C source's rule structure and splitting it would
-    obscure per-line parity with ph_drwt02.c.
+    obscure per-line parity with ph_drwt01.c.
 
-    Faithful translation of:
+    Faithful translation of the active variant (ph_drwt01.c:3118,
+    ``ENGLISH`` defined, ``GERMAN`` undefined):
 
     .. code-block:: c
 
-        static void set_tglst(PDPH_T pDph_t) {
+        static void set_tglst (PDPH_T pDph_t) {
             PDPHSETTAR_ST pDphsettar = pDph_t->pSTphsettar;
             if (pDphsettar->nframg >= pDphsettar->segdrg) {
                 pDphsettar->nframg -= pDphsettar->segdrg;
-                pDphsettar->segdrg = pDph_t->allodurs[++pDphsettar->npg];
+                pDphsettar->segdrg = pDph_t->allodurs[++(pDphsettar->npg)];
                 /* Cancel glottal stop gesture that occurred at last phone onset */
                 if (pDphsettar->tglstp == 0)
                     pDphsettar->tglstp = -200;
                 /* Start second half of glottal stop gesture */
-                if (pDphsettar->tglstp > 0) {
+                if (pDphsettar->tglstp > 0)
                     pDphsettar->tglstp = 0;
-                }
-                /* Insert glottal stop after cur seg */
+                /* BATS 674 EAB 5/13/98 This code needs to be outside of ifdef */
                 pDphsettar->tglstn = -200;
-                if (pDph_t->allofeats[pDphsettar->npg-1] & F_FUNC) {
-                    // an
-                    if (pDph_t->allophons[pDphsettar->npg] == USP_N
-                        && pDph_t->allophons[pDphsettar->npg-1] == USP_EH
-                        && (pDph_t->allofeats[pDphsettar->npg-1] & FBOUNDARY) >= FWBNEXT)
-                            return;
-                    // a
-                    if (pDph_t->allophons[pDphsettar->npg] == USP_AX
-                        && (pDph_t->allofeats[pDphsettar->npg] & FBOUNDARY) >= FWBNEXT)
-                            return;
-                }
-                if (((phone_feature(pDph_t, pDph_t->allophons[pDphsettar->npg+1])
+                /* Insert glottal stop after cur seg */
+                if (((phone_feature(pDph_t, pDph_t->allophons[pDphsettar->npg + 1])
                       & FVOWEL) IS_PLUS)
-                    && ((pDph_t->allofeats[pDphsettar->npg+1]
+                    && ((pDph_t->allofeats[pDphsettar->npg + 1]
                          & (FMEDIALSYL & FFINALSYL)) IS_MINUS)
                     && ((pDph_t->allofeats[pDphsettar->npg]
                          & FBOUNDARY) >= FWBNEXT)
-                    && (pDph_t->allophons[pDphsettar->npg+1] != USP_YU)) {
+                    && (pDph_t->allophons[pDphsettar->npg + 1] != USP_YU)) {
+                    /* If cur seg is vowel, don't do it unless vowel ident, or pbound */
                     if ((phone_feature(pDph_t, pDph_t->allophons[pDphsettar->npg])
                          & FSYLL) IS_PLUS) {
                         if (((pDph_t->allophons[pDphsettar->npg]
-                              == pDph_t->allophons[pDphsettar->npg+1])
-                            && ((pDph_t->allofeats[pDphsettar->npg+1]
+                              == pDph_t->allophons[pDphsettar->npg + 1])
+                            && ((pDph_t->allofeats[pDphsettar->npg + 1]
                                  & FSTRESS_1) IS_PLUS))
                             || ((pDph_t->allofeats[pDphsettar->npg]
                                  & FBOUNDARY) >= FVPNEXT)) {
                             pDphsettar->tglstn = pDphsettar->segdrg;
                         }
                     }
+                    /* If next segment primary stressed,
+                     * and if curr seg a consonant other than a plosive, do it
+                     */
                     else if (((phone_feature(pDph_t,
                                 pDph_t->allophons[pDphsettar->npg]) & FPLOSV) IS_MINUS)
                         && (pDph_t->allophons[pDphsettar->npg] != USP_DX)
-                        && ((pDph_t->allofeats[pDphsettar->npg+1]
+                        && ((pDph_t->allofeats[pDphsettar->npg + 1]
                              & FSTRESS_1) IS_PLUS)) {
-                        // pDphsettar->tglstn = pDphsettar->segdrg;  (commented out)
+                        pDphsettar->tglstn = pDphsettar->segdrg;
                     }
                 }
-                if ((pDphsettar->npg + 1 <= pDph_t->nallotot)
-                    && (place(pDph_t->allophons[pDphsettar->npg+1])
-                        & FGLOTTAL) IS_PLUS) {
+                /* And at beginning and end of glottalized segs TQ and Q */
+                if ((us_place[pDph_t->allophons[pDphsettar->npg + 1] & PVALUE]
+                     & FGLOTTAL) IS_PLUS) {
                     pDphsettar->tglstn = pDphsettar->segdrg;
                 }
-                if ((place(pDph_t->allophons[pDphsettar->npg]) & FGLOTTAL) IS_PLUS) {
+                if ((us_place[pDph_t->allophons[pDphsettar->npg] & PVALUE]
+                     & FGLOTTAL) IS_PLUS) {
                     pDphsettar->tglstn = pDphsettar->segdrg;
                 }
             }
@@ -152,14 +146,16 @@ def set_tglst(p_dph_t: DphT) -> None:  # noqa: PLR0912
       two constants (0o20 & 0o30 = 0o20). This looks like a C bug
       — the author likely meant ``FMEDIALSYL | FFINALSYL`` — but
       we preserve it for bit-parity.
-    - The middle ``else if`` branch contains a commented-out
-      assignment in the C source (see ``//pDphsettar->tglstn = ...``);
-      we preserve the empty branch but it has no effect.
-    - The ``USP_*`` constants mirror the C ``#define USP_N`` etc.
-      values from ``ph_def.h``.
-    - The ``pDphsettar->npg + 1 <= pDph_t->nallotot`` guard
-      protects the ``allophons[npg+1]`` read in the FGLOTTAL test
-      from running off the end of the allophone buffer.
+    - The consonant ``else if`` branch is **live** in the active
+      ph_drwt01.c variant (the HLSYN ph_drwt02.c carries the same
+      assignment commented out — the previous wrong-variant port
+      never glottalised consonant→stressed-vowel word onsets).
+    - The active variant has **no** function-word "a"/"an" early
+      returns (those are ph_drwt02.c-only).
+    - The C reads ``allophons[npg + 1]`` unguarded; the Python port
+      adds list-bounds guards so a one-past-end walk reads the
+      zero-filled tail of the preallocated arrays instead of
+      raising ``IndexError`` (and never negative-indexes).
 
     Args:
         p_dph_t: PH thread state (mutated in-place).
@@ -191,26 +187,6 @@ def set_tglst(p_dph_t: DphT) -> None:  # noqa: PLR0912
         # to segdrg if any of the rules below fire).
         pdphsettar.tglstn = _TGLST_CANCEL
 
-        # Bail-out cases for function-word vowels "a" and "an".
-        if 0 <= npg - 1 < len(allofeats) and (allofeats[npg - 1] & F_FUNC) != 0:
-            # "an" — N preceded by EH and a strong boundary on EH.
-            if (
-                0 <= npg < len(allophons)
-                and 0 <= npg - 1 < len(allophons)
-                and allophons[npg] == USP_N
-                and allophons[npg - 1] == USP_EH
-                and (allofeats[npg - 1] & FBOUNDARY) >= FWBNEXT
-            ):
-                return
-            # "a" — AX with a strong boundary.
-            if (
-                0 <= npg < len(allophons)
-                and 0 <= npg < len(allofeats)
-                and allophons[npg] == USP_AX
-                and (allofeats[npg] & FBOUNDARY) >= FWBNEXT
-            ):
-                return
-
         # Main glottal-stop-insertion rule. Triggers when the *next*
         # segment is a vowel, *not* in a medial/final syllable, the
         # current segment is followed by a word-or-stronger boundary,
@@ -239,26 +215,26 @@ def set_tglst(p_dph_t: DphT) -> None:  # noqa: PLR0912
                 strong_boundary = (allofeats[npg] & FBOUNDARY) >= FVPNEXT
                 if same_vowel_stressed or strong_boundary:
                     pdphsettar.tglstn = pdphsettar.segdrg
-            # Otherwise (current is a consonant): the C source has a
-            # commented-out write here for the case of a non-plosive,
-            # non-flap consonant followed by a primary-stressed
-            # vowel. We preserve the branch but it has no effect.
+            # Otherwise (current is a consonant): if the next segment
+            # is primary-stressed and the current is a non-plosive,
+            # non-flap consonant, schedule the gesture. LIVE in the
+            # active ph_drwt01.c variant (ph_drwt02.c carries this
+            # assignment commented out — the old wrong-variant port
+            # silently skipped it; issue #297, e.g. the M→AR letter
+            # boundary in "MRI").
             elif (
                 cur_phone_in_range
                 and (phone_feature(allophons[npg]) & FPLOSV) == 0
                 and allophons[npg] != USP_DX
                 and (allofeats[npg + 1] & FSTRESS_1) != 0
             ):
-                # pdphsettar.tglstn = pdphsettar.segdrg  # commented out in C
-                pass
+                pdphsettar.tglstn = pdphsettar.segdrg
 
         # Also glottalise when the *next* phone has a glottal place
-        # of articulation (TQ, Q).
-        if (
-            npg + 1 <= p_dph_t.nallotot
-            and 0 <= npg + 1 < len(allophons)
-            and (place(allophons[npg + 1]) & FGLOTTAL) != 0
-        ):
+        # of articulation (TQ, Q). The active C indexes allophons
+        # [npg + 1] unguarded; the list-bounds check below only
+        # prevents an IndexError past the preallocated tail.
+        if 0 <= npg + 1 < len(allophons) and (place(allophons[npg + 1]) & FGLOTTAL) != 0:
             pdphsettar.tglstn = pdphsettar.segdrg
 
         # And when the *current* phone has a glottal place of
