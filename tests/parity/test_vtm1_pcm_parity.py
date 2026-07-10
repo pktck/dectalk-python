@@ -199,6 +199,10 @@ def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch)
 #     variants re-derive the runtime-dictionary root (STOP's AO
 #     vowel, the devoiced T tail) and pure-verb roots emit the
 #     root entry's ``)`` VPSTART marker (issue #310).
+#   - "you & me" / "a = b" / "email me @ work" / "one# two": symbol
+#     tokens (standalone and word-attached) speaking via their
+#     Dic_us.txt rows, plus the primary-stressed single-letter
+#     reading of "b" (issue #244).
 _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "hi",
     "hello",
@@ -236,6 +240,10 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "she grabbed it",
     "we planned a trip",
     "he admitted it",
+    "you & me",
+    "a = b",
+    "email me @ work",
+    "one# two",
 )
 
 

@@ -127,6 +127,64 @@ _ED_SUFFIX_FAMILY: tuple[str, ...] = (
 )
 
 
+# Issue #244 representatives: symbol -> runtime-dictionary expansion.
+# Each row names a distinct mechanism in the fix:
+#   - "you & me" / "a = b" / "email me @ work" / "one + two": the
+#     standalone-symbol word forms whose phonemes come from the
+#     Dic_us.txt symbol rows, NOT the spelled word ("&" reads a
+#     stressed ``' aen d`` without the ``^ (`` function-word markers;
+#     "@" reads stressed ``' aet``; "=" carries the syllabic EL;
+#     "+" keeps the voiceless final S).
+#   - "hello / world" / "fifty % done": the two symbol forms that were
+#     already byte-exact before the fix (regression guard).
+#   - "one+ two" / "one# two" / "one/ two" / "one^ two": word-attached
+#     symbols split out of the chunk (the census-confirmed set).
+#   - "a+b" / "A&B": mid-word splits (the article rule still applies
+#     to the split-out "a"/"A").
+#   - "x / y" / "vitamin C": standalone letters read as their
+#     primary-stressed letter names in every position.
+#   - "and/or": whole-token dictionary entries beat the splitter.
+_SYMBOL_EXPANSION_FAMILY: tuple[str, ...] = (
+    "you & me",
+    "one + two",
+    "a = b",
+    "email me @ work",
+    "hello / world",
+    "fifty % done",
+    "two * three",
+    "one # two",
+    "one ^ two",
+    "one+ two",
+    "one# two",
+    "one/ two",
+    "one^ two",
+    "a+b",
+    "A&B",
+    "x / y",
+    "vitamin C",
+    "and/or",
+)
+
+
+@pytest.mark.parametrize("text", _SYMBOL_EXPANSION_FAMILY, ids=list(_SYMBOL_EXPANSION_FAMILY))
+def test_symbol_expansion_family_matches_c(text: str, capi: CAPI) -> None:
+    """Symbol word-forms and letter names are byte-identical (issue #244).
+
+    Pins the symbol -> runtime-dictionary expansion chain: standalone
+    and word-attached symbol tokens speak via their Dic_us.txt rows
+    (``&`` -> ``' aen d``, ``^`` -> ``k ' ehr axt``, ...), single
+    letters read as primary-stressed letter names, and whole-token
+    dictionary entries (``and/or``) keep beating the splitter.
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"symbol-expansion mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
+
+
 @pytest.mark.parametrize("text", _ED_SUFFIX_FAMILY, ids=list(_ED_SUFFIX_FAMILY))
 def test_ed_suffix_family_matches_c(text: str, capi: CAPI) -> None:
     """Doubled-consonant -ed/-ing family is byte-identical (issue #310).
