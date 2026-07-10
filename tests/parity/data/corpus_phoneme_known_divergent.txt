@@ -1,8 +1,5 @@
 # Corpus prompts whose Python phoneme stream is a known divergence from the
 # C oracle (issue #281 burn-down list). One prompt per line, sorted.
 # Regenerate: uv run python scripts/corpus_phoneme_sweep.py --update-known-list
-# Verified against a fresh oracle on 2026-07-10 (issue #295 homograph
-# burn-down): 2 prompts / 133,641 corpus — possessive-`its` secondary
-# stress only, owned by the #280 runtime stress-rules work.
-don't judge a book by its cover
-every dog has its day
+# Verified against a fresh oracle on 2026-07-10 (issue #280 possessive-its
+# + first-verbs close-out): 0 prompts / 133,641 corpus — the list is empty.
