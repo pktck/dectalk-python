@@ -184,6 +184,10 @@ _CONSONANT_RULES: Final[tuple[_Rule, ...]] = (
     #   pn-  ->  "n"   (pneumonia, pneumatic)
     #   ps-  ->  "s"   (psychic, psalm, pseudo, psyche)
     #   mn-  ->  "n"   (mnemonic)
+    #   kn-  ->  "n"   (knit, knee, knock, knot; C oracle: ``knit`` ->
+    #                   ``n ' iht`` — issue #310's knitted/knitting)
+    #   wr-  ->  "r"   (wrap, wrist; C oracle: ``wrap`` -> ``r ' aep``
+    #                   — issue #310's wrapped/wrapping)
     #
     # Each rule consumes a single letter and emits nothing; the following
     # letter is then matched by its normal rule. The empty ``left``
@@ -194,6 +198,8 @@ _CONSONANT_RULES: Final[tuple[_Rule, ...]] = (
     _Rule("P", "^", "N", ()),
     _Rule("P", "^", "S", ()),
     _Rule("M", "^", "N", ()),
+    _Rule("K", "^", "N", ()),
+    _Rule("W", "^", "R", ()),
     # ---- Latinate suffix palatalisation -------------------------------
     # The C LTS, via the suffix tables in `l_us_suf.c`, palatalises
     # consonant + front-vowel clusters at the end of Latinate words:
