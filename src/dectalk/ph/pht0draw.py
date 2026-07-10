@@ -62,7 +62,7 @@ from dectalk.ph.inton_constants import SINGING
 from dectalk.ph.linear_interp import linear_interp
 from dectalk.ph.math_helpers import mlsh1, muldv
 from dectalk.ph.numeric_constants import FRAC_ONE
-from dectalk.ph.param_indices import OUT_T0
+from dectalk.ph.param_indices import OUT_DU, OUT_PH, OUT_T0
 from dectalk.ph.phoneme_features import FPLOSV, FVOICD
 from dectalk.ph.set_tglst import set_tglst
 from dectalk.ph.set_user_target import set_user_target
@@ -313,6 +313,23 @@ def pht0draw(ph_tts: TtsHandle) -> None:  # noqa: PLR0912, PLR0915 -- mirror C s
     st.nfram += 1
     st.nframs += 1
     st.nframg += 1
+
+    # --- 13. OUT_PH / OUT_DU metadata overwrite — ph_drwt01.c:3021-3024 ---
+    # (``#ifndef MSDOS``, active.) pht0draw re-stamps the packet metadata
+    # cells from its OWN allophone pointer (``np_drawt0``, the F0-segment
+    # walk) every frame, overriding the driver's phone-advance writes
+    # (ph_claus.c:465-472; ``OUT_PH2`` keeps the driver value). This is
+    # NOT audio-neutral, despite the #277 classification: the VTM's
+    # limit-cycle ramp-down (vtm1.c:1318) gates on ``(variabpars[OUT_PH]
+    # & PVALUE) == 0``, so silence muting follows the F0-segment pointer
+    # — which leads/lags the driver's ``nphone`` by a few frames — not
+    # the driver phone. Without this overwrite the ramp-down engages at
+    # the wrong frame around every silence, diverging ~1100-1300 samples
+    # per utterance-final (and comma-pause) boundary (issue #297).
+    np = st.np_drawt0
+    if 0 <= np < len(p_dph_t.allophons) and len(p_dph_t.parstochip) > OUT_DU:
+        p_dph_t.parstochip[OUT_PH] = p_dph_t.allophons[np]
+        p_dph_t.parstochip[OUT_DU] = p_dph_t.allodurs[np]
 
 
 __all__ = ["pht0draw"]
