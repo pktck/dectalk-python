@@ -335,10 +335,41 @@ def all_phsort(phTTS: TtsHandle) -> int:
                     break
                 m += 1
 
-        # C lines 1192-1230 (HLSYN path skipped at build time; original
-        # !HLSYN && !CHANGES_AFTER_V43 dangling-stress fixer lives here).
-        # The HLSYN build doesn't re-walk dangling stress in main loop 1;
-        # citation only.
+        # C lines 1190-1230: dangling-stress fixer. Guard is
+        # ``#if !defined(HLSYN) && !defined(CHANGES_AFTER_V43)`` +
+        # ``ENGLISH_US`` — ACTIVE on the shipped/oracle build (the
+        # PARITY-METHOD §3 polarity; the previous "HLSYN build doesn't
+        # re-walk dangling stress / citation only" stub read the guard
+        # inverted, issue #311). A stress mark (S2/S1/SEMPH) counts
+        # toward ``nstresses`` (S2 excluded), then the following
+        # symbols are scanned: if a boundary stronger than WBOUND
+        # arrives before any real phone, the stress dangles at the end
+        # of a syllable/word and is deleted (uncounting it); if the
+        # first real phone is not syllabic, the mark is moved to the
+        # right place via ``move_stdangle``.
+        sym_val = p_dph_t.symbols[n] & PVALUE
+        if S2 <= sym_val <= SEMPH:
+            if sym_val != S2:
+                nstresses += 1  # count stresses to this point
+            stress_zapped = False
+            m = n + 1
+            while (
+                m < p_dph_t.nsymbtot
+                and m < len(p_dph_t.symbols)
+                and (p_dph_t.symbols[m] & PVALUE) >= MAX_PHONES
+            ):
+                mval = p_dph_t.symbols[m] & PVALUE
+                if WBOUND < mval < NEW_PARAGRAPH and mval != HYPHEN:
+                    # Ignore stress at end of syllable or word.
+                    nstresses -= 1
+                    delete_symbol(p_ksd_t, p_dph_t, pst_phsettar, n)
+                    stress_zapped = True
+                    break
+                m += 1
+            if not stress_zapped:
+                mph = p_dph_t.symbols[m] if m < len(p_dph_t.symbols) else 0
+                if (phone_feature(mph) & FSYLL) == 0:
+                    move_stdangle(p_ksd_t, p_dph_t, pst_phsettar, n)
 
         # Refresh the cached symbol: the C source re-reads
         # ``symbols[n]`` at every check below, and the PPSTART
@@ -407,10 +438,10 @@ def all_phsort(phTTS: TtsHandle) -> int:
         if sym_val == QUEST:
             p_dph_t.cbsymbol = 1
 
-        # Bookkeeping for the stress counter — primary / emphasis count.
-        # Mirrors the C "stzapped" fall-through on the post-V43 build.
-        if sym_val in (S1, SEMPH):
-            nstresses += 1
+        # (The former hand-rolled ``sym_val in (S1, SEMPH)`` stress
+        # counter is superseded by the faithful C-lines-1190-1230 port
+        # above, which counts S1/SEMPH before the dangling-stress scan
+        # and un-counts a zapped mark.)
 
         n += 1
 
