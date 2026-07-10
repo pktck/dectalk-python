@@ -456,13 +456,21 @@ def us_phalloph(phTTS: TtsHandle) -> None:
 
                 # Fall now if last stress in clause.
                 if remaining_stresses_til(p_dph_t, n, FCBNEXT) == 0:
-                    # Promote last-secondary if at phrase boundary.
+                    # Promote last-secondary if at phrase boundary. The hat
+                    # fall is the *else* of this promote test: in
+                    # ph_aloph1.c lines 1386-1452 the GERMAN/SPANISH
+                    # ``clausetype == DECLARATIVE`` block between the two is
+                    # preprocessed away on ENGLISH_US, so the C ``else``
+                    # binds to the ``promote_last_2`` if. When a secondary
+                    # stress later in the phrase is promoted to primary
+                    # (e.g. the verb in "he must tell"), the hat stays up
+                    # and falls on that promoted stress instead (#307).
                     if (curr_instruc & FBOUNDARY) == FVPNEXT and promote_last_2(p_dph_t, n):
                         pass  # Last secondary stress of next phrase promoted.
-                    # English (no GERMAN/SPANISH branch): always fall.
-                    curr_outstruc |= FHAT_ENDS
-                    hatposition = AT_BOTTOM_OF_HAT
-                    stresses_in_phrase = 0
+                    else:
+                        curr_outstruc |= FHAT_ENDS
+                        hatposition = AT_BOTTOM_OF_HAT
+                        stresses_in_phrase = 0
 
                 # Fall if last str in phrase and both phrases have 2+ str.
                 if (

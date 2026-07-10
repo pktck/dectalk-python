@@ -535,42 +535,31 @@ def _speak_via_python_full(
             )
             continue
 
-        # Split the segment body into individual sentences and render
-        # each as its own declination clause (issue #218 COMMIT 2). The
-        # C kernel processes one ``.`` / ``!`` / ``?`` terminated segment
-        # per ``phclause()`` call, so each sentence gets a fresh F0
-        # reset (phinton baseline), its own leading-silence prefix, and
-        # its own sentence-final long pause -- whereas a single
-        # ``_render_clause_full`` over the whole body renders them as one
-        # continuous declination contour and collapses the inter-sentence
-        # silence. Measured against the C oracle, concatenating the
-        # per-sentence renders matches ``say -a`` to within ~1 frame
-        # (``hello. world.``: C 21016 / Py-sum 20945). Comma / semicolon
-        # clauses do NOT split here -- ``split_sentences`` only breaks on
-        # sentence terminators, so a comma-only body like ``one, two,
-        # three.`` stays a single clause (its internal pauses are handled
-        # by the boundary-feature fix-up in ``_render_clause_full``).
-        #
-        # ``split_sentences`` returns the whole body unchanged as a single
-        # element when there is no internal sentence terminator, so this
-        # is byte-identical to the previous single-call path for ordinary
-        # one-sentence prompts.
-        sentences = split_sentences(seg.body)
-        if not sentences:
-            # Body with no speakable content (e.g. whitespace only):
-            # fall back to rendering it directly so behaviour matches the
-            # pre-split path for degenerate inputs.
-            sentences = [(seg.body, False)]
-        for sentence_text, _is_question in sentences:
-            chunk = _render_clause_full(
-                sentence_text,
-                rate=seg.state.rate,
-                voice=seg_voice,
-                lang=lang,
-                lts_fallback=lts_fallback,
-            )
-            if chunk.size:
-                chunks.append(chunk)
+        # Render the whole segment body through ONE ``_render_clause_full``
+        # call. Its internal ``split_dectalk_stream_clauses`` loop hands
+        # the phoneme stream to the per-clause chain one COMMA / PERIOD /
+        # QUEST / EXCLAIM-terminated run at a time — the C ``kltask`` /
+        # ``speak_now`` shape — while keeping ONE ``DphT``, ONE
+        # ``send_pars`` delay pipeline, and ONE vtm1 synthesiser state
+        # across the utterance, exactly like the C engine's single PH
+        # thread + single VTM stream. The pre-#270 shape here (issue
+        # #218) text-split the body per *sentence* and rendered each as
+        # its own chunk: every chunk re-hard-init'd F0 (C soft-inits via
+        # ``init_clause``'s ``nf0ev = -1``, keeping the declination
+        # baseline falling across sentences), dropped one delay-buffer
+        # fill frame per sentence (C's ``send_pars`` ``initpardelay``
+        # fill happens ONCE per handle), and reset the vtm1 filter
+        # memories — diverging every multi-sentence utterance from the
+        # binary's continuous stream (issue #307).
+        chunk = _render_clause_full(
+            seg.body,
+            rate=seg.state.rate,
+            voice=seg_voice,
+            lang=lang,
+            lts_fallback=lts_fallback,
+        )
+        if chunk.size:
+            chunks.append(chunk)
 
     if not chunks:
         return np.zeros(0, dtype=np.int16)
