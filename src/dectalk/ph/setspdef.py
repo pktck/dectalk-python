@@ -192,20 +192,14 @@ def spd_chip_from_row(row: Sequence[int], speaker: int = 0) -> SpdChip:
 
     # F4 cascade chip word (lines 640-660): pre-scale by fnscale unless
     # the row zaps the formant; oversize frequencies zap both words.
-    if row[SPD_F4] == ZAPF:
-        f4_chip = ZAPF
-    else:
-        f4_chip = (row[SPD_F4] * fnscale) >> 12
+    f4_chip = ZAPF if row[SPD_F4] == ZAPF else (row[SPD_F4] * fnscale) >> 12
     b4_chip = row[SPD_B4]
     if f4_chip > _ZAP_THRESHOLD_11KHZ:
         f4_chip = ZAPF
         b4_chip = ZAPB
 
     # F5 cascade chip word (lines 662-698): same shape as F4.
-    if row[SPD_F5] == ZAPF:
-        f5_chip = ZAPF
-    else:
-        f5_chip = (row[SPD_F5] * fnscale) >> 12
+    f5_chip = ZAPF if row[SPD_F5] == ZAPF else (row[SPD_F5] * fnscale) >> 12
     b5_chip = row[SPD_B5]
     if f5_chip > _ZAP_THRESHOLD_11KHZ:
         f5_chip = ZAPF

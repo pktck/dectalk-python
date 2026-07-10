@@ -32,6 +32,38 @@ def test_name_alias_for_dv() -> None:
     assert segs[0].state.voice == "betty"
 
 
+def test_voice_name_shortcuts() -> None:
+    """``[:nX]`` shortcuts select the C command-table voices.
+
+    Mirrors ``c_us_cde.h`` lines 403-415 (``DCS_NAME_*`` escapes ->
+    ``usevoice`` speaker numbers). ``[:nw]`` is Whispery Willy — the
+    public ``willy`` preset name mapping to the ``wendy`` SPDEF row
+    (issue #302 cluster 3: these prompts previously fell through the
+    unknown-command path and rendered as Paul).
+    """
+    expected = {
+        "np": "paul",
+        "nb": "betty",
+        "nh": "harry",
+        "nf": "frank",
+        "nd": "dennis",
+        "nk": "kit",
+        "nu": "ursula",
+        "nr": "rita",
+        "nw": "willy",
+    }
+    for cmd, voice in expected.items():
+        segs = parse(f"[:{cmd}] hello")
+        assert segs[0].state.voice == voice, cmd
+
+
+def test_voice_shortcut_mid_stream_switches_segment_voice() -> None:
+    segs = parse("plain [:nr] rough part")
+    assert len(segs) == 2
+    assert segs[0].state.voice is None
+    assert segs[1].state.voice == "rita"
+
+
 def test_dv_parameter_form_does_not_set_voice() -> None:
     """``[:dv XX YY]`` design-voice params must not be read as a preset name.
 
