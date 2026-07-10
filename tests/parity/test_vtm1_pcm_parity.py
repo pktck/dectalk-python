@@ -187,6 +187,12 @@ def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch)
 #     clauses share the delay pipeline / F0 declination / synth
 #     state; ph_task's empty-clause suppression (nsymbtot > 1) drops
 #     the "..." empty clause — issue #307.
+#   - "a. b? c!" / "for. and? to!" / "a, for, and, to.": citation-mode
+#     lane — the LTS/sdic ``^`` SPECIALWORD marker arms per-clause
+#     ``docitation`` (ph_task.c:621), gating ph_aloph1.c's unreduce
+#     rules ("a"->EY at 718, "for"->OR at 725, "to"->UW at 889) for
+#     short clauses; cleared per clause at ph_claus.c:307 —
+#     issue #309.
 _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "hi",
     "hello",
@@ -216,6 +222,9 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "wait... what just happened?",
     "well, no...",
     "one. two. three.",
+    "a. b? c!",
+    "for. and? to!",
+    "a, for, and, to.",
 )
 
 
