@@ -177,28 +177,44 @@ and the shipped `say` binary**. The stop-hook gate runs
 Python pipeline (`kernel` → `cmd` → `lts` → `ph` → `vtm` → `hlsyn`)
 instead of `dectalk._capi`'s ctypes wrapper around `libtts_us.so`.
 
-Under `DECTALK_DISABLE_CAPI=1` + `DECTALK_FULL_PIPELINE=1` the
-pipeline runs end-to-end and renders through the `vtm1.c`-ported
-`speech_waveform_generator` by default (issue #272) — the same
-synthesiser the shipped `libtts_us.so` uses. This is the
-byte-exact-capable parity path. State as of 2026-07-10 (branch
-`claude/fix-307-final-residuals`, post #297/#302/#306/#307):
+Under `DECTALK_DISABLE_CAPI=1` the pipeline runs end-to-end and
+renders through the `vtm1.c`-ported `speech_waveform_generator` **by
+default** — the FULL+VTM1 path became the no-`_capi` default with
+issue #311 (previously it needed `DECTALK_FULL_PIPELINE=1`;
+`DECTALK_FULL_PIPELINE=0` now opts out to the legacy approximate
+path, the #272/#274 escape-hatch pattern one level up; non-US
+languages stay on the legacy path). This is the same synthesiser the
+shipped `libtts_us.so` uses and the byte-exact parity path. State as
+of 2026-07-10 (branch `claude/fix-311-corpus-wav`, post #307/#308/
+#311):
 
+- **FULL-CORPUS WAV CENSUS: 133,641 / 133,641 corpus prompts render
+  byte-identical WAVs (100%)** vs the shipped binary under plain
+  `DECTALK_DISABLE_CAPI=1` — the project goalpost as written
+  (`scripts/corpus_wav_sweep.py`, issue #311). The prior baseline
+  halted at prompt 2,506 (`would you like to`); the residual tail
+  collapsed to ONE root cause: `all_phsort`'s clause-final
+  function-word rule was ported without its "unreduce the vowel in
+  for/to" symbol rewrites (ph_sort.c:1142-1160). The census also
+  landed the previously-stubbed dangling-stress fixer
+  (ph_sort.c:1190-1230, a PARITY-METHOD §3 polarity inversion) and
+  the real `USP_W` chain-condition comparison (ph_sort.c:1131).
 - **500/500 (100%) of the stratified corpus sample renders
   byte-identical WAVs** vs the shipped binary (p50 = p90 = p99 =
   max |Δsamples| = 0; `scripts/measure_full_vtm1_sample.py`). The
-  final three root-cause clusters (#307): the hat-fall-as-else of
-  `promote_last_2` (ph_aloph1.c:1391-1452), the `MODE_CITATION`
-  boot default gating off the 'to'-flap (kernel/main.c:188 →
-  ph_aloph1.c:902), and per-sentence pipeline chunking vs the C's
-  single continuous `send_pars`→VTM stream.
+  final three root-cause clusters before the census (#307): the
+  hat-fall-as-else of `promote_last_2` (ph_aloph1.c:1391-1452), the
+  `MODE_CITATION` boot default gating off the 'to'-flap
+  (kernel/main.c:188 → ph_aloph1.c:902), and per-sentence pipeline
+  chunking vs the C's single continuous `send_pars`→VTM stream.
 - 28 named prompts are pinned as the **hard** byte-identical gate
   (`tests/parity/test_vtm1_pcm_parity.py::_BYTE_EXACT_PROMPTS`),
   one group per historical divergence cluster; per-frame F0,
   packet-metadata, and dump-feed suites are hard gates alongside.
 - History: 0/500 byte-exact as of 2026-07-06 (`f2aab30`); the #297
   wave reached 348/500; dev `2873d97` (post-#302/#306) measured
-  493/500; #307 closed the final 7.
+  493/500; #307 closed the final 7; #311 flipped the default and
+  closed the full-corpus tail.
 Setting `DECTALK_USE_VTM1=0` restores the legacy hlsyn render — it
 over-runs the C reference uniformly (`hello world`: 21450 vs 13845
 samples) and is retained only as a diagnostic escape hatch after
@@ -210,7 +226,9 @@ measured 0/15 corpus prompts at bit-parity with mean |Δsamples| ≈
 The `_capi` path remains the **hybrid** state: `dectalk.speak()`
 and `dectalk.to_wav()` go through the C library for bit-identical
 audio when `libtts_us.so` is available, and fall back to the
-approximate-or-faithful Python pipeline when it isn't. CI uses the
+**faithful** Python pipeline when it isn't (byte-identical across
+the full corpus census, per above; `DECTALK_FULL_PIPELINE=0`
+selects the legacy approximate pipeline instead). CI uses the
 hybrid path for `tests/parity/`; the stop-hook gate uses pure
 Python so the loop keeps porting until the pure-Python path
 matches.
