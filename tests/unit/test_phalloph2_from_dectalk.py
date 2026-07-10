@@ -17,7 +17,14 @@ from __future__ import annotations
 
 from dectalk.api.speak import text_to_dectalk_phonemes
 from dectalk.include.all_phon_counts import MAX_PHONES
-from dectalk.include.phoneme_codes import PERIOD, PFUSA, QUEST, WBOUND, USPhoneme
+from dectalk.include.phoneme_codes import (
+    PERIOD,
+    PFUSA,
+    QUEST,
+    SPECIALWORD,
+    WBOUND,
+    USPhoneme,
+)
 from dectalk.kernel.ksd_t import KsdT
 from dectalk.kernel.lang_codes import LANG_english
 from dectalk.ph.dph_settar_st import DphSettarSt
@@ -27,6 +34,8 @@ from dectalk.ph.tts_handle import TtsHandle
 from dectalk.ph.us_phalloph2 import (
     _dectalk_stream_to_symbols,
     phalloph2_from_dectalk,
+    phalloph2_from_symbols,
+    split_dectalk_stream_clauses,
 )
 
 
@@ -167,3 +176,94 @@ def test_clean_prompt_count_unchanged() -> None:
         "SIL",
     ], names
     assert n == 10
+
+
+# ---------------------------------------------------------------------------
+# Citation-mode wiring: SPECIALWORD -> docitation (issue #309).
+# ---------------------------------------------------------------------------
+
+
+def _make_handle() -> TtsHandle:
+    """Fresh engine handle in the same shape the synth path builds."""
+    p_dph_t = DphT()
+    p_dph_t.dipspec = [0] * 256
+    p_dph_t.parstochip = [0] * 64
+    p_dph_t.sprate = 180
+    p_dph_t.pSTphsettar = DphSettarSt()
+    handle = TtsHandle()
+    handle.p_ph_thread_data = p_dph_t
+    p_ksd_t = KsdT()
+    p_ksd_t.lang_curr = LANG_english
+    p_ksd_t.sprate = 180
+    handle.p_kernel_share_data = p_ksd_t
+    init_phclause(p_dph_t)
+    return handle
+
+
+def _clause_allophones(handle: TtsHandle, symbols: list[int], nsymbtot: int) -> list[str]:
+    """Run one clause through the chain and name its allophones."""
+    phalloph2_from_symbols(handle, symbols, nsymbtot)
+    p_dph_t = handle.p_ph_thread_data
+    assert isinstance(p_dph_t, DphT)
+    names: list[str] = []
+    for i in range(p_dph_t.nallotot):
+        offset = p_dph_t.allophons[i] & 0xFF
+        try:
+            names.append(USPhoneme(offset).name)
+        except ValueError:
+            names.append(f"?{offset}")
+    return names
+
+
+def test_splitter_keeps_specialword_in_its_clause() -> None:
+    """``a. b? c!`` -> the ``^`` marker lands in clause 0 only."""
+    clauses = split_dectalk_stream_clauses(text_to_dectalk_phonemes("a. b? c!"))
+    assert len(clauses) == 3
+    marker_hits = [any(s == SPECIALWORD for s in syms) for syms, _ in clauses]
+    assert marker_hits == [True, False, False], marker_hits
+
+
+def test_specialword_arms_citation_ax_becomes_ey() -> None:
+    """Clause-1 "a" of ``a. b? c!`` says citation-form EY, not reduced AX.
+
+    ph_task.c:621 sets ``docitation = 1`` on the SPECIALWORD marker; with
+    the MODE_CITATION boot default (#307) the ph_aloph1.c:718 unreduce
+    rule then rewrites the lone [AX] to [EY] (issue #309: the binary says
+    EY du=48 where the unwired Python said AX du=34).
+    """
+    handle = _make_handle()
+    clauses = split_dectalk_stream_clauses(text_to_dectalk_phonemes("a. b? c!"))
+    names = _clause_allophones(handle, *clauses[0])
+    assert "EY" in names and "AX" not in names, names
+
+    # ph_claus.c:307 clears the flag after the clause's phalloph visit.
+    p_dph_t = handle.p_ph_thread_data
+    assert isinstance(p_dph_t, DphT)
+    assert p_dph_t.docitation == 0
+
+
+def test_without_specialword_ax_stays_reduced() -> None:
+    """The same clause minus the ``^`` marker keeps the reduced AX."""
+    handle = _make_handle()
+    clauses = split_dectalk_stream_clauses(text_to_dectalk_phonemes("a. b? c!"))
+    symbols = [s for s in clauses[0][0] if s != SPECIALWORD]
+    names = _clause_allophones(handle, symbols, len(symbols))
+    assert "AX" in names and "EY" not in names, names
+
+
+def test_citation_does_not_leak_across_clauses() -> None:
+    """docitation is per-clause: clause 2 of ``a. b? c!`` is unaffected.
+
+    The SPECIALWORD in clause 0 must not leave citation mode armed for
+    later clauses (ph_claus.c:307 clears it after every phalloph visit).
+    """
+    clauses = split_dectalk_stream_clauses(text_to_dectalk_phonemes("a. b? c!"))
+
+    seq_handle = _make_handle()
+    _clause_allophones(seq_handle, *clauses[0])
+    seq_clause1 = _clause_allophones(seq_handle, *clauses[1])
+
+    solo_handle = _make_handle()
+    solo_clause1 = _clause_allophones(solo_handle, *clauses[1])
+
+    assert seq_clause1 == solo_clause1
