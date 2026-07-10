@@ -1,6 +1,11 @@
-"""``set_tglst`` helper from ph_drwt02.c.
+"""``set_tglst`` helper from ph_drwt01.c (active variant).
 
-Translated from ``src/dapi/src/ph/ph_drwt02.c`` lines 2270-2358.
+Translated from ``src/dapi/src/ph/ph_drwt01.c`` lines 3118-3202 — the
+**second** ``set_tglst`` definition, the one the active US
+``pht0draw`` (ph_drwt01.c:2381, non-HLSYN ``OLD_INTONATION_AND_TIMING``
+build) calls at line 2777. (The first definition at line 2015 belongs
+to the NWSNOAA/UK variant; the ``ph_drwt02.c:2270`` definition this
+module previously mirrored is the HLSYN build's.)
 
 Per-frame timer-and-trigger helper for the glottal-stop gesture
 (``tglstp`` / ``tglstn``). Called from ``pht0draw`` once per frame
@@ -17,10 +22,22 @@ to:
 
 The decision rules consult phoneme features (``FVOWEL``, ``FSYLL``,
 ``FPLOSV``, ``FGLOTTAL``) and boundary flags (``FBOUNDARY``,
-``FWBNEXT``, ``FVPNEXT``, ``FSTRESS_1``), plus per-phone exemptions
-for the function-word vowels ``a`` and ``an`` and the diphthong
-``/YU/`` (which Dectalk does *not* glottalise even at a strong
-boundary).
+``FWBNEXT``, ``FVPNEXT``, ``FSTRESS_1``), plus an exemption for the
+diphthong ``/YU/`` (which DECtalk does *not* glottalise even at a
+strong boundary).
+
+Differences vs the HLSYN ``ph_drwt02.c:2270`` variant this module
+previously carried (issue #297; both mattered on real prompts):
+
+- **No function-word "a"/"an" bail-outs.** The ``F_FUNC`` early
+  ``return`` block is HLSYN-only code; the active build has no such
+  exemption.
+- **The consonant branch is live.** For a non-plosive, non-flap
+  consonant followed by a primary-stressed vowel across a word
+  boundary, the active build *does* schedule the gesture
+  (``tglstn = segdrg``); the HLSYN file carries that assignment
+  commented out. (E.g. the letter boundary in ``MRI`` — M into
+  primary-stressed AR — glottalises in the shipped binary.)
 """
 
 from __future__ import annotations
