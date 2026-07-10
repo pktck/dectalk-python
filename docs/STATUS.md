@@ -215,10 +215,13 @@ of 2026-07-10 (branch `claude/fix-311-corpus-wav`, post #307/#308/
   wave reached 348/500; dev `2873d97` (post-#302/#306) measured
   493/500; #307 closed the final 7; #311 flipped the default and
   closed the full-corpus tail.
-Setting `DECTALK_USE_VTM1=0` restores the legacy hlsyn render — it
-over-runs the C reference uniformly (`hello world`: 21450 vs 13845
-samples) and is retained only as a diagnostic escape hatch after
-causing the #254 misdiagnosis. (History: the PR #60 baseline
+The former `DECTALK_USE_VTM1=0` legacy hlsyn render (it over-ran
+the C reference uniformly — `hello world`: 21450 vs 13845 samples —
+and caused the #254 misdiagnosis) was retired by #279 once the
+full corpus went byte-exact; the env var is now ignored. The hlsyn
+back-end itself remains for `synthesize_phonemes` / `[:phoneme
+on]` and the `DECTALK_FULL_PIPELINE=0` approximate pipeline.
+(History: the PR #60 baseline
 measured 0/15 corpus prompts at bit-parity with mean |Δsamples| ≈
 5856 (~531 ms); the 2026-05-22 F0 re-audit identified #121 /
 #122, both since landed.)

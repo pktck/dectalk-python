@@ -29,7 +29,6 @@ os.environ.setdefault("DECTALK_BIN", "/tmp/dectalk-oracle-bin")
 # Must be set before `import dectalk` (the #265 trap; PARITY-METHOD §4).
 os.environ["DECTALK_DISABLE_CAPI"] = "1"
 os.environ["DECTALK_FULL_PIPELINE"] = "1"
-os.environ["DECTALK_USE_VTM1"] = "1"
 
 import io
 import json

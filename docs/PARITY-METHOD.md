@@ -10,9 +10,9 @@ parity work, and before trusting any parity claim.**
 
 Goal: `DECTALK_DISABLE_CAPI=1` + the full pure-Python pipeline renders
 **byte-identical** WAVs vs the C `say` binary. The parity path is
-**FULL+VTM1** (`DECTALK_FULL_PIPELINE=1 DECTALK_USE_VTM1=1`); the
-non-VTM1 path over-runs uniformly and must never be used for parity
-measurements (see #254, and #272 which makes VTM1 the default).
+**FULL+VTM1** (`DECTALK_FULL_PIPELINE=1`; vtm1 is the only FULL-path
+render since #279 retired the legacy hlsyn render, which over-ran
+uniformly and caused the #254 misdiagnosis).
 
 Ladder for `hello world` (13845 samples), as of dev `22a8c16`:
 
@@ -69,16 +69,17 @@ disagree, the binary wins — the byte-exact binary is the spec, and the
 
 ## 4. Capture rules (the #265 trap)
 
-- Set `DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1
-  DECTALK_USE_VTM1=1` **before** `import dectalk` — or render in a
-  subprocess. Setting them after import silently measures the wrong
-  pipeline.
+- Set `DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1` **before**
+  `import dectalk` — or render in a subprocess. Setting them after
+  import silently measures the wrong pipeline.
 - **Sanity-check every capture**: `OUT_T0` must show ~120 Hz ramping
   on `hello world`. Flat ~110 Hz ⇒ wrong pipeline ⇒ discard the
   capture and every conclusion drawn from it.
 - Python per-frame capture: monkeypatch
-  `dectalk.ph.parstochip_to_frames.parstochip_to_llframe_delayed`
-  (pattern in `tests/parity/test_per_frame_f0.py`).
+  `dectalk.ph.parstochip_to_frames.send_pars_delaypars` — the
+  per-frame packet builder the driver calls with the raw
+  current/previous parstochip pair (the #279 capture seam; pattern
+  in `tests/parity/test_per_frame_f0.py`).
 - Oracle: the **shared** per-container build at
   `/tmp/dectalk-oracle-src` + `/tmp/dectalk-oracle-bin`. Never rebuild
   per-agent; `scripts/setup_c_oracle.sh` fetches a prebuilt tarball if

@@ -19,10 +19,6 @@ import pytest
 def _speak(text: str, monkeypatch: pytest.MonkeyPatch) -> np.ndarray:
     monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
     monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
-    # Pin the default render path (vtm1, issue #272) so an ambient
-    # DECTALK_USE_VTM1=0 escape hatch in the invoking environment
-    # can't silently flip these smoke tests onto the legacy path.
-    monkeypatch.delenv("DECTALK_USE_VTM1", raising=False)
     from dectalk.api.speak import _speak_via_python  # noqa: PLC0415
 
     return _speak_via_python(
@@ -51,13 +47,13 @@ def _speak(text: str, monkeypatch: pytest.MonkeyPatch) -> np.ndarray:
         # values. C reference targets (for context):
         # "hello world" → 13845, "test one two three" → ~14697.
         #
-        # Since issue #272 the default full-pipeline render is the vtm1
+        # Since issue #272 the full-pipeline render is the vtm1
         # path, whose sample counts sit close to the C reference
         # (measured: "hi" 9727, "hello world" 13845 == C,
-        # "good morning" 13490, "test one two three" 17750). The upper
-        # bounds keep the old headroom so a DECTALK_USE_VTM1=0
-        # escape-hatch A/B (legacy render over-runs uniformly, e.g.
-        # "hello world" 21450) still lands inside them.
+        # "good morning" 13490, "test one two three" 17750). The
+        # upper bounds keep the historical headroom from when the
+        # (now-retired, #279) legacy hlsyn render over-ran uniformly
+        # (e.g. "hello world" 21450); tightening them is optional.
         ("hi", 2000, 18000),
         ("hello world", 7000, 33000),
         ("good morning", 7000, 32000),

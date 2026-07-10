@@ -11,20 +11,26 @@ elaborate path: a one-frame "delay buffer" shuffles every parameter
 except ``AV``, ``TILT`` and ``T0`` by one frame, the parstochip is
 written into the SPC packet queue, and ``hlframe.c`` performs the HL
 → LL parameter conversion (formant adjustment, ag/agf/agm gating,
-etc.). The Python port now provides three paths:
+etc.). The Python port provides three paths:
 
+- :func:`send_pars_delaypars` — the production packet builder (issue
+  #275): applies the send_pars transformation and emits a raw
+  ``list[int]`` in parstochip layout, exactly what the C driver's
+  ``spcwrite`` ships to ``vtm1.c``. The FULL-pipeline driver loop
+  calls it once per emitted frame with the raw current/previous
+  parstochip pair — which also makes it the dedicated monkeypatch
+  capture seam for the per-frame diagnostics (issue #279).
 - :func:`parstochip_to_llframe_delayed` — the legacy direct-copy path
-  (no HL→LL gating) for the hlsyn back-end. Applies the send_pars
-  one-frame delay + ``lineartilt[]`` mapping while building the
-  LLFrame.
-- :func:`parstochip_to_llframe_via_hl` — the new path that builds an
+  (no HL→LL gating) for the hlsyn back-end. Applies the same
+  send_pars one-frame delay + ``lineartilt[]`` mapping while building
+  an :class:`~dectalk.hlsyn.llsyn.LLFrame`. No longer called by the
+  FULL pipeline (its hlsyn render retired with issue #279); retained
+  as the documented LLFrame-level mirror of the delay pattern for
+  diagnostics and its unit tests.
+- :func:`parstochip_to_llframe_via_hl` — builds an
   :class:`~dectalk.ph.hlsyn_structs.HLFrame` from parstochip and runs
   the full :func:`~dectalk.hlsyn.hlframe.hl_synthesize_ll_frame`
   conversion (AV/AH/AF gating, formant bandwidth adjustments, OQ/TL/DI).
-- :func:`send_pars_delaypars` — the vtm1-path packet builder (issue
-  #275): applies the same send_pars transformation but emits a raw
-  ``list[int]`` in parstochip layout, exactly what the C driver's
-  ``spcwrite`` ships to ``vtm1.c``.
 
 OUT_T0 holds the fundamental period in deciHz (10x Hz) when HLSyn
 is enabled (``ph_drwt02.c`` line 1409); :class:`LLFrame.F0` uses
