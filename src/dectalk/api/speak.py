@@ -471,24 +471,11 @@ def _speak_via_python_full(
             seg.state.voice if seg.state.voice is not None else voice
         )
 
-        if seg.state.phoneme_mode:
-            # ``[:phoneme on]`` bodies are direct ARPABET; skip the
-            # tokenize + LTS path. We could feed the full pipeline,
-            # but the legacy ``synthesize_phonemes`` is the bit-
-            # accurate-on-its-own-axis route here.
-            phones = seg.body.split()
-            if not phones:
-                continue
-            preset = _resolve_voice(seg_voice)
-            chunks.append(
-                synthesize_phonemes(
-                    phones,
-                    rate=seg.state.rate,
-                    preset=preset,
-                    question=False,
-                )
-            )
-            continue
+        # A ``[:phoneme on/off/...]`` directive only selects how ``[...]``
+        # bracket blocks are read; it never turns a plain segment body into
+        # a raw phoneme stream. The C front-end always LTS-renders text
+        # outside brackets, so ``[:phoneme on] hello`` speaks the word
+        # "hello" (issue #248). Route every body through the normal path.
 
         # Render the whole segment body through ONE ``_render_clause_full``
         # call. Its internal ``split_dectalk_stream_clauses`` loop hands
@@ -991,19 +978,8 @@ def _speak_via_python(
         if preset is None and isinstance(voice, VoicePreset):
             preset = voice
 
-        if seg.state.phoneme_mode:
-            phones = seg.body.split()
-            if phones:
-                chunks.append(
-                    synthesize_phonemes(
-                        phones,
-                        rate=seg.state.rate,
-                        preset=preset,
-                        question=False,
-                    )
-                )
-            continue
-
+        # ``[:phoneme ...]`` never re-interprets a plain body as phonemes
+        # (issue #248); the body is always LTS-rendered as normal text.
         for sentence_text, is_question in split_sentences(seg.body):
             phones = _tokens_to_phonemes(
                 tokenize(sentence_text),
@@ -2122,10 +2098,8 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     # like ``[:nb]`` (voice change) and ``[:rate 200]`` don't leak
     # into the phoneme stream as faux words.
     for seg in parse(text):
-        if seg.state.phoneme_mode:
-            # ``[:phoneme on]`` body is already a phoneme stream; skip
-            # the LTS path entirely.
-            continue
+        # ``[:phoneme ...]`` never re-interprets a plain body as phonemes
+        # (issue #248); fall through and LTS-render the segment body.
         import re as _re  # noqa: PLC0415 — local import keeps the helper file-private
 
         from dectalk.kernel.numbers import number_to_words  # noqa: PLC0415
