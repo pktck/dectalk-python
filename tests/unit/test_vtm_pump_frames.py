@@ -16,10 +16,11 @@ until that lands, this file establishes:
 - A deterministic parstochip frame sequence runs end-to-end through
   ``pump_frames_via_vtm1`` and produces int16 PCM of the right shape.
 - The wiring in ``_speak_via_python_full`` routes through
-  ``pump_frames_via_vtm1`` by default (``DECTALK_USE_VTM1`` unset or
-  ``=1``) and falls back to the legacy hlsyn render only under the
-  ``DECTALK_USE_VTM1=0`` escape hatch. The audio output is not
-  bit-compared to the C oracle here (that test ships in Phase E).
+  ``pump_frames_via_vtm1`` unconditionally — the former
+  ``DECTALK_USE_VTM1=0`` legacy hlsyn render was retired by issue
+  #279 and the env var is ignored. The audio output is not
+  bit-compared to the C oracle here (the byte-parity suites live in
+  ``tests/parity/``).
 """
 
 from __future__ import annotations
@@ -377,7 +378,7 @@ class TestSeederConstantsFromCSource:
 
 
 # -------------------------------------------------------------------------
-# End-to-end wiring smoke (the DECTALK_USE_VTM1 env-flag branch in speak.py).
+# End-to-end wiring smoke (the FULL-pipeline render dispatch in speak.py).
 # -------------------------------------------------------------------------
 
 
@@ -387,9 +388,9 @@ class TestSpeakViaPythonFullVtm1Dispatch:
     The full-pipeline runs are multi-second and pull in the whole PH
     stack, so each test drives a tiny utterance.
     ``test_pump_frames_via_vtm1_importable`` verifies static wiring;
-    the rest pin the issue #272 dispatch contract: vtm1 renders by
-    default (env var unset or ``=1``), and ``DECTALK_USE_VTM1=0`` is
-    the explicit escape hatch back to the legacy hlsyn render.
+    the rest pin the post-#279 dispatch contract: vtm1 is the ONLY
+    FULL-pipeline render — the former ``DECTALK_USE_VTM1=0`` legacy
+    hlsyn escape hatch is retired and the env var is ignored.
     """
 
     def test_pump_frames_via_vtm1_importable(self) -> None:
@@ -397,11 +398,11 @@ class TestSpeakViaPythonFullVtm1Dispatch:
 
         assert callable(pump_frames_via_vtm1)
 
-    def test_full_pipeline_runs_under_vtm1_flag(
+    def test_full_pipeline_produces_audio_end_to_end(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """End-to-end: DECTALK_FULL_PIPELINE+DECTALK_USE_VTM1=1 produces audio.
+        """End-to-end: DECTALK_FULL_PIPELINE=1 produces audio via vtm1.
 
         Walks the full PH pipeline (kernel/cmd/lts/dic/ph) into the
         vtm1 synth path. Asserts:
@@ -412,7 +413,6 @@ class TestSpeakViaPythonFullVtm1Dispatch:
         """
         monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
         monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
-        monkeypatch.setenv("DECTALK_USE_VTM1", "1")
 
         from dectalk.api.speak import _speak_via_python_full  # noqa: PLC0415
 
@@ -425,12 +425,12 @@ class TestSpeakViaPythonFullVtm1Dispatch:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """With DECTALK_USE_VTM1 unset, the vtm1 render path is used (#272).
+        """With no render env vars set, the vtm1 render path is used (#272).
 
         ``DECTALK_FULL_PIPELINE=1`` alone must imply the vtm1 render --
-        the byte-exact-capable parity path -- so measurements taken
-        without the (former) opt-in flag can no longer land on the
-        over-running legacy path (the #254 misdiagnosis footgun).
+        the byte-exact parity path -- so measurements can no longer
+        land on the over-running legacy path (the #254 misdiagnosis
+        footgun).
         """
         monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
         monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
@@ -519,15 +519,16 @@ class TestSpeakViaPythonFullVtm1Dispatch:
         expected = [real_seam(cur, prev) for cur, prev in seam_pairs]
         assert pump_inputs == expected
 
-    def test_escape_hatch_zero_selects_legacy_hlsyn(
+    def test_use_vtm1_env_var_is_retired(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """DECTALK_USE_VTM1=0 restores the legacy hlsyn render path.
+        """DECTALK_USE_VTM1=0 no longer selects a legacy render (issue #279).
 
-        The escape hatch must bypass ``pump_frames_via_vtm1`` entirely
-        and still produce audio through the SenSyn 2.2 cascade-parallel
-        synthesiser (``_pump_frames_to_samples``).
+        The legacy hlsyn FULL-path render retired once the full corpus
+        went byte-exact on the vtm1 path; the env var is ignored and
+        the FULL pipeline must still route through
+        ``pump_frames_via_vtm1``.
         """
         monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
         monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
@@ -536,12 +537,21 @@ class TestSpeakViaPythonFullVtm1Dispatch:
         import dectalk.vtm.pump_frames as pump_frames_mod  # noqa: PLC0415
         from dectalk.api.speak import _speak_via_python_full  # noqa: PLC0415
 
-        def _fail(*args: object, **kwargs: object) -> np.ndarray:
-            raise AssertionError("DECTALK_USE_VTM1=0 must not route through vtm1")
+        calls: list[int] = []
+        real_pump = pump_frames_mod.pump_frames_via_vtm1
 
-        monkeypatch.setattr(pump_frames_mod, "pump_frames_via_vtm1", _fail)
+        def _spy(
+            frames: list[list[int]],
+            preset: object = None,
+            **kwargs: object,
+        ) -> np.ndarray:
+            calls.append(len(frames))
+            return real_pump(frames, preset, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(pump_frames_mod, "pump_frames_via_vtm1", _spy)
 
         samples = _speak_via_python_full("hi", 1.0, None, "us", True)
+        assert calls, "retired DECTALK_USE_VTM1=0 must still render via vtm1"
         assert samples.dtype == np.int16
         assert samples.size > 0
-        assert np.any(samples != 0), "legacy hlsyn path produced all-zero output"
+        assert np.any(samples != 0), "vtm1 path produced all-zero output"

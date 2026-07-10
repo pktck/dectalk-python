@@ -3,7 +3,8 @@
 
 For each prompt, renders:
   - Python output via ``DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1
-    DECTALK_USE_VTM1=1 dectalk.to_wav(...)``
+    dectalk.to_wav(...)`` (the FULL pipeline renders via vtm1 only
+    since the #279 retirement)
   - C binary output via ``$DECTALK_BIN/say -a TEXT -fo OUT``
 
 Records per-prompt sample-delta (Python len - C len) and writes a TSV
@@ -32,7 +33,6 @@ from pathlib import Path
 # Ensure pure-Python pipeline gating before importing dectalk.
 os.environ["DECTALK_DISABLE_CAPI"] = "1"
 os.environ["DECTALK_FULL_PIPELINE"] = "1"
-os.environ["DECTALK_USE_VTM1"] = "1"
 
 # Path bootstrap so the script can be run as ``uv run python scripts/...``.
 _REPO = Path(__file__).resolve().parent.parent

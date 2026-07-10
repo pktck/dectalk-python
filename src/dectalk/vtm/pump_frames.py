@@ -1,43 +1,32 @@
 # ruff: noqa: PLR2004  -- the 32767 / -32768 int16 limits are inherent.
-"""Default synth path: pump parstochip frames through ``vtm1.c``.
+"""The full-pipeline synth stage: pump parstochip frames through ``vtm1.c``.
 
 This module wires :func:`speech_waveform_generator` into the
-end-to-end audio pipeline as the default render stage (issue #272),
-with the :mod:`dectalk.hlsyn`-based path used by
-:func:`dectalk.api.speak._pump_frames_to_samples` retained as the
-``DECTALK_USE_VTM1=0`` legacy escape hatch.
+end-to-end audio pipeline as the FULL-pipeline render stage (issue
+#272): it consumes the post-``send_pars`` ``delaypars[]`` packet
+stream the driver loop builds via
+:func:`~dectalk.ph.parstochip_to_frames.send_pars_delaypars`
+(issue #275: formant-side slots one frame delayed, ``OUT_TLT``
+through the ``lineartilt[]`` LUT, ``OUT_AV``/``OUT_T0`` current
+— exactly what the C driver's ``spcwrite`` ships and what patch
+0006's ``vtm_frames.dump`` records), copies each packet into
+``SynthState.parambuff`` and drives the integer Klatt
+synthesiser ported from ``vtm1.c::speech_waveform_generator``.
+This is the synthesizer the shipped ``libtts_us.so`` actually
+uses (the active build defines ``VTM1`` in ``dectalkf_klsyn.h``),
+and the byte-exact parity route: as of issue #311 the pure-Python
+FULL+VTM1 render is byte-identical to the binary across the full
+133,641-prompt corpus WAV census.
 
-The two paths share the same PH-stage origin (per-6.4 ms-frame
-``parstochip[]`` arrays) but render audio through different
-synthesizers:
-
-* **vtm1 path** (this module, the default -- issue #272): consumes
-  the post-``send_pars`` ``delaypars[]`` packet stream the driver
-  loop builds via
-  :func:`~dectalk.ph.parstochip_to_frames.send_pars_delaypars`
-  (issue #275: formant-side slots one frame delayed, ``OUT_TLT``
-  through the ``lineartilt[]`` LUT, ``OUT_AV``/``OUT_T0`` current
-  — exactly what the C driver's ``spcwrite`` ships and what patch
-  0006's ``vtm_frames.dump`` records), copies each packet into
-  ``SynthState.parambuff`` and drives the integer Klatt
-  synthesiser ported from ``vtm1.c::speech_waveform_generator``.
-  This is the synthesizer the shipped ``libtts_us.so`` actually
-  uses (the active build defines ``VTM1`` in ``dectalkf_klsyn.h``).
-* **hlsyn path** (legacy, selected via ``DECTALK_USE_VTM1=0``):
-  converts each raw parstochip to an
-  :class:`~dectalk.hlsyn.llsyn.LLFrame` via
-  :func:`~dectalk.ph.parstochip_to_frames.parstochip_to_llframe_delayed`
-  (which applies the same send_pars delay + LUT internally), then
-  drives the SenSyn 2.2 cascade-parallel synthesiser (``hlsyn/``).
-
-The vtm1 path is the byte-exact-capable parity route -- on ``hello
-world`` it is sample-count-exact vs the C binary (13845), F0 is
-frame-exact, and the leading 213 samples are byte-identical --
-so it is the Phase E workhorse (full byte-identical audio from
-pure Python). The legacy hlsyn render over-runs the C reference
-uniformly (~21450 vs 13845 samples on ``hello world``) and is
-retained only as a diagnostic escape hatch (see
-:func:`dectalk.api.speak._use_vtm1`).
+The former alternative — the legacy hlsyn (SenSyn 2.2
+cascade-parallel) render of the same frame stream behind
+``DECTALK_USE_VTM1=0`` — over-ran the C reference uniformly
+(~21450 vs 13845 samples on ``hello world``) and was retired by
+issue #279 once the corpus went byte-exact here. The hlsyn
+back-end itself remains load-bearing elsewhere
+(:func:`~dectalk.ph.sequencer.synthesize_phonemes` for
+``[:phoneme on]`` bodies and the ``DECTALK_FULL_PIPELINE=0``
+approximate pipeline).
 """
 
 from __future__ import annotations
@@ -75,12 +64,11 @@ from dectalk.vtm.volume_table import int_volume_table
 _DEFAULT_VOL_ATT_INDEX: int = 100
 
 # Amplitude-DB slot indices that need clamping before vtm1 indexes them
-# into the 88-entry :data:`~dectalk.vtm.amp_table.amptable`. The hlsyn
-# path applies the same clamp via
-# :func:`~dectalk.ph.parstochip_to_frames._clamp`; we mirror it here so
-# the alternative vtm1 path doesn't trip on out-of-range PH-stage
-# outputs while the PH driver is still being ported. ``amptable[x +
-# 13]`` is the worst-case offset (line 196 of
+# into the 88-entry :data:`~dectalk.vtm.amp_table.amptable`. Mirrors
+# the defensive :func:`~dectalk.ph.parstochip_to_frames._clamp` the
+# LLFrame adapters apply, so the vtm1 path doesn't trip on
+# out-of-range PH-stage outputs while the PH driver is still being
+# ported. ``amptable[x + 13]`` is the worst-case offset (line 196 of
 # ``speech_waveform_generator.py``), so cap the raw DB value at
 # ``len(amptable) - 13 - 1 = 74``.
 _AMP_SLOT_INDICES: frozenset[int] = frozenset(
@@ -194,10 +182,8 @@ def pump_frames_via_vtm1(
 
     for fi, parstochip in enumerate(frames):
         # The frames are post-send_pars ``delaypars`` packets in
-        # parstochip layout -- the call site in
-        # :func:`dectalk.api.speak._render_clause_full` accumulates
-        # them alongside the LLFrame list so the ``DECTALK_USE_VTM1``
-        # branch can route through here.
+        # parstochip layout, accumulated by the driver loop in
+        # :func:`dectalk.api.speak._render_clause_full`.
 
         # Copy the OUT_* parameter cells into parambuff[1..]. The C
         # source uses ``variabpars = &parambuff[1]; variabpars[OUT_*]

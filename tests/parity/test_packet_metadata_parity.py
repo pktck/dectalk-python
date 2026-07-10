@@ -164,7 +164,6 @@ def _python_packets(text: str, monkeypatch: pytest.MonkeyPatch) -> list[list[int
     """
     monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
     monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
-    monkeypatch.setenv("DECTALK_USE_VTM1", "1")
 
     import dectalk.vtm.pump_frames as pf  # noqa: PLC0415
     from dectalk.api.speak import _speak_via_python_full  # noqa: PLC0415

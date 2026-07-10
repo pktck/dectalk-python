@@ -61,12 +61,14 @@ from dectalk.ph.sequencer import synthesize_phonemes
 # value other than "0") routes US-English audio through the full
 # translated PH pipeline; "0" selects the legacy approximate path.
 # See :func:`_use_full_pipeline`.
+#
+# The full pipeline's render stage has no escape hatch of its own:
+# the ``vtm1.c``-ported synthesiser is the only FULL-path render. The
+# former ``DECTALK_USE_VTM1=0`` legacy hlsyn render was retired by
+# issue #279 after the full 133,641-prompt corpus went byte-exact on
+# the vtm1 path (#274 made vtm1 the default; #311/#312 made FULL the
+# no-``_capi`` default) — the env var is ignored if set.
 _FULL_PIPELINE_ENV: str = "DECTALK_FULL_PIPELINE"
-
-# Escape-hatch env var for the full pipeline's render stage. Unset (or
-# any value other than "0") renders through the vtm1 path; "0" selects
-# the legacy hlsyn path. See :func:`_use_vtm1`.
-_USE_VTM1_ENV: str = "DECTALK_USE_VTM1"
 
 
 def _use_full_pipeline(lang: str) -> bool:
@@ -87,23 +89,6 @@ def _use_full_pipeline(lang: str) -> bool:
     return lang == "us" and os.environ.get(_FULL_PIPELINE_ENV) != "0"
 
 
-def _use_vtm1() -> bool:
-    """Whether the full pipeline renders through the vtm1 synthesiser.
-
-    Defaults to True (issue #272): ``DECTALK_FULL_PIPELINE=1`` implies
-    the ``vtm1.c``-ported ``speech_waveform_generator`` render path --
-    the synthesiser the shipped ``libtts_us.so`` actually uses, and the
-    byte-exact-capable parity path (``hello world`` renders 13845
-    samples == the C binary, F0 frame-exact, leading 213 samples
-    byte-identical). Set ``DECTALK_USE_VTM1=0`` to select the legacy
-    hlsyn (SenSyn 2.2 cascade-parallel) render path instead; that path
-    over-runs the C reference uniformly (``hello world``: 21450 vs C
-    13845) and is retained only as a diagnostic escape hatch -- it has
-    already caused one parity misdiagnosis (#254).
-    """
-    return os.environ.get(_USE_VTM1_ENV) != "0"
-
-
 # Nominal speaking rate that maps to ``rate=1.0`` in the public API.
 # DECtalk's TextToSpeechSetRate accepts words-per-minute in [75, 600];
 # 180 wpm is the binary's default (per
@@ -118,15 +103,6 @@ _DEFAULT_WPM: int = 180
 # Expected WAV format from _capi: 16-bit signed mono.
 _INT16_SAMPLE_WIDTH: int = 2
 _MONO_CHANNELS: int = 1
-
-# Default ``pKsd_t->vol_att`` value the C kernel sets at every full
-# reset (``ttsapi.c`` lines 2050 / 6609: ``pKsd_t->vol_att = 100;``).
-# ``int_volume_table[100] = 32767`` is Q15 unity within 1 LSB, so the
-# default-volume post-scale in :func:`_pump_frames_to_samples` is a
-# no-op. The constant lets the post-scale branch skip the (allocation +
-# multiply + clip) work entirely when the caller hasn't changed
-# volume — keeping the hot path zero-cost.
-_DEFAULT_VOL_ATT_INDEX: int = 100
 
 # Per-utterance leading / trailing silence pads matching the DECtalk
 # binary's envelope. The C kernel emits a short leading silence (~20 ms)
@@ -288,88 +264,6 @@ def _speak_via_capi(
         return None
 
 
-def _pump_frames_to_samples(  # pyright: ignore[reportUnusedFunction]
-    frames: list[object],
-    preset: VoicePreset | None,
-    vol_att: int = 100,
-) -> NDArray[np.int16]:
-    """Pump a Klatt frame sequence through ``ll_synthesize`` to int16 PCM.
-
-    Bridge between the (still-being-ported) ph_draw frame-emission stage
-    and the bit-accurate hlsyn synthesizer. Each frame is one Klatt
-    target; ``ll_synthesize`` consumes ``synth.spkr.UI`` samples per
-    frame and writes int16 PCM to the output buffer.
-
-    After synthesis, applies the per-clause ``vol_att`` post-scale
-    matching ``vtm3.c`` line 1642 (``out = frac1mul(out, vol_att)``,
-    a Q15 multiply with ``vol_att = int_volume_table[pKsd_t->vol_att]``).
-    This is the post-synthesis hook the ``[:volume N]`` / ``[:vol set
-    sp N]`` directives ultimately drive (per
-    ``docs/vtm-divergence-audit.md`` §5). With the C kernel's default
-    ``pKsd_t->vol_att = 100`` (``cm_copt.c`` line 2050,
-    ``ttsapi.c`` line 6609) and ``int_volume_table[100] = 32767``
-    the multiplier is ~Q15 unity (within 1 LSB), so the default-volume
-    output is unchanged.
-
-    Args:
-        frames: Sequence of :class:`~dectalk.hlsyn.llsyn.LLFrame` (typed
-            as ``object`` here to keep the import lazy; runtime type is
-            checked by ``ll_synthesize``).
-        preset: Voice preset for speaker selection; ``None`` uses the
-            default neutral voice.
-        vol_att: ``pKsd_t->vol_att`` index in ``[0, 140]`` (clamped to
-            range per ``vtm3.c`` lines 515-518). Indexed into
-            :data:`~dectalk.vtm.volume_table.int_volume_table` to get
-            the Q15 post-scale. Defaults to ``100`` (the C kernel's
-            initial value, unity-gain Q15).
-
-    Returns:
-        1-D int16 array, ``len(frames) * synth.spkr.UI`` samples long.
-    """
-    from dectalk.hlsyn.llsyn import LLFrame, LLSynth  # noqa: PLC0415
-    from dectalk.hlsyn.synthesize import ll_synthesize  # noqa: PLC0415
-    from dectalk.hlsyn.vowels import default_speaker  # noqa: PLC0415
-    from dectalk.vtm.volume_table import int_volume_table  # noqa: PLC0415
-
-    if not frames:
-        return np.zeros(0, dtype=np.int16)
-
-    spkr = preset.speaker if preset is not None else default_speaker()
-    synth = LLSynth(spkr=spkr)
-    samples_per_frame = synth.spkr.UI
-    out = np.zeros(len(frames) * samples_per_frame, dtype=np.int16)
-    for fi, frame in enumerate(frames):
-        # ll_synthesize requires LLFrame; cast here at the boundary so
-        # callers (ph_draw) don't need to import it themselves.
-        ll_frame = frame if isinstance(frame, LLFrame) else LLFrame(**vars(frame))  # type: ignore[arg-type]
-        ll_synthesize(synth, ll_frame, out[fi * samples_per_frame : (fi + 1) * samples_per_frame])
-
-    # Per-clause vol_att post-scale (vtm3.c line 1642, applied to every
-    # synthesised sample). Clamp to the table range (vtm3.c lines 515-518:
-    # ``if (vol_att > 141) vol_att = 141; if (vol_att <= 0) vol_att = 0;``)
-    # — note the table has 141 entries (indices 0..140), so we cap at 140.
-    # ``int_volume_table[100]`` is the no-op default (~Q15 unity); skip
-    # the multiply in that case to keep the default-volume path zero-
-    # cost. ``100`` is the C kernel's default ``pKsd_t->vol_att`` value
-    # (``ttsapi.c`` lines 2050 / 6609) — see the module-level
-    # :data:`_DEFAULT_VOL_ATT_INDEX` constant below.
-    vol_att_clamped = max(0, min(vol_att, len(int_volume_table) - 1))
-    vol_mul = int_volume_table[vol_att_clamped]
-    if vol_att_clamped != _DEFAULT_VOL_ATT_INDEX:
-        # Q15 multiply: ``(out * vol_mul) >> 15``. Compute in int32 to avoid
-        # overflow (worst case |out|=32768 * vol_mul=131071 ~= 2^32 fits in
-        # int64 but we use int32 to mirror the C ``S32`` cast in frac1mul).
-        scaled = (out.astype(np.int32) * vol_mul) >> 15
-        # The C path clamps to [-16384, 16383] then ``<< 1`` (vtm3.c lines
-        # 1643-1647). The hlsyn synth already emits the full int16 range
-        # (no ``<< 1`` expansion needed because ``ll_synthesize``'s output
-        # is end-stage), so the equivalent clamp is to the full int16
-        # range after the scale.
-        np.clip(scaled, -32768, 32767, out=scaled)
-        out[:] = scaled.astype(np.int16)
-    return out
-
-
 def _arpabet_to_us_allophone(name: str) -> int | None:  # pyright: ignore[reportUnusedFunction]
     """Map an ARPABET phoneme symbol (e.g. ``"AH"``, ``"HH1"``) to a USP code.
 
@@ -488,16 +382,18 @@ def _speak_via_python_full(
          for per-clause array setup and per-phone duration assignment.
       5. :func:`phinton` for F0 contour generation.
       6. Per-frame driver loop walking ``phsettar`` / ``pht0draw`` /
-         ``phdraw`` and emitting one :class:`~dectalk.hlsyn.llsyn.LLFrame`
-         per 6.4 ms tick.
+         ``phdraw`` and emitting one post-``send_pars`` ``delaypars``
+         voice packet per 6.4 ms tick.
       7. :func:`~dectalk.vtm.pump_frames.pump_frames_via_vtm1` pumps
          the per-frame post-``send_pars`` ``delaypars`` packets (built
          by :func:`~dectalk.ph.parstochip_to_frames.send_pars_delaypars`,
          issue #275) to int16 PCM through the ``vtm1.c``-ported
-         ``speech_waveform_generator`` (the default render path,
-         issue #272). Under the ``DECTALK_USE_VTM1=0`` escape hatch,
-         :func:`ll_synthesize` renders the LLFrames via the legacy
-         hlsyn path instead.
+         ``speech_waveform_generator`` — the synthesiser the shipped
+         ``libtts_us.so`` uses and the byte-exact parity path (issues
+         #272 / #311). The former ``DECTALK_USE_VTM1=0`` legacy hlsyn
+         render was retired by issue #279 (the hlsyn back-end itself
+         remains for :func:`synthesize_phonemes` and the
+         ``DECTALK_FULL_PIPELINE=0`` approximate pipeline).
 
     Args:
         text: Speech input string. May contain ``[:cmd value]``
@@ -762,31 +658,28 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
 
     from dectalk.ph.init_clause import init_clause  # noqa: PLC0415
     from dectalk.ph.param_indices import OUT_DU, OUT_PH, OUT_PH2  # noqa: PLC0415
-    from dectalk.ph.parstochip_to_frames import (  # noqa: PLC0415
-        parstochip_to_llframe_delayed,
-        send_pars_delaypars,
-    )
+    from dectalk.ph.parstochip_to_frames import send_pars_delaypars  # noqa: PLC0415
     from dectalk.ph.phdraw import phdraw  # noqa: PLC0415
     from dectalk.ph.phinton import phinton  # noqa: PLC0415
     from dectalk.ph.pht0draw import pht0draw  # noqa: PLC0415
 
-    frames: list[object] = []
-    # Also accumulate the post-``send_pars`` ``delaypars[]`` packets so
-    # the default vtm1 synth path (issues #158 / #272 / #275) can pump
-    # them through ``speech_waveform_generator`` without re-running the
-    # PH stage. Each packet mixes two driver frames exactly as
+    # Accumulate the post-``send_pars`` ``delaypars[]`` packets so the
+    # vtm1 synth path (issues #158 / #272 / #275) can pump them through
+    # ``speech_waveform_generator`` without re-running the PH stage.
+    # Each packet mixes two driver frames exactly as
     # ``ph_claus.c::send_pars`` (lines 694-846) does before its
     # ``spcwrite``: formant-side slots one frame delayed, AV/T0 current,
     # TLT current via the ``lineartilt[]`` LUT — see
     # :func:`~dectalk.ph.parstochip_to_frames.send_pars_delaypars`.
-    # The LLFrame list above is only *rendered* under the
-    # ``DECTALK_USE_VTM1=0`` escape hatch, but it is populated
-    # unconditionally: the per-frame ``parstochip_to_llframe_delayed``
-    # call doubles as the capture point for the F0 / frame-metadata
-    # diagnostics (``tests/parity/test_per_frame_f0.py``,
-    # ``scripts/verify_out_t0_parity.py``) which monkey-patch it —
-    # those hooks keep seeing the *raw* current/previous parstochip
-    # pair (issue #279 precondition), never the mixed packet.
+    # That per-frame call is also the dedicated capture seam for the
+    # F0 / frame-metadata diagnostics (``tests/parity/test_per_frame_f0
+    # .py``, ``tests/unit/test_full_pipeline_frame0_voice_init.py``,
+    # ``tests/unit/test_full_pipeline_parstochip_metadata.py``,
+    # ``scripts/verify_out_t0_parity.py``), which monkey-patch it to
+    # snapshot the *raw* current/previous parstochip pair it receives
+    # (issue #279: the seam replaced the retired per-frame LLFrame
+    # conversion the legacy hlsyn render used). Keep its call shape
+    # (raw pair in, packet out) stable.
     delaypars_frames: list[list[int]] = []
     # Cap each clause's frame loop to keep buggy state from running
     # away during the multi-month port. 8000 frames is ~51 s of audio
@@ -795,7 +688,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # One-frame-delay buffer mirroring ph_claus.c's ``delaypars[]``
     # (lines 706-846). Holds the previous frame's parstochip so the
     # F1/B1/F2/B2/F3/B3/FZ/A2..A6/AB/AP slots of the *emitted*
-    # packet / LLFrame come from one frame ago, while AV / TLT / T0
+    # packet come from one frame ago, while AV / TLT / T0
     # come from the current frame. The delay buffer lives in
     # ``send_pars``'s per-handle static state, so it spans clause
     # boundaries: only the very FIRST frame of the whole utterance is
@@ -881,7 +774,8 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
         #   * Call pht0draw to generate the F0 contour for this frame,
         #     writing ``parstochip[OUT_T0]``.
         #   * Call phdraw to update ``parstochip[]`` for this frame.
-        #   * Convert ``parstochip[]`` to an LLFrame and append.
+        #   * Mix ``parstochip[]`` with the previous frame's via
+        #     ``send_pars_delaypars`` and append the emitted packet.
         #
         # The first iteration enters the "advance" branch (tcum starts
         # at -1, durfon at 0 -- C's init_pars()), so phsettar gets
@@ -916,11 +810,6 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             pht0draw(handle)
             phdraw(handle)
             if previous_parstochip is not None:
-                frames.append(
-                    parstochip_to_llframe_delayed(
-                        p_dph_t.parstochip, previous_parstochip, _spd_chip
-                    )
-                )
                 delaypars_frames.append(
                     send_pars_delaypars(p_dph_t.parstochip, previous_parstochip)
                 )
@@ -931,26 +820,24 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             # as the delayed half of the first emitted packet.
             previous_parstochip = list(p_dph_t.parstochip)
 
-    # 7. Pump the collected Klatt frames through the synthesizer for
-    # int16 PCM output. By default the post-send_pars ``delaypars``
-    # packets are pumped through ``speech_waveform_generator`` (vtm1.c)
-    # -- the same synthesiser the shipped ``libtts_us.so`` uses (issue
-    # #158) consuming the same packet stream the C driver's spcwrite
-    # ships (issue #275) -- the byte-exact-capable parity path (issue
-    # #272). Setting ``DECTALK_USE_VTM1=0`` selects the legacy hlsyn
-    # SenSyn 2.2 cascade-parallel synth instead (diagnostic escape
-    # hatch only -- it over-runs the C reference uniformly; see
-    # :func:`_use_vtm1`).
-    if _use_vtm1():
-        from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
+    # 7. Pump the collected voice packets through the synthesizer for
+    # int16 PCM output: the post-send_pars ``delaypars`` packets go
+    # through ``speech_waveform_generator`` (vtm1.c) -- the same
+    # synthesiser the shipped ``libtts_us.so`` uses (issue #158)
+    # consuming the same packet stream the C driver's spcwrite ships
+    # (issue #275) -- the byte-exact parity path (issues #272 / #311).
+    # ``KsdT.vol_att`` (always the default 100 until the ``[:volume
+    # N]`` port lands) threads through to the pump's Q15 post-scale.
+    # The former ``DECTALK_USE_VTM1=0`` legacy hlsyn render of this
+    # step was retired by issue #279.
+    from dectalk.vtm.pump_frames import pump_frames_via_vtm1  # noqa: PLC0415
 
-        return pump_frames_via_vtm1(
-            list(delaypars_frames),
-            voice_preset,
-            spd_chip=_spd_chip,
-            vol_att=p_ksd_t.vol_att,
-        )
-    return _pump_frames_to_samples(frames, voice_preset, p_ksd_t.vol_att)
+    return pump_frames_via_vtm1(
+        list(delaypars_frames),
+        voice_preset,
+        spd_chip=_spd_chip,
+        vol_att=p_ksd_t.vol_att,
+    )
 
 
 def _utterance_trailing_silence_samples(text: str) -> int:

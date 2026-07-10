@@ -1,7 +1,8 @@
-"""Parity test: ``DECTALK_USE_VTM1=1`` PCM output vs the C oracle WAV.
+"""Parity test: FULL-pipeline vtm1 PCM output vs the C oracle WAV.
 
-Acceptance test for issue #158 — verifies the alternative vtm1 synth
-path produces audio that matches the C oracle's WAV output for a small
+Acceptance test for issue #158 — verifies the vtm1 synth path (the
+only FULL-pipeline render since the #279 retirement) produces audio
+that matches the C oracle's WAV output for a small
 set of representative prompts.
 
 **Current status (Phase E rollout, issue #297)**: 348/500 of the
@@ -72,10 +73,9 @@ def _binary_pcm_int16(text: str) -> np.ndarray:
 
 
 def _python_vtm1_pcm(text: str, monkeypatch: pytest.MonkeyPatch) -> np.ndarray:
-    """Render ``text`` via the Python ``DECTALK_USE_VTM1`` path."""
+    """Render ``text`` via the Python FULL-pipeline (vtm1) path."""
     monkeypatch.setenv("DECTALK_DISABLE_CAPI", "1")
     monkeypatch.setenv("DECTALK_FULL_PIPELINE", "1")
-    monkeypatch.setenv("DECTALK_USE_VTM1", "1")
     return _speak_via_python_full(text, 1.0, None, "us", True)
 
 

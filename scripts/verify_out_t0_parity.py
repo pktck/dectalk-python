@@ -88,9 +88,7 @@ def _python_out_t0(text: str) -> list[int]:
         captured.append(parstochip[OUT_T0])
         return original(parstochip, *args, **kwargs)  # type: ignore[arg-type]
 
-    saved = {
-        k: os.environ.get(k) for k in ("DECTALK_DISABLE_CAPI", "DECTALK_FULL_PIPELINE")
-    }
+    saved = {k: os.environ.get(k) for k in ("DECTALK_DISABLE_CAPI", "DECTALK_FULL_PIPELINE")}
     os.environ["DECTALK_DISABLE_CAPI"] = "1"
     os.environ["DECTALK_FULL_PIPELINE"] = "1"
     _ptf.send_pars_delaypars = _wrap

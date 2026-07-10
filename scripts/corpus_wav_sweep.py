@@ -76,7 +76,6 @@ def _worker(idx_file: str, out_path: str) -> None:
 
     os.environ["DECTALK_DISABLE_CAPI"] = "1"
     os.environ["DECTALK_FULL_PIPELINE"] = "1"
-    os.environ["DECTALK_USE_VTM1"] = "1"
 
     import tempfile  # noqa: PLC0415
 

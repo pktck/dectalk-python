@@ -378,7 +378,6 @@ def test_rule2_never_fires_clause_initially_and_packets_invariant() -> None:
     env = dict(os.environ)
     env["DECTALK_DISABLE_CAPI"] = "1"
     env["DECTALK_FULL_PIPELINE"] = "1"
-    env["DECTALK_USE_VTM1"] = "1"
     proc = subprocess.run(
         [sys.executable, "-c", _DRIVER, json.dumps(list(_ADVERSARIAL))],
         capture_output=True,

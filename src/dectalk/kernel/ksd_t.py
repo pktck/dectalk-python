@@ -148,8 +148,9 @@ class KsdT:
     # copies it into ``pKsd_t->vol_att``, clamps to ``[0, 141]`` and
     # uses ``int_volume_table[vol_att]`` as the Q15 post-scale on every
     # synthesised sample (line 1642: ``out = frac1mul(out, vol_att)``).
-    # In Python, ``_pump_frames_to_samples`` reads this field to apply
-    # the same post-scale (per ``docs/vtm-divergence-audit.md`` §5).
+    # In Python, ``dectalk.vtm.pump_frames.pump_frames_via_vtm1`` reads
+    # this field (threaded from ``_render_clause_full``) to apply the
+    # same post-scale (per ``docs/vtm-divergence-audit.md`` §5).
     vol_att: int = 100
 
 
