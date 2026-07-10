@@ -4,16 +4,16 @@ Acceptance test for issue #158 — verifies the alternative vtm1 synth
 path produces audio that matches the C oracle's WAV output for a small
 set of representative prompts.
 
-**Current status (Phase E pending)**: full bit-parity is gated on the
-PH stage matching the C kernel sample-for-sample, which is multi-week
-work tracked in ``docs/PLAN.md`` Phase E. Until then this file:
+**Current status (Phase E rollout, issue #297)**: 348/500 of the
+stratified corpus sample renders **byte-identical** from pure Python
+on the FULL+VTM1 path. This file holds three tiers of gate:
 
-1. Asserts the vtm1 path produces *some* int16 PCM for the prompts
-   (smoke test of the full PH → VTM1 pipeline).
-2. Asserts the PCM length is within a wide tolerance of the C oracle's
-   WAV length (the timing layer is the active blocker per CLAUDE.md).
-3. The byte-level WAV equality assertion is **deferred** with a clear
-   skip reason -- it will start passing once the PH stage converges.
+1. Smoke: the vtm1 path produces *some* int16 PCM for the prompts.
+2. Sample-count exactness on the #270 audit set (wide-tolerance
+   length checks retained for the legacy smoke prompts).
+3. **Byte-identical WAV equality** on ``_BYTE_EXACT_PROMPTS`` — a
+   hard pass since #297, one pinned prompt group per fixed
+   divergence cluster.
 
 Skips cleanly when the C oracle artefacts are missing.
 """
@@ -142,18 +142,50 @@ def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch)
     )
 
 
-@pytest.mark.parametrize("text", _PROMPTS)
-@pytest.mark.xfail(
-    reason="Full PCM bit-parity is gated on Phase E (PH timing layer)",
-    strict=False,
+# Prompts pinned BYTE-IDENTICAL to the oracle WAV on the FULL+VTM1
+# path — the Phase E goal metric, held as a **hard** gate (issue #297;
+# 348/500 of the corpus sample render byte-exact as of the #297 fixes).
+# Each group pins a named divergence-cluster fix so a regression names
+# its cluster directly:
+#   - "hi" / "hello" / "test": the original #158 smoke prompts (were
+#     xfail; flipped by the #283..#294 wave and promoted here).
+#   - "hello world" / "the quick brown fox" / "chairs, tables, lamps,
+#     and rugs": the #270 count-exact gate prompts, now byte-exact.
+#   - "BBC" / "bite" / "stop!": the pht0draw OUT_PH/OUT_DU per-frame
+#     overwrite (ph_drwt01.c:3021-3024) feeding the vtm1.c:1318
+#     silence ramp-down gate — the #297 primary cluster (+115 prompts).
+#   - "MRI" / "wait, he is honest": the live consonant→stressed-vowel
+#     glottal branch in the active set_tglst (ph_drwt01.c:3118).
+#   - "listen down" / "my dog is near the bedroom": primary-only
+#     stress counting in remaining_stresses_til (ph_aloph1.c:1566)
+#     placing the FHAT_ENDS hat fall on the last *primary* stress.
+_BYTE_EXACT_PROMPTS: tuple[str, ...] = (
+    "hi",
+    "hello",
+    "test",
+    "hello world",
+    "the quick brown fox",
+    "chairs, tables, lamps, and rugs",
+    "BBC",
+    "bite",
+    "stop!",
+    "MRI",
+    "wait, he is honest",
+    "listen down",
+    "my dog is near the bedroom",
 )
+
+
+@pytest.mark.parametrize("text", _BYTE_EXACT_PROMPTS)
 def test_vtm1_pcm_byte_identical_to_oracle(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Python vtm1 PCM is byte-identical to the C oracle's WAV.
 
-    Marked ``xfail`` until Phase E closes. The vtm1 synth-stage port
-    itself is verified by ``test_vtm_speech_waveform_generator_parity``
-    and the synth-state seeding by ``test_vtm_pump_frames``; the
-    remaining gap is the PH driver, not the VTM body.
+    Hard pass (no xfail) since issue #297: the pure-Python FULL+VTM1
+    render is byte-identical on every prompt above. The vtm1
+    synth-stage port itself is verified by
+    ``test_vtm_speech_waveform_generator_parity`` and the synth-state
+    seeding by ``test_vtm_pump_frames``; this asserts the whole
+    PH-parameter + synth chain end to end.
     """
     ref = _binary_pcm_int16(text)
     py = _python_vtm1_pcm(text, monkeypatch)
