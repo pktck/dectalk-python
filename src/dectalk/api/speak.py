@@ -2334,7 +2334,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         base = token.text[:-2]
                         base_phones = lookup(base, lang=lang)
                         if base_phones is None and lts_fallback:
-                            base_phones = _dedupe_consecutive_phonemes(lts(base))
+                            # ``or None``: digit/symbol stems (``'90's``)
+                            # produce an empty LTS stream; treat that as
+                            # no-stem instead of indexing into it
+                            # (issue #316 discovery-sweep crash).
+                            base_phones = _dedupe_consecutive_phonemes(lts(base)) or None
                         if base_phones is not None:
                             # Sibilant-final stems take an epenthetic
                             # IX+Z (``judge's`` -> ``jh ahjh ixz``,
@@ -2407,7 +2411,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             ltstem = stem
                             if ltstem.endswith("E"):
                                 ltstem = ltstem[:-1]
-                            stem_phones = _dedupe_consecutive_phonemes(lts(ltstem))
+                            # ``or None``: digit stems (``'90s`` ->
+                            # ``'90``) produce an empty LTS stream;
+                            # treat as no-stem rather than crash on
+                            # ``stem_phones[-1]`` below (issue #316).
+                            stem_phones = _dedupe_consecutive_phonemes(lts(ltstem)) or None
                         if stem_phones is not None:
                             # When the stem ends in a sonorant (L/N)
                             # preceded by a stop ("SECOND" -> S EH K N D
@@ -2491,7 +2499,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         tion_stem = token.text[:-4]
                         stem_phones = lookup(tion_stem, lang=lang)
                         if stem_phones is None and lts_fallback:
-                            stem_phones = _dedupe_consecutive_phonemes(lts(tion_stem))
+                            # ``or None``: guard empty LTS output for
+                            # non-alphabetic stems (issue #316).
+                            stem_phones = _dedupe_consecutive_phonemes(lts(tion_stem)) or None
                         if stem_phones is not None:
                             phones = [*stem_phones, "SH", "AH0", "N"]
                     # ``-ive`` adjective suffix: strip and append
@@ -2505,7 +2515,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         ive_stem = token.text[:-3]
                         stem_phones = lookup(ive_stem, lang=lang)
                         if stem_phones is None and lts_fallback:
-                            stem_phones = _dedupe_consecutive_phonemes(lts(ive_stem))
+                            # ``or None``: guard empty LTS output for
+                            # non-alphabetic stems (issue #316).
+                            stem_phones = _dedupe_consecutive_phonemes(lts(ive_stem)) or None
                         if stem_phones is not None:
                             phones = [*stem_phones, "AH0", "V"]
                     # ``-ly`` adverb suffix: strip and append ``L + IY0``
