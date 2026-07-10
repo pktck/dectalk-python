@@ -420,16 +420,20 @@ See `docs/PLAN.md` for the authoritative strategic plan and
   through `_capi`). Do not regress this — when you add a new Python
   module, also delete its `_DEFERRED` entry if any.
 
-## Phase E (audio bit-parity from pure Python) — the active blocker
+## Phase E (audio bit-parity from pure Python) — REACHED
 
 `DECTALK_DISABLE_CAPI=0 dectalk.to_wav(...)` is byte-identical to the
-binary. `DECTALK_DISABLE_CAPI=1` is functionally correct but produces
-audio of the wrong sample count (timing diverges). Closing this gap
-is multi-week work: port the PH orchestration layer from
-`/tmp/dectalk-src/src/dapi/src/ph/` (`ph_sort*.c`, `ph_setar.c`,
-`ph_inton*.c`, `ph_timng.c`) into the existing Python shims in
-`src/dectalk/ph/`. The hlsyn back-end is already bit-accurate; the
-gap is purely in PH.
+binary via `_capi`. As of issue #311, **plain `DECTALK_DISABLE_CAPI=1`
+is byte-identical too**: the translated PH orchestration layer +
+`vtm1.c`-ported synthesiser (FULL+VTM1) is the no-`_capi` default,
+verified across the full 133,641-prompt corpus WAV census
+(`scripts/corpus_wav_sweep.py`; `DECTALK_FULL_PIPELINE=0` opts out to
+the legacy approximate pipeline). Keep the census green: any PH/VTM
+change must hold the 500-sample gate
+(`scripts/measure_full_vtm1_sample.py`) and the pinned byte-exact
+prompt suites; re-run the full sweep for changes with corpus-wide
+blast radius. See `docs/STATUS.md` §"Project goalpost" for the
+current numbers.
 
 ## Corpus phoneme gate + corpus expansion
 
