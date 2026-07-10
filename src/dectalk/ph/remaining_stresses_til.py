@@ -1,31 +1,39 @@
-"""``remaining_stresses_til`` helper from ph_aloph2.c.
+"""``remaining_stresses_til`` helper from ph_aloph1.c (active variant).
 
-Translated from ``src/dapi/src/ph/ph_aloph2.c`` lines 1716-1742.
+Translated from ``src/dapi/src/ph/ph_aloph1.c`` lines 1566-1590 — the
+``#ifndef ENGLISH_UK`` (active ``ENGLISH_US``) body, which counts only
+**primary** stresses (``FSTRESS_1``). The ``ph_aloph2.c``/UK variant
+this module previously mirrored counts any ``FSTRESS`` (primary or
+secondary); that difference moves the ``FHAT_ENDS`` hat-fall marker off
+the last *primary*-stressed syllable whenever a secondary-stressed
+syllable follows it (e.g. ``listen down``, ``... the bedroom``), which
+mistimed the whole clause-final F0 fall (issue #297).
 
-Counts the number of stressed syllables remaining in the
+Counts the number of primary-stressed syllables remaining in the
 ``sentstruc[]`` / ``phonemes[]`` arrays starting from ``msym + 1``
 and ending when either:
 
 - a boundary at level ``>= b_type`` is hit, or
 - a ``GEN_SIL`` (clause silence) is reached.
 
-Used by the allophone-substitution pass to decide whether a
-secondary stress should be promoted.
+Used by the allophone-substitution pass to place hat rise/fall markers
+and decide whether a secondary stress should be promoted.
 """
 
 from __future__ import annotations
 
 from dectalk.ph.dph_t import DphT
-from dectalk.ph.feature_bits import FBOUNDARY, FSTRESS
+from dectalk.ph.feature_bits import FBOUNDARY, FSTRESS_1
 from dectalk.ph.phoneme_features import FSYLL
 from dectalk.ph.timing import phone_feature
 from dectalk.ph.utterance_constants import GEN_SIL
 
 
 def remaining_stresses_til(p_dph_t: DphT, msym: int, b_type: int) -> int:
-    """Count stressed syllables in ``[msym + 1, boundary or GEN_SIL)``.
+    """Count primary-stressed syllables in ``[msym + 1, boundary or GEN_SIL)``.
 
-    Faithful translation of:
+    Faithful translation of (active ``#ifndef ENGLISH_UK`` body; the
+    UK/aloph2 variant masks with ``FSTRESS`` instead):
 
     .. code-block:: c
 
@@ -34,7 +42,7 @@ def remaining_stresses_til(p_dph_t: DphT, msym: int, b_type: int) -> int:
             count = 0;
             for (m = msym; m < pDph_t->nphonetot; m++) {
                 if (m != msym
-                    && (pDph_t->sentstruc[m] & FSTRESS) IS_PLUS
+                    && (pDph_t->sentstruc[m] & FSTRESS_1) IS_PLUS
                     && (phone_feature(pDph_t, pDph_t->phonemes[m])
                          & FSYLL) IS_PLUS) {
                     count++;
@@ -57,7 +65,7 @@ def remaining_stresses_til(p_dph_t: DphT, msym: int, b_type: int) -> int:
             ``sentstruc[m] & FBOUNDARY >= b_type``.
 
     Returns:
-        Count of stressed syllable phonemes encountered after
+        Count of primary-stressed syllable phonemes encountered after
         ``msym`` and before the boundary or :data:`GEN_SIL`.
     """
     if p_dph_t.sentstruc is None or p_dph_t.phonemes is None:
@@ -68,7 +76,7 @@ def remaining_stresses_til(p_dph_t: DphT, msym: int, b_type: int) -> int:
     for m in range(msym, p_dph_t.nphonetot):
         if (
             m != msym
-            and (sentstruc[m] & FSTRESS) != 0
+            and (sentstruc[m] & FSTRESS_1) != 0
             and (phone_feature(phonemes[m]) & FSYLL) != 0
         ):
             count += 1

@@ -1,4 +1,11 @@
-"""Verify remaining_stresses_til matches ph_aloph2.c."""
+"""Verify remaining_stresses_til matches the active ph_aloph1.c variant.
+
+The active ``#ifndef ENGLISH_UK`` body counts **primary** stresses only
+(``FSTRESS_1``); the ph_aloph2.c/UK variant this suite previously
+pinned counts any ``FSTRESS`` — the wrong-variant port mistimed the
+clause-final hat fall whenever a secondary stress trailed the last
+primary (issue #297).
+"""
 
 from __future__ import annotations
 
@@ -51,19 +58,28 @@ def test_boundary_stops_walk() -> None:
     assert count == 1
 
 
-def test_secondary_stress_also_counts() -> None:
-    """FSTRESS_2 is non-zero so it falls under the FSTRESS mask."""
+def test_secondary_stress_does_not_count() -> None:
+    """FSTRESS_2-only syllables are excluded by the FSTRESS_1 mask.
+
+    The active ph_aloph1.c body masks with ``FSTRESS_1``; a trailing
+    secondary stress (e.g. ``down`` in ``listen down``) must NOT hold
+    the hat open past the last primary stress (issue #297).
+    """
     state = DphT()
     state.phonemes = [_us(USPhoneme.IY), _us(USPhoneme.IY)]
     state.sentstruc = [FNOSTRESS, FSTRESS_2]
     state.nphonetot = 2
-    assert remaining_stresses_til(state, 0, FCBNEXT) == 1
+    assert remaining_stresses_til(state, 0, FCBNEXT) == 0
 
 
 def test_walks_to_end_when_no_boundary() -> None:
-    """If no boundary or GEN_SIL, walks the full sentstruc."""
+    """If no boundary or GEN_SIL, walks the full sentstruc.
+
+    Only the two FSTRESS_1 entries count; the FSTRESS_2 entry is
+    excluded by the active primary-only mask.
+    """
     state = DphT()
     state.phonemes = [_us(USPhoneme.IY)] * 4
     state.sentstruc = [FNOSTRESS, FSTRESS_1, FSTRESS_2, FSTRESS_1]
     state.nphonetot = 4
-    assert remaining_stresses_til(state, 0, FCBNEXT) == 3
+    assert remaining_stresses_til(state, 0, FCBNEXT) == 2
