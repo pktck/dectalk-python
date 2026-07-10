@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from dectalk.cmd import SpeechState, parse
+from dectalk.cmd.cmd_states import PHONEME_ASCKY, PHONEME_OFF, PHONEME_SPEAK
 
 # Generous epsilon for the float multiplier comparisons -- the values
 # being compared are exact ratios of small ints so 1e-9 is plenty
@@ -150,14 +151,46 @@ def test_invalid_rate_value_is_ignored() -> None:
 
 
 def test_phoneme_mode_toggle() -> None:
+    # ``[:phoneme ...]`` mutates the C ``pKsd_t->phoneme_mode`` bitfield
+    # (default ``PHONEME_OFF | PHONEME_SPEAK``); it never turns a segment
+    # body into phonemes. ``[:phoneme on]`` clears PHONEME_OFF; ``off``
+    # sets it again (issue #248; ``cmd/cm_copt.c`` ``cm_cmd_phoneme``).
     segs = parse("hello [:phoneme on] HH AH L OW [:phoneme off] world")
-    # Three segments: text "hello", phoneme stream, text "world"
     assert len(segs) == 3
     assert segs[0].body.strip() == "hello"
-    assert not segs[0].state.phoneme_mode
-    assert segs[1].state.phoneme_mode
-    assert "HH AH L OW" in segs[1].body
-    assert not segs[2].state.phoneme_mode
+    assert segs[0].state.phoneme_mode == PHONEME_OFF | PHONEME_SPEAK  # default
+    assert segs[1].state.phoneme_mode == PHONEME_SPEAK  # PHONEME_OFF cleared
+    assert "HH AH L OW" in segs[1].body  # body stays plain text, not consumed
+    assert segs[2].state.phoneme_mode == PHONEME_OFF | PHONEME_SPEAK  # off re-sets
+
+
+def test_phoneme_submatrix_bitfield() -> None:
+    """Every ``[:phoneme <kw>]`` maps to the exact bit op in cm_copt.c:238-260."""
+
+    def mode_after(cmd: str) -> int:
+        return parse(f"[:phoneme {cmd}] x")[0].state.phoneme_mode
+
+    default = PHONEME_OFF | PHONEME_SPEAK
+    assert mode_after("on") == PHONEME_SPEAK  # clear OFF
+    assert mode_after("off") == default  # set OFF (already set) -> no change
+    assert mode_after("asky") == default | PHONEME_ASCKY  # set ASCKY
+    assert mode_after("arpabet") == default  # clear ASCKY (already clear)
+    assert mode_after("silent") == PHONEME_OFF  # clear SPEAK
+    assert mode_after("speak") == default  # set SPEAK (already set)
+    # Multiple keywords accumulate left-to-right, like the C for-loop.
+    assert mode_after("arpabet on") == PHONEME_SPEAK  # arpabet no-op, on clears OFF
+    assert mode_after("asky on") == PHONEME_SPEAK | PHONEME_ASCKY
+
+
+def test_phoneme_unknown_keyword_stops_like_c() -> None:
+    # C's cm_cmd_phoneme returns CMD_bad_string on an unknown keyword and
+    # stops, keeping bits applied by earlier keywords (cm_copt.c:234-236).
+    # ``dectalk`` is NOT a valid keyword -- the DECtalk-alphabet keyword is
+    # ``asky`` (the empirical oracle even speaks a "command error" message
+    # for ``[:phoneme dectalk on]``, which we don't model).
+    assert parse("[:phoneme dectalk on] x")[0].state.phoneme_mode == PHONEME_OFF | PHONEME_SPEAK
+    # A valid keyword before the bad one is kept; the bad one halts the rest.
+    assert parse("[:phoneme silent bogus speak] x")[0].state.phoneme_mode == PHONEME_OFF
 
 
 def test_back_to_back_commands_collapse() -> None:
