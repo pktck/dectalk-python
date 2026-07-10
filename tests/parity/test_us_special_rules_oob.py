@@ -265,7 +265,7 @@ mode = ["off"]
 packets = []
 orig_usr = ps.us_special_rules
 orig_pf = usr.phone_feature
-orig_ll = ptf.parstochip_to_llframe_delayed
+orig_sp = ptf.send_pars_delaypars
 
 
 def wrapped(**kw):
@@ -296,12 +296,15 @@ def wrapped(**kw):
 
 
 def cap(parstochip, *a, **k):
+    # send_pars_delaypars is the per-frame #279 capture seam: the
+    # driver calls it once per emitted frame with the raw current /
+    # previous parstochip pair.
     packets.append(tuple(parstochip))
-    return orig_ll(parstochip, *a, **k)
+    return orig_sp(parstochip, *a, **k)
 
 
 ps.us_special_rules = wrapped
-ptf.parstochip_to_llframe_delayed = cap
+ptf.send_pars_delaypars = cap
 
 from dectalk.api.speak import _speak_via_python_full
 

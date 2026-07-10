@@ -15,7 +15,7 @@ the fix (stash to compare). Requires the C oracle artefacts; honours
 $DECTALK_SRC / $DECTALK_BIN.
 
 Usage:
-    DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 DECTALK_USE_VTM1=1 \
+    DECTALK_DISABLE_CAPI=1 DECTALK_FULL_PIPELINE=1 \
         uv run python scripts/verify_out_t0_parity.py
 """
 
@@ -73,33 +73,33 @@ def _c_oracle_out_t0(capi: CAPI, text: str) -> list[int]:
 def _python_out_t0(text: str) -> list[int]:
     """Per-frame raw OUT_T0 from the Python full pipeline.
 
-    Monkeypatches the parstochip->LLFrame delayed converter to record
+    Monkeypatches ``send_pars_delaypars`` -- the per-frame packet
+    builder the driver loop calls with the raw current/previous
+    parstochip pair (the #279 capture seam) -- to record
     ``parstochip[OUT_T0]`` per frame, then runs ``dectalk.speak`` with
-    the pure-Python / full-pipeline / vtm1 env knobs.
+    the pure-Python / full-pipeline env knobs.
     """
     from dectalk.ph import parstochip_to_frames as _ptf  # noqa: PLC0415
 
     captured: list[int] = []
-    original = _ptf.parstochip_to_llframe_delayed
+    original = _ptf.send_pars_delaypars
 
-    def _wrap(parstochip: list[int], *args: object, **kwargs: object) -> object:
+    def _wrap(parstochip: list[int], *args: object, **kwargs: object) -> list[int]:
         captured.append(parstochip[OUT_T0])
         return original(parstochip, *args, **kwargs)  # type: ignore[arg-type]
 
     saved = {
-        k: os.environ.get(k)
-        for k in ("DECTALK_DISABLE_CAPI", "DECTALK_FULL_PIPELINE", "DECTALK_USE_VTM1")
+        k: os.environ.get(k) for k in ("DECTALK_DISABLE_CAPI", "DECTALK_FULL_PIPELINE")
     }
     os.environ["DECTALK_DISABLE_CAPI"] = "1"
     os.environ["DECTALK_FULL_PIPELINE"] = "1"
-    os.environ["DECTALK_USE_VTM1"] = "1"
-    _ptf.parstochip_to_llframe_delayed = _wrap
+    _ptf.send_pars_delaypars = _wrap
     try:
         import dectalk  # noqa: PLC0415 -- gated import (env-dependent dispatch)
 
         dectalk.speak(text)
     finally:
-        _ptf.parstochip_to_llframe_delayed = original
+        _ptf.send_pars_delaypars = original
         for k, v in saved.items():
             if v is None:
                 os.environ.pop(k, None)
