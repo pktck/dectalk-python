@@ -71,9 +71,11 @@ from dectalk.include.phoneme_codes import (
 )
 from dectalk.include.phoneme_stream import parse_phoneme_stream
 from dectalk.ph.all_phsort import all_phsort
+from dectalk.ph.inton_constants import SAFETY
 from dectalk.ph.us_phalloph import us_phalloph
 
 if TYPE_CHECKING:
+    from dectalk.ph.dph_t import DphT
     from dectalk.ph.tts_handle import TtsHandle
 
 # Maximum slots we'll allocate for the symbol stream. NPHON_MAX is the
@@ -94,6 +96,50 @@ _STRESS_DIGIT_TO_MARKER: dict[str, int] = {
     # digit "3" reserved for tertiary stress (Spanish quote marker S3
     # in C; not emitted by the US-English ARPABET front-end).
 }
+
+
+def _mirror_phsort_scratch_into_allophons(p_dph_t: DphT) -> None:
+    """Replay ``all_phsort``'s writes-through-the-alias into ``allophons[]``.
+
+    In the C kernel ``phonemes`` is not a separate buffer: ``phclause``
+    aliases it into the allophone scratch with an 8-slot offset
+    (``pDph_t->phonemes = &(pDph_t->allophons[SAFETY])``, ph_claus.c:597),
+    so every ``phonemes[i]`` cell ``all_phsort`` writes lands at
+    ``allophons[SAFETY + i]``. ``us_phalloph`` then overwrites
+    ``allophons[0..nallotot-1]`` as it walks, but any scratch cell at or
+    past ``max(nallotot, SAFETY)`` keeps the phoneme-stream leftovers.
+
+    That stale content is observable: ``ph_claus.c:472`` publishes
+    ``parstochip[OUT_PH2] = allophons[nphone + 1]`` and its ``nphone+1 >
+    nallotot`` guard does **not** exclude the ``== nallotot`` case, so
+    every frame of a clause's final phone emits the one-past-end scratch
+    cell in the ``OUT_PH2`` packet metadata (issues #277 / #290). On
+    ``hello world`` the binary emits 7707 there — ``phonemes[3]``
+    (``LL``) showing through at ``allophons[11]`` after ``phinton``'s
+    dummy-schwa insert grows ``nallotot`` past ``us_phalloph``'s last
+    write.
+
+    The Python port runs ``all_phsort`` against an independent
+    ``phonemes`` list (see the reallocation note in the callers), so the
+    alias writes must be replayed explicitly: copy the **entire** final
+    ``phonemes`` buffer — including cells past ``nphonetot``, which hold
+    the same delete-shift leftovers as the C memory — into
+    ``allophons[SAFETY:]`` before ``us_phalloph`` runs. The sibling C
+    aliases (``sentstruc``/``allofeats``, ``user_durs``/``allodurs``,
+    ``user_f0``/``f0tar``, ``user_offset``/``f0tim``) are intentionally
+    NOT mirrored: no packet cell or downstream reader consumes those
+    arrays past ``nallotot`` / ``nf0tot``, so mirroring them would add
+    blast radius on verified files with no observable effect.
+    """
+    allophons = p_dph_t.allophons
+    phonemes = p_dph_t.phonemes
+    if phonemes is None:
+        # Both callers reallocate the buffer before all_phsort runs, so
+        # this only guards direct/partial-pipeline callers that never
+        # produced a phoneme stream — nothing to replay.
+        return
+    span = min(len(phonemes), len(allophons) - SAFETY)
+    allophons[SAFETY : SAFETY + span] = phonemes[:span]
 
 
 def _promote_sole_secondary_stress(arpabet_words: list[list[str]]) -> list[list[str]]:
@@ -443,9 +489,7 @@ def phalloph2(
             issue #212). ``is_question`` takes precedence if both
             flags are set.
     """
-    from dectalk.ph.dph_t import DphT  # noqa: PLC0415
-
-    p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
+    p_dph_t = cast("DphT", phTTS.p_ph_thread_data)
 
     # 1. Encode ARPABET word groups into a DECtalk symbols[] stream.
     symbols, nsymbtot = _arpabet_words_to_symbols(
@@ -478,6 +522,12 @@ def phalloph2(
     # output-pass, writing phonemes[] / sentstruc[] / user_durs[] /
     # user_f0[]. Sets nphonetot to the count emitted.
     all_phsort(phTTS)
+
+    # 4b. Replay the C's phonemes->allophons aliasing (ph_claus.c:597)
+    # so scratch cells past us_phalloph's writes carry the same
+    # phoneme-stream leftovers the binary's shared memory does — the
+    # OUT_PH2 one-past-end packet cell reads them (#277 / #290).
+    _mirror_phsort_scratch_into_allophons(p_dph_t)
 
     # 5. Run the allophonic-substitution pass. Walks phonemes[] /
     # sentstruc[] applying the US-English rules; writes allophons[]
@@ -655,9 +705,7 @@ def phalloph2_from_symbols(phTTS: TtsHandle, symbols: list[int], nsymbtot: int) 
     per utterance suffices, matching C's ``kltask`` which zeroes the
     scratch arrays at task entry (ph_task.c line 422), not per clause.
     """
-    from dectalk.ph.dph_t import DphT  # noqa: PLC0415
-
-    p_dph_t = cast(DphT, phTTS.p_ph_thread_data)
+    p_dph_t = cast("DphT", phTTS.p_ph_thread_data)
 
     p_dph_t.symbols = list(symbols)
     p_dph_t.nsymbtot = nsymbtot
@@ -673,8 +721,12 @@ def phalloph2_from_symbols(phTTS: TtsHandle, symbols: list[int], nsymbtot: int) 
     p_dph_t.user_durs = [0] * buf_size
     p_dph_t.user_f0 = [0] * buf_size
 
-    # Run the PH-sort + allophonic-substitution chain.
+    # Run the PH-sort + allophonic-substitution chain, replaying the
+    # C's phonemes->allophons aliasing between the two passes so the
+    # one-past-end scratch cells match the binary (see
+    # :func:`_mirror_phsort_scratch_into_allophons`; #277 / #290).
     all_phsort(phTTS)
+    _mirror_phsort_scratch_into_allophons(p_dph_t)
     us_phalloph(phTTS)
 
 

@@ -54,10 +54,21 @@ the 0-based packet index (sample offset = 71·N).
 any per-frame dump):
 
 1. The C dump's `OUT_PH`/`OUT_DU` are **not** the driver's phone: the
-   active `ph_drwt01.c:1081/1942/3022` re-writes them every frame from
-   `np_drawt0`, pht0draw's own F0-segment pointer (→ #277). Phoneme
-   context below therefore uses the Python-side cells (driver-written,
-   true `nphone`), delayed one frame like the rest of the formant side.
+   active `ph_drwt01.c:3022` re-writes them every frame from
+   `np_drawt0`, pht0draw's own F0-segment pointer (→ #277; the
+   1081/1942 sites are the `NWSNOAA`/`ENGLISH_UK` variant's branch
+   tails, not compiled). Phoneme context below therefore uses the
+   Python-side cells (driver-written, true `nphone`), delayed one
+   frame like the rest of the formant side.
+   *[Update, #290/#297]*: the Python port now applies the same
+   per-frame `np_drawt0` overwrite (`pht0draw.py` step 13) **and**
+   replays the `phonemes = &allophons[SAFETY]` alias
+   (`ph_claus.c:597`) behind the `OUT_PH2` one-past-end read, so
+   `OUT_PH`/`OUT_DU`/`OUT_PH2` are byte-equal to the dump on the
+   pinned prompts (`tests/parity/test_packet_metadata_parity.py`).
+   The overwrite is NOT audio-neutral as first classified: vtm1.c:1318
+   gates its silence ramp-down on `OUT_PH & PVALUE == 0` (→ #297).
+   Dump-based phoneme alignment can now use either side's cells.
 2. `how are you` has a real 4-frame count drift (C 200 vs Py 196
    packets, all in one allophone — see the prompt section). Rows after
    the drift onset compare shifted positions; their spans/magnitudes
@@ -290,5 +301,12 @@ Fold Python rows to delaypars level (`row[i] = feed[i]` for the 17
 delayed slots; `TLT = lineartilt[clamp(cur[TLT],0,31)]`; `T0/AV = cur`),
 int16-wrap, then compare cell-by-cell against the dump rows. Exclude
 index 20 always and OUT_PH/OUT_DU/OUT_PH2 for audio purposes (#277).
+*[Update, #290/#297]*: with the `np_drawt0` overwrite and the
+`allophons[SAFETY]` alias replay ported, the metadata cells match the
+dump byte-for-byte (pinned by
+`tests/parity/test_packet_metadata_parity.py`); OUT_PH additionally
+feeds the vtm1.c:1318 silence-ramp gate, so it is no longer safe to
+exclude when chasing silence-boundary audio divergence — only index 20
+remains always-excluded.
 
 Authored-by: Claude:claude-fable-5 pytest
