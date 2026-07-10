@@ -207,6 +207,11 @@ def test_vtm1_pcm_sample_count_exact(text: str, monkeypatch: pytest.MonkeyPatch)
 #     city." / "Prof. White teaches here.": title abbreviations via
 #     the period-keyed runtime-dictionary rows (destressed mister /
 #     missus) and the ls_task_Dr_St_process saint branch (issue #246).
+#   - "[:comma 1000] a, b" / "[:period 2000] a. b" / "[:comma 45000]
+#     a, b": the CPAUSE/PPAUSE user pause overrides threaded into
+#     DphT.compause/perpause, including the 16-bit LTS-pipe wrap on
+#     the unclamped comma value (45000 -> -20536 -> deadstop -280)
+#     (issue #249).
 _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "hi",
     "hello",
@@ -252,6 +257,9 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "Mrs. Brown called today.",
     "St. Paul is a city.",
     "Prof. White teaches here.",
+    "[:comma 1000] a, b",
+    "[:period 2000] a. b",
+    "[:comma 45000] a, b",
 )
 
 

@@ -512,6 +512,8 @@ def _speak_via_python_full(
             voice=seg_voice,
             lang=lang,
             lts_fallback=lts_fallback,
+            comma_pause=seg.state.comma_pause,
+            period_pause=seg.state.period_pause,
         )
         if chunk.size:
             chunks.append(chunk)
@@ -528,11 +530,24 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     voice: str | VoicePreset | None,
     lang: str,
     lts_fallback: bool,
+    comma_pause: int | None = None,
+    period_pause: int | None = None,
 ) -> NDArray[np.int16]:
     """Render a single parser segment's body through the full PH pipeline.
 
     Pure ``[:cmd]``-free text. Called by :func:`_speak_via_python_full`
     once per :class:`~dectalk.cmd.Segment`.
+
+    Args:
+        text: Segment body (no ``[:cmd]`` directives).
+        rate: Speaking-rate multiplier for this segment.
+        voice: Voice preset for this segment.
+        lang: Language code (only ``"us"`` is wired).
+        lts_fallback: Allow LTS for out-of-lexicon words.
+        comma_pause: ``[:comma N]`` milliseconds from the segment
+            state, or None when unset (issue #249).
+        period_pause: ``[:period N]`` milliseconds from the segment
+            state, or None when unset.
     """
     from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
     from dectalk.kernel.lang_codes import LANG_english  # noqa: PLC0415
@@ -688,6 +703,37 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # ``EPSON_ARM7``), so the active default is 75 (issue #155).
     p_dph_t.nfperiod = 75
     p_dph_t.nfcomma = 16
+
+    # 4a-bis-2. User pause overrides from ``[:comma N]`` /
+    # ``[:period N]`` (issue #249). The C command handlers send the
+    # CPAUSE / PPAUSE control words down the LTS pipe (``cm_copt.c``
+    # lines 2486-2541) and ``ph_task.c`` lines 784-788 consume them:
+    #
+    #     case CPAUSE: compause = mstofr(deadstop(N, -280, 30000));
+    #     case PPAUSE: perpause = mstofr(deadstop(N, -420, 30000));
+    #
+    # The pipe itself is 16-bit (``DT_PIPE_T`` = unsigned short,
+    # port.h line 73), so the value wraps to S16 in transit. The
+    # period command clamps to [-420, 30000] at the cmd layer BEFORE
+    # the pipe (cm_copt.c lines 2526-2530 — the BTS#10100 fix), which
+    # makes its wrap a no-op; the comma command sends the raw value,
+    # so e.g. ``[:comma 45000]`` arrives as -20536 and deadstops to
+    # -280 (verified byte-identical vs the oracle).
+    #
+    # ``us_phtiming``'s Rule 1 then adds the fields to the GEN_SIL
+    # dpause (``nfcomma + compause + asperation`` / ``nfperiod +
+    # perpause + asperation``, p_us_tim.c lines 290-305) — already
+    # ported, so seeding the two fields completes the chain.
+    if comma_pause is not None or period_pause is not None:
+        from dectalk.ph.task_helpers import deadstop, mstofr  # noqa: PLC0415
+
+        def _s16_pipe(value: int) -> int:
+            return ((value + 0x8000) & 0xFFFF) - 0x8000
+
+        if comma_pause is not None:
+            p_dph_t.compause = mstofr(deadstop(_s16_pipe(comma_pause), -280, 30000))
+        if period_pause is not None:
+            p_dph_t.perpause = mstofr(deadstop(_s16_pipe(period_pause), -420, 30000))
 
     # 4a-ter. Zero / size the per-clause scratch arrays ONCE per
     # utterance -- C's ``kltask`` calls ``init_phclause`` at task

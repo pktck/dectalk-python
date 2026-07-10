@@ -186,3 +186,46 @@ def test_unknown_command_passes_through() -> None:
 def test_empty_input() -> None:
     assert parse("") == []
     assert parse("[:dv harry]") == []  # only a command -> no body segment
+
+
+def test_comma_pause_recorded_unclamped() -> None:
+    """``[:comma N]`` records the raw ms value (issue #249).
+
+    The C ``cm_cmd_comma`` (cm_copt.c lines 2486-2502) forwards the
+    value unclamped; the PH consumer applies its own deadstop. The
+    two-letter ``cp`` alias maps to the same handler (c_us_cde.h
+    line 418).
+    """
+    segs = parse("[:comma 1000] a, b")
+    assert segs[0].state.comma_pause == 1000
+    segs = parse("[:cp -500] a, b")
+    assert segs[0].state.comma_pause == -500
+    # Out-of-range values are NOT clamped at the command layer --
+    # they wrap through the 16-bit LTS pipe on the way to PH.
+    segs = parse("[:comma 45000] a, b")
+    assert segs[0].state.comma_pause == 45000
+
+
+def test_period_pause_clamped_at_command_layer() -> None:
+    """``[:period N]`` clamps to [-420, 30000] (issue #249).
+
+    Mirrors ``cm_cmd_period`` (cm_copt.c lines 2526-2530, the
+    BTS#10100 fix): the clamp happens at the command layer, before
+    the 16-bit pipe. The ``pp`` alias maps to the same handler.
+    """
+    segs = parse("[:period 2000] a. b")
+    assert segs[0].state.period_pause == 2000
+    segs = parse("[:pp 90000] a. b")
+    assert segs[0].state.period_pause == 30000
+    segs = parse("[:period -1000] a. b")
+    assert segs[0].state.period_pause == -420
+
+
+def test_pause_commands_persist_and_ignore_bad_args() -> None:
+    """Pause state persists across segments; bad args leave it unset."""
+    segs = parse("[:comma 700] a, b [:dv harry] c, d")
+    assert all(s.state.comma_pause == 700 for s in segs)
+    for bad in ("[:comma] x", "[:comma abc] x", "[:period] x", "[:period xyz] x"):
+        segs = parse(bad)
+        assert segs[0].state.comma_pause is None
+        assert segs[0].state.period_pause is None

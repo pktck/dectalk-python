@@ -27,10 +27,22 @@ def _parse_table(name: str) -> list[int]:
 
 @pytest.mark.skipif(not _C_SOURCE.exists(), reason="C source not available")
 def test_getcosine_tab_matches_c_source() -> None:
-    """``getcosine_tab`` matches the C ``getcosine[64]`` table."""
+    """``getcosine_tab`` matches the C ``getcosine[64]`` table.
+
+    The Python tuple carries one extra cell: index 64 is reachable
+    (the timecos accumulators land on exactly TWOPI = 4096 once per
+    wrap cycle) and out of bounds in C — the shipped ``libtts_us.so``
+    reads a zero short there (alignment padding after the array;
+    verified via ctypes against both the shipped and parity-built
+    libraries, issue #249). The C-source comparison therefore covers
+    the first 64 entries, and the out-of-bounds cell is pinned to the
+    binary-verified 0.
+    """
     c_values = _parse_table("getcosine")
     assert len(c_values) == 64
-    assert tuple(c_values) == ctt.getcosine_tab
+    assert tuple(c_values) == ctt.getcosine_tab[:64]
+    assert len(ctt.getcosine_tab) == 65
+    assert ctt.getcosine_tab[64] == 0
 
 
 @pytest.mark.skipif(not _C_SOURCE.exists(), reason="C source not available")
