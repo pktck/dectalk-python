@@ -2203,7 +2203,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             numeric_chunk_phonemes,
         )
         from dectalk.lts.token_shapes import (  # noqa: PLC0415 — local like the helpers above
+            is_clean_cap_word,
             is_mixed_alnum,
+            roman_ordinal_text,
             spell_form,
             split_alnum_runs,
         )
@@ -2223,8 +2225,14 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # runs through this same dispatch.
         tokens: list[Token] = []
         chunk_queue: deque[str] = deque(seg.body.split())
+        prev_chunk: str | None = None
         while chunk_queue:
             chunk = chunk_queue.popleft()
+            # Preceding whitespace-delimited chunk (for the roman-numeral
+            # R387 capitalised-word prefix test, issue #324). Snapshot
+            # before overwriting so the current iteration still sees it.
+            prev_chunk_for_roman = prev_chunk
+            prev_chunk = chunk
             # Sentinel re-injected by the symbol split below: emit the
             # WORD token directly (its phonemes live in
             # ``word_phoneme_overrides``). Checked FIRST -- the
@@ -2339,6 +2347,25 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             while inner and not inner[-1].isalnum():
                 trailing.insert(0, inner[-1])
                 inner = inner[:-1]
+            # --- Roman numeral contextual ordinal (issue #324) ------
+            # NWS rule R387 (par_rule.par:417) rewrites a roman numeral to
+            # its ordinal value ("the Nth") when — and only when — it
+            # directly follows a capitalised word: ``Chapter IV`` ->
+            # ``Chapter the 4th`` -> "chapter the fourth". The capitalised
+            # prefix (``U<1>A<+>W<+>``) is the whole guard: bare ``IV``,
+            # lowercase ``iv``, ``chapter IV`` and ``Chapter, IV`` (punct,
+            # not whitespace) all fail R387 and read as ordinary words.
+            # The ``roman_num`` table is exact strings for 2..20 only, so
+            # words like ``MIX``/``DID`` never match. Reinject ``the`` +
+            # ``Nth`` so the pipeline reads the ordinal (mirrors the C
+            # ``r/$7/$9/`` replacement).
+            if inner and not leading and inner.isupper():
+                roman_txt = roman_ordinal_text(inner)
+                if roman_txt is not None and is_clean_cap_word(prev_chunk_for_roman):
+                    roman_parts = roman_txt.split()  # ["the", "4th"]
+                    roman_parts[-1] = roman_parts[-1] + "".join(trailing)
+                    chunk_queue.extendleft(reversed(roman_parts))
+                    continue
             # C keeps sign characters through its punctuation strip
             # (``ls_task_strip_left_punctuation`` LS class excludes
             # them; ``ls_task_set_sign_flag`` consumes them later) —

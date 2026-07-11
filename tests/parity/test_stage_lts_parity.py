@@ -394,3 +394,51 @@ def test_mixed_alnum_split_matches_c(text: str, capi: CAPI) -> None:
         f"  expected (C): {expected!r}\n"
         f"  actual (Py):  {actual!r}"
     )
+
+
+# Issue #324 representatives: contextual roman numerals. The C NWS rule
+# R387 (par_rule.par:417) rewrites a roman numeral to its ordinal value
+# ("the Nth") only when it directly follows a capitalised word; the
+# ``roman_num`` table is exact strings for 2..20. Every row here is a
+# *triggered* case (capitalised prefix + table hit); the non-triggered
+# and false-positive-guard cases live in the oracle-free unit test
+# ``tests/unit/test_token_shapes.py`` (bare ``IV`` / lowercase ``iv`` /
+# ``Chapter, IV`` stay ordinary words). Rows span the table range and a
+# variety of capitalised prefixes (proper nouns, common nouns, all-caps,
+# two-letter, sentence-initial verb).
+_ROMAN_NUMERAL_FAMILY: tuple[str, ...] = (
+    "Chapter IV",
+    "Henry VIII",
+    "Book XIV",
+    "World War II",
+    "Louis XVI",
+    "Chapter III",
+    "Chapter VII",
+    "Chapter XI",
+    "Chapter XVIII",
+    "Chapter XX",
+    "Pope VI",
+    "Hi IV",
+    "Cat IV dog",
+    "RED IV",
+    "Mix IV things",
+    "Apple II",
+    "Say XIV again.",
+)
+
+
+@pytest.mark.parametrize("text", _ROMAN_NUMERAL_FAMILY, ids=list(_ROMAN_NUMERAL_FAMILY))
+def test_roman_numeral_ordinal_matches_c(text: str, capi: CAPI) -> None:
+    """Capitalised-prefix roman numerals read as ordinals (issue #324).
+
+    Pins the ``token_shapes`` R387 recognizer: a capitalised word
+    followed by a table roman (2..20) rewrites to "the Nth", byte-compared
+    against ``TextToSpeechConvertToPhonemes``.
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"roman-numeral mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
