@@ -114,6 +114,14 @@ class SpeechState:
             period-boundary pause in milliseconds, or None when unset.
             Already clamped to [-420, 30000] at the command layer like
             the C ``cm_cmd_period`` (``cm_copt.c`` lines 2526-2530).
+        dv_overrides: Ordered ``(spd_index, raw_value)`` pairs recorded by
+            the ``[:dv <field> <value>]`` design-voice form (issue #331).
+            Applied (tunedef + clamp) on top of the active voice's
+            ``SPDEF`` row by the full-pipeline renderer via
+            :func:`dectalk.ph.setspdef.apply_dv_overrides`. Reset to ``()``
+            whenever a preset voice is (re)selected, mirroring the C
+            ``usevoice`` reload that wipes prior ``[:dv]`` writes to
+            ``curspdef``.
     """
 
     voice: str | None = None
@@ -121,6 +129,7 @@ class SpeechState:
     phoneme_mode: int = _DEFAULT_PHONEME_MODE
     comma_pause: int | None = None
     period_pause: int | None = None
+    dv_overrides: tuple[tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,18 +203,61 @@ def _cmd_dv(state: SpeechState, args: list[str]) -> SpeechState:
     The parameter form must not be mistaken for a preset name: doing so
     stored e.g. ``"ap"`` as the active voice and crashed the renderer at
     ``get_preset`` (issue #241). Recognise the parameter form by its
-    leading option keyword and leave the voice unchanged. The individual
-    parameters are not yet applied to the speaker definition — that is a
-    follow-on; the important behaviour here is not crashing.
+    leading option keyword and leave the voice unchanged.
+
+    The parameter values are recorded on :attr:`SpeechState.dv_overrides`
+    (issue #331) and applied to the speaker definition by the
+    full-pipeline renderer. Selecting a preset voice resets any
+    accumulated overrides, mirroring the C ``usevoice`` reload.
     """
     if not args:
         return state
     if args[0].lower() in _DV_PARAM_KEYWORDS:
-        # Parameter (design-voice) form: ``<field> <value>`` pairs, not a
-        # preset. Not yet simulated — leave state unchanged.
+        # Parameter (design-voice) form: one or more ``<field> <value>``
+        # pairs — accumulate them onto the running override list.
+        return _apply_dv_params(state, args)
+    # Preset-name form: select a built-in voice (wipes prior [:dv] params).
+    return replace(state, voice=args[0].lower(), dv_overrides=())
+
+
+def _apply_dv_params(state: SpeechState, args: list[str]) -> SpeechState:
+    """Record ``[:dv <field> <value> ...]`` design-voice parameter writes.
+
+    Each ``<field>`` is a keyword from
+    :data:`dectalk.cmd.option_tables.define_options`; the C
+    ``cm_cmd_define`` (``cm_copt.c``) maps it to a ``SPDEF`` index via
+    ``string_match(define_options, field) - 1`` and forwards the raw
+    numeric value down the LTS pipe as a ``NEW_PARAM`` write. We store the
+    same ``(spd_index, value)`` pairs on :attr:`SpeechState.dv_overrides`;
+    the render layer applies the per-voice ``tunedef`` offset and the
+    ``limit[]`` clamp (see :func:`dectalk.ph.setspdef.apply_dv_overrides`).
+
+    The ``save`` keyword (index 0, the "make permanent" subcommand) is not
+    a speaker parameter and is skipped. Non-numeric values and dangling
+    fields (no following value) are ignored, matching the C parser's
+    per-argument tolerance.
+    """
+    overrides = list(state.dv_overrides)
+    i = 0
+    n = len(args)
+    while i < n:
+        field = args[i].lower()
+        if field not in _DV_PARAM_KEYWORDS or field == "save":
+            # Unknown keyword or the value-less ``save`` subcommand.
+            i += 1
+            continue
+        if i + 1 >= n:
+            break
+        try:
+            value = int(args[i + 1], 10)
+        except ValueError:
+            i += 2
+            continue
+        overrides.append((define_options.index(field) - 1, value))
+        i += 2
+    if len(overrides) == len(state.dv_overrides):
         return state
-    # Preset-name form: select a built-in voice.
-    return replace(state, voice=args[0].lower())
+    return replace(state, dv_overrides=tuple(overrides))
 
 
 def _cmd_rate(state: SpeechState, args: list[str]) -> SpeechState:
@@ -351,7 +403,8 @@ def _make_name_shortcut(name: str) -> _Handler:
 
     def _handler(state: SpeechState, args: list[str]) -> SpeechState:
         del args
-        return replace(state, voice=name)
+        # Selecting a voice reloads curspdef, wiping prior [:dv] params.
+        return replace(state, voice=name, dv_overrides=())
 
     return _handler
 

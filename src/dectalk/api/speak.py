@@ -25,7 +25,7 @@ import io
 import os
 import wave
 from collections import deque
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
@@ -501,6 +501,7 @@ def _speak_via_python_full(
             lts_fallback=lts_fallback,
             comma_pause=seg.state.comma_pause,
             period_pause=seg.state.period_pause,
+            dv_overrides=seg.state.dv_overrides,
         )
         if chunk.size:
             chunks.append(chunk)
@@ -510,7 +511,7 @@ def _speak_via_python_full(
     return np.concatenate(chunks)
 
 
-def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically long
+def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsically long
     text: str,
     *,
     rate: float,
@@ -519,6 +520,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     lts_fallback: bool,
     comma_pause: int | None = None,
     period_pause: int | None = None,
+    dv_overrides: tuple[tuple[int, int], ...] = (),
 ) -> NDArray[np.int16]:
     """Render a single parser segment's body through the full PH pipeline.
 
@@ -535,6 +537,10 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
             state, or None when unset (issue #249).
         period_pause: ``[:period N]`` milliseconds from the segment
             state, or None when unset.
+        dv_overrides: ``[:dv <field> <value>]`` design-voice writes as
+            ordered ``(spd_index, raw_value)`` pairs; overlaid (tunedef +
+            ``limit[]`` clamp) onto the voice's ``SPDEF`` row before the
+            speaker reload (issue #331). Empty tuple = no overrides.
     """
     from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
     from dectalk.kernel.lang_codes import LANG_english  # noqa: PLC0415
@@ -545,6 +551,7 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     from dectalk.ph.phsettar import phsettar  # noqa: PLC0415
     from dectalk.ph.setspdef import (  # noqa: PLC0415
         C_SPEAKER_INDEX,
+        apply_dv_overrides,
         seed_dph_scalars,
         spd_chip_from_row,
     )
@@ -559,7 +566,13 @@ def _render_clause_full(  # noqa: PLR0915 — orchestration is intrinsically lon
     # ``p_us_vdf_oldtune.c`` rows are all-zero at 11025 Hz — see
     # ``dectalk.ph.setspdef``), so the raw row IS ``curspdef``.
     voice_name = _voice_name_for_spdefs(voice) or "paul"
-    voice_row = VOICES_BY_NAME.get(voice_name, voice_paul)
+    voice_row: Sequence[int] = VOICES_BY_NAME.get(voice_name, voice_paul)
+    # ``[:dv <field> <value>]`` design-voice writes (issue #331): clamp each
+    # to its ``limit[]`` range and overlay onto ``curspdef`` before the
+    # speaker reload, exactly as the C ``NEW_PARAM`` path mutates the row
+    # ahead of ``setspdef``. The tunedef add is a no-op on this build.
+    if dv_overrides:
+        voice_row = apply_dv_overrides(voice_row, dv_overrides)
 
     # 1. Text -> the byte-exact DECtalk phoneme stream. This is the same
     # ASCII stream the LTS+dic oracle path emits — byte-identical to the C
