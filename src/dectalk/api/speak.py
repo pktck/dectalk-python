@@ -2938,12 +2938,19 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     # keeps every letter primary-stressed; the only
                     # exception is the small set of acronyms whose
                     # main-dic entry hard-codes a destressed middle
-                    # letter (FBI is the canonical example -- C dic
-                    # has ``Ef bi 'A`` with no stress mark on ``bi``).
-                    # The ``destress_middle_letter_acronyms`` set
-                    # opts those into the legacy "first and last
-                    # only" pattern.
-                    destress_middle_letter_acronyms: frozenset[str] = frozenset({"FBI"})
+                    # letter. These sit in Dic_us.txt as pre-spelled rows
+                    # whose middle letter carries no stress mark, so the
+                    # dict lookup (which precedes ``ls_spel_say_it``) wins
+                    # over the generic all-primary spelling: FBI
+                    # (``:141 FBI,N,'Ef bi 'A``) and IBM
+                    # (``:6764 ibm,N,'A bi 'Em``) — ``bi`` unstressed in
+                    # both. Acronyms that are *also* dict rows but keep the
+                    # generic spelling (ABC's ``'e*b`i*s'i`` renders
+                    # all-primary in the binary) stay out of this set. The
+                    # ``destress_middle_letter_acronyms`` set opts the
+                    # destressed-middle ones into the "first and last only"
+                    # stress pattern.
+                    destress_middle_letter_acronyms: frozenset[str] = frozenset({"FBI", "IBM"})
                     letters = list(token.text)
                     for i_letter, letter in enumerate(letters):
                         if i_letter > 0:
