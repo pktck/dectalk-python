@@ -342,3 +342,55 @@ def test_numeric_formats_match_c(text: str, capi: CAPI) -> None:
         f"  expected (C): {expected!r}\n"
         f"  actual (Py):  {actual!r}"
     )
+
+
+# Issue #323 representatives: mixed alphanumeric clusters. The C NWS
+# pre-processor (par_rule.par rules R390/R391) inserts a space at every
+# digit/letter boundary and reads each run independently; guard rule R389
+# keeps the ordinal/plural suffixes whole. Each row names a mechanism:
+#   - letter+digit and digit+letter runs: single letters wordize (``A``
+#     -> article schwa, ``M`` -> "em", ``x`` -> "ex"), digit runs read as
+#     numbers ("forty two", "ten").
+#   - unpronounceable all-caps clusters spell (``kg`` -> "kay gee") via the
+#     say-it predicate.
+#   - the ``e``/``E`` in ``1E10`` / ``6.02e23`` is split off as its own
+#     letter run (no MODE_MATH exponent), and the decimal in ``6.02``
+#     survives the split.
+#   - the R389 guard leaves decade plurals (``1990s`` / ``70s`` / ``'90s``)
+#     to the numeric plural path.
+_MIXED_ALNUM_FAMILY: tuple[str, ...] = (
+    "A1",
+    "3M",
+    "B2B",
+    "42kg",
+    "2x",
+    "3D",
+    "1E10",
+    "6.02e23",
+    "2e-5",
+    "M1",
+    "1kg",
+    "the '90s",
+    "1990s",
+    "70s",
+    "Buy 42kg now.",
+    "model 3D printing",
+)
+
+
+@pytest.mark.parametrize("text", _MIXED_ALNUM_FAMILY, ids=list(_MIXED_ALNUM_FAMILY))
+def test_mixed_alnum_split_matches_c(text: str, capi: CAPI) -> None:
+    """Mixed alphanumeric clusters are byte-identical (issue #323).
+
+    Pins the ``token_shapes`` letter/digit split + reinject: each run
+    reads as its own word (numbers, letter names / article schwa, or
+    spelled all-caps clusters), byte-compared against
+    ``TextToSpeechConvertToPhonemes``.
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"mixed-alnum mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
