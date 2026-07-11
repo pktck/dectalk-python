@@ -235,4 +235,58 @@ def spd_chip_from_row(row: Sequence[int], speaker: int = 0) -> SpdChip:
     )
 
 
-__all__ = ["C_SPEAKER_INDEX", "seed_dph_scalars", "spd_chip_from_row"]
+def apply_dv_overrides(row: Sequence[int], overrides: Sequence[tuple[int, int]]) -> list[int]:
+    """Apply ``[:dv <field> <value>]`` user overrides to a copy of a ``SPDEF`` row.
+
+    Faithful translation of the ``NEW_PARAM`` per-parameter setter the
+    ``[:dv]`` command feeds through the LTS pipe: ``cm_cmd_define``
+    (``cm_copt.c``) resolves the field keyword to a ``SPDEF`` index
+    (``pipe_value[1] = string_match(define_options, field) - 1``) and
+    forwards the raw value; ``ph_vset.c`` then adds the per-voice
+    ``tunedef`` offset and clamps to the ``limit[]`` range before storing
+    into ``curspdef[which]``.
+
+    On the active US build (no ``HLSYN`` / no ``CHANGES_AFTER_V43``,
+    ``PC_SAMPLE_RATE == 11025``) the per-voice ``tunedef`` rows
+    (``p_us_vdf_oldtune.c``) are **all zero** — the only non-zero literals
+    sit behind ``#if PC_SAMPLE_RATE == 22050`` — so the ``value +=
+    tunedef[voice][which]`` step (``ph_vset.c`` line 215) is a documented
+    no-op here and only the clamp applies. The clamp table is
+    :data:`dectalk.ph.voice_limits.limit` (``LIMIT limit[]`` from
+    ``ph_vdefi.c``), indexed by the same ``SPD_*`` constant.
+
+    Empirically verified byte-exact against the shipped binary for
+    ``ap``/``pr``/``hs``/``as``/``br``/``ri``/``sm``/``sr``/``bf``/``qu``/
+    ``gv`` at in-range and out-of-range grid values (issue #331): e.g.
+    ``[:dv ap 40]`` clamps to the ``AP`` floor 50, ``[:dv hs 200]`` to the
+    ``HS`` ceiling 145.
+
+    Args:
+        row: The base ``SPDEF`` voice row (``curspdef`` content, e.g. one
+            of the ``voice_<name>`` constants).
+        overrides: Ordered ``(spd_index, raw_value)`` pairs from the
+            command layer; later entries for the same index win (matching
+            repeated ``[:dv]`` writes to ``curspdef``).
+
+    Returns:
+        A new ``list[int]`` row with each override clamped to its
+        ``limit[spd_index]`` range and stored at ``spd_index``. Indices
+        outside the row / limit table are ignored.
+    """
+    from dectalk.ph.voice_limits import limit  # noqa: PLC0415
+
+    new_row = list(row)
+    for spd_index, value in overrides:
+        if not (0 <= spd_index < len(limit) and spd_index < len(new_row)):
+            continue
+        lim = limit[spd_index]
+        new_row[spd_index] = max(lim.l_min, min(lim.l_max, value))
+    return new_row
+
+
+__all__ = [
+    "C_SPEAKER_INDEX",
+    "apply_dv_overrides",
+    "seed_dph_scalars",
+    "spd_chip_from_row",
+]

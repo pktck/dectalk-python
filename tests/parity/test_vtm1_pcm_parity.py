@@ -374,6 +374,55 @@ def test_vtm1_pcm_byte_identical_punct_names(text: str, monkeypatch: pytest.Monk
 # --- end issue #315 lane ---------------------------------------------
 
 
+# --- issue #331: [:dv <field> <value>] design-voice lane -------------
+# The design-voice command overwrites ``curspdef[SPD_<field>]`` with the
+# user value, clamped to the ``limit[]`` range (``ph_vdefi.c``); the
+# per-voice ``tunedef`` add is all-zero on the active 11025 Hz build, so
+# the value flows straight to the speaker reload
+# (``dectalk.ph.setspdef.apply_dv_overrides`` -> ``seed_dph_scalars`` +
+# ``spd_chip_from_row``). Same sample count as the un-prefixed prompt
+# (the params retune formants / F0 / gains, not timing), different bytes.
+# ``[:dv as 100]`` is byte-identical to no command because 100 is Paul's
+# default ``SPD_AS`` — the render path was always correct; only the
+# parameter application was missing (issue #331). Each row pins one field
+# family at a representative grid value, plus the two clamp edges
+# (``ap 40`` -> AP floor 50, ``hs 200`` -> HS ceiling 145) and a
+# multi-field write in a single command.
+_DV_PARAM_BYTE_EXACT_PROMPTS: tuple[str, ...] = (
+    "[:dv as 100] hello",  # no-op regression guard (100 == Paul default)
+    "[:dv ap 90] hello",  # average pitch
+    "[:dv ap 200] hello world",  # average pitch, longer body
+    "[:dv pr 250] hello",  # pitch range (at limit ceiling)
+    "[:dv hs 120] testing",  # head size
+    "[:dv br 40] hello",  # breathiness
+    "[:dv ri 30] hello",  # richness
+    "[:dv sm 100] hello",  # smoothness
+    "[:dv gv 55] hello",  # voicing gain
+    "[:dv ap 40] hello",  # below AP floor -> clamps to 50
+    "[:dv hs 200] hello",  # above HS ceiling -> clamps to 145
+    "[:dv br 40 ri 30] hello",  # multiple field/value pairs, one command
+    "[:dv sm 100 sr 10 bf 20 qu 60 gv 55] hello",  # five params at once
+)
+
+
+@pytest.mark.parametrize("text", _DV_PARAM_BYTE_EXACT_PROMPTS)
+def test_vtm1_pcm_byte_identical_dv_params(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``[:dv <field> <value>]`` design-voice params are byte-exact vs the binary.
+
+    The #331 lane: each parameter overwrites ``curspdef`` (clamped to its
+    ``limit[]`` range) and re-seeds the speaker definition, matching the C
+    ``cm_cmd_define`` -> ``ph_vset.c`` per-param setter. Sample count is
+    unchanged (back-end-content); the bytes retune to the new voice.
+    """
+    ref = _binary_pcm_int16(text)
+    py = _python_vtm1_pcm(text, monkeypatch)
+    assert py.size == ref.size, f"length mismatch {py.size} vs {ref.size}"
+    np.testing.assert_array_equal(py, ref)
+
+
+# --- end issue #331 [:dv] lane ---------------------------------------
+
+
 # Frame size at the active 11025 Hz build (vtm1.c uiNumberOfSamplesPerFrame).
 _SAMPLES_PER_FRAME = 71
 
