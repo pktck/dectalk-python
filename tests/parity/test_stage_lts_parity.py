@@ -485,6 +485,10 @@ def test_inflection_weak_vowel_family_matches_c(text: str, capi: CAPI) -> None:
 #     (ls_proc_is_date / do_date).
 #   - part-number ranges: digit runs via do_2/3/4_digits with the
 #     spelled "dash" separator (ls_task_part_number).
+#   - bare 4-digit years: ls_util_is_year -> ls_proc_do_4_digits
+#     ("nineteen eighty four" / "fourteen hundred" / "1905" -> "nineteen
+#     zero five"), with the C is_year guards keeping round thousands
+#     (2000) and quantity contexts on the cardinal path (issue #335).
 #   - signed integers / decimals: ls_proc_do_sign + do_number.
 #   - digit plurals: do_number + ls_util_pluralize ("60s" / "60's").
 _NUMERIC_FORMATS: tuple[str, ...] = (
@@ -529,6 +533,17 @@ _NUMERIC_FORMATS: tuple[str, ...] = (
     "range 10-20 only",
     "meet on 12/25 sharp",
     "it costs $5 million",
+    # issue #335 — bare 4-digit year wordization and its cardinal guards.
+    "1984",
+    "1066",
+    "2026",
+    "1900",
+    "1905",
+    "in 1984 we",
+    "born in 1984",
+    "1984 dollars",
+    "2000",
+    "say 2000 dollars",
 )
 
 

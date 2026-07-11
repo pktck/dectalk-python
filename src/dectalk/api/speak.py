@@ -2301,6 +2301,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             spell_form,
             split_alnum_runs,
         )
+        from dectalk.lts.util_helpers import (  # noqa: PLC0415 — local like the helpers above
+            ls_util_is_year,
+        )
 
         raw_prefix = "__RAW__"
         # Tokenize with C-faithful digit-string handling: for each
@@ -2476,7 +2479,17 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             if inner:
                 sign_prefix = leading[-1] if leading and leading[-1] in "-+" else ""
                 is_plain_digits = bool(_digits_strict.match(inner) or _dotted.match(inner))
-                if sign_prefix or not is_plain_digits:
+                # Bare all-digit tokens normally skip the numeric
+                # dispatch (the corpus-proven ``_digit_expand`` path owns
+                # them), but a sign-free 4-digit YEAR must reach it so it
+                # reads "nineteen eighty four" via ls_proc_do_4_digits
+                # (issue #335) rather than the cardinal "one thousand
+                # nine hundred...". ``ls_util_is_year`` mirrors the C
+                # recognizer exactly, so only true years route here
+                # (2000 / 2001 / other non-year 4-digit tokens stay on
+                # the cardinal path).
+                is_bare_year = not sign_prefix and ls_util_is_year(inner)
+                if sign_prefix or not is_plain_digits or is_bare_year:
                     next_chunk = chunk_queue[0] if (not trailing and chunk_queue) else None
                     numeric_expansion = numeric_chunk_phonemes(
                         inner,
