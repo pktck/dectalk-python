@@ -503,6 +503,7 @@ def _speak_via_python_full(
             period_pause=seg.state.period_pause,
             dv_overrides=seg.state.dv_overrides,
             sw_volume=seg.state.sw_volume,
+            phoneme_prefix=seg.phoneme_prefix,
         )
         if chunk.size:
             chunks.append(chunk)
@@ -523,6 +524,7 @@ def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsi
     period_pause: int | None = None,
     dv_overrides: tuple[tuple[int, int], ...] = (),
     sw_volume: int = 0,
+    phoneme_prefix: bytes = b"",
 ) -> NDArray[np.int16]:
     """Render a single parser segment's body through the full PH pipeline.
 
@@ -596,7 +598,18 @@ def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsi
     # generates the internal ``GEN_SIL`` phones and clause-boundary
     # features natively — superseding the hand-rolled boundary-feature
     # fix-ups this function used to need (#218).
-    raw_phonemes = text_to_dectalk_phonemes(text, lang=lang, lts_fallback=lts_fallback)
+    # A ``phoneme_prefix`` carries a pre-computed DECtalk phoneme stream that
+    # is prepended to the segment body's phonemes and rendered as ONE
+    # utterance (issue #330). It is used for the malformed-command error
+    # strings ("Command error in command." etc.), whose fixed pronunciations
+    # are injected char-by-char into the C LTS pipe (``cm_cmd.c:878``) rather
+    # than looked up per-word — so the exact C phoneme bytes are embedded
+    # verbatim, bypassing the Python LTS (which mispronounces "error" /
+    # "parameter"). Prepending keeps the error + following text one
+    # continuous stream, matching the C engine's single PH thread.
+    raw_phonemes = phoneme_prefix + text_to_dectalk_phonemes(
+        text, lang=lang, lts_fallback=lts_fallback
+    )
     if not raw_phonemes:
         return np.zeros(0, dtype=np.int16)
 

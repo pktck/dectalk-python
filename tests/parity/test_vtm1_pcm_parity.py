@@ -497,6 +497,89 @@ def test_vtm1_pcm_byte_identical_volume(text: str, monkeypatch: pytest.MonkeyPat
 # --- end issue #331 [:dv] / [:volume] lane ---------------------------
 
 
+# --- issue #330: malformed-command recovery + rate clamp/error modes -
+# The shipped binary's default error mode is ``ERROR_speak``: a malformed
+# inline command is SPOKEN as "Command error in command" / "Command error in
+# parameter" (``cm_cmd.c`` lines 817-919), injected char-by-char into the LTS
+# pipe then a ``0xb`` clause break. Python previously dropped malformed
+# commands silently. Each row below is byte-verified against the binary:
+#   - "[:bogus] hello" / "[:] hello": an unknown or empty command keyword is
+#     ``CMD_bad_command`` -> "Command error in command." spoken before the
+#     text, as ONE utterance. (The Python LTS mispronounces "error" /
+#     "parameter", so the fixed message is injected as the exact C phoneme
+#     bytes via ``Segment.phoneme_prefix`` -> ``_render_clause_full``'s
+#     ``phoneme_prefix`` — see ``dectalk.cmd.commands``.)
+#   - "[:bogus]": a trailing malformed command with no following text still
+#     speaks the message (an otherwise-empty segment).
+#   - "[:bogus] [:bogus] hello": consecutive errors chain, each spoken.
+#   - "[:rate abc]" / "[:rate 12x]": a present-but-non-decimal "d"-format
+#     argument is ``CMD_bad_param`` -> "Command error in parameter." (the C
+#     parameter builder is strict — "12x" fails exactly like "abc").
+#   - "[:error speak]" is the default and a no-op on top of it; the following
+#     malformed command still speaks. "[:error ignore]" / "[:error escape]"
+#     render the malformed command SILENTLY (escape has no switch case in
+#     ``cm_cmd_error_comm``, so it drops like ignore) — the message is
+#     suppressed and only the text is spoken.
+#   - "[:rate 600]" / "[:rate 700]": ``cm_cmd_rate`` clamps to [75, 600], but
+#     the binary saturates the rate->duration mapping at ~550 WPM, so every
+#     rate >= 550 renders identically to "[:rate 550]" — the Python effective
+#     clamp is 550 (was diverging by delta_samples -1349).
+#   - "[:rate]": a missing argument is NOT an error (the builder defaults 0,
+#     clamped to the minimum WPM) — byte-identical to "[:rate 50]".
+# DELIBERATELY EXCLUDED (documented unmatchable, issue #330):
+#   - ``say -a "[:error text] [:bogus] hello"`` SEGFAULTS the shipped binary
+#     (rc 139, empty WAV) — there is no reference audio to match.
+#   - Unclosed "[:" (``hello [:``, ``[:rate 200 hello``): the binary's
+#     unterminated-command path emits irregular partial audio (e.g. 20661
+#     frames for ``[:rate 200 hello``, distinct from any fixed message) —
+#     not modeled; Python leaves unclosed brackets as today.
+#   - ``[:error tone]``: the error tone is a raw beep injection (~1102 extra
+#     frames) not modeled by the Python synth path.
+#   - Unknown keywords that partial-match the command table trigger C's
+#     ``CMD_bad_string`` ("string value") path instead of ``CMD_bad_command``
+#     (e.g. "[:garbage]"); Python always emits "command". Not a representative
+#     and absent from the parity corpus (whose only commands are valid
+#     ``[:rate N]`` / ``[:nX]``).
+_MALFORMED_CMD_BYTE_EXACT_PROMPTS: tuple[str, ...] = (
+    "[:bogus] hello",
+    "[:] hello",
+    "[:bogus]",
+    "[:bogus] [:bogus] hello",
+    "[:rate abc] hello",
+    "[:rate 12x] hello",
+    "[:error speak] [:bogus] hello",
+    "[:error ignore] [:bogus] hello",
+    "[:error escape] [:bogus] hello",
+    "[:rate 600] hello",
+    "[:rate 700] hello",
+    "[:rate 550] hello",
+    "[:rate] hello",
+    "[:rate 50] hello",
+)
+
+
+@pytest.mark.parametrize("text", _MALFORMED_CMD_BYTE_EXACT_PROMPTS)
+def test_vtm1_pcm_byte_identical_malformed_command(
+    text: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Malformed-command recovery + rate clamp/error modes are byte-exact.
+
+    The #330 lane: the default speak mode injects the exact "Command error
+    in command/parameter" phoneme stream at the command's position; ignore/
+    escape suppress it; ``[:rate 600]`` / ``[:rate 700]`` saturate onto 550;
+    ``[:rate]`` clamps to the minimum. See the block comment above for the
+    per-row rationale and the documented exclusions (binary segfault,
+    unclosed brackets, tone).
+    """
+    ref = _binary_pcm_int16(text)
+    py = _python_vtm1_pcm(text, monkeypatch)
+    assert py.size == ref.size, f"length mismatch {py.size} vs {ref.size}"
+    np.testing.assert_array_equal(py, ref)
+
+
+# --- end issue #330 lane ---------------------------------------------
+
+
 # Frame size at the active 11025 Hz build (vtm1.c uiNumberOfSamplesPerFrame).
 _SAMPLES_PER_FRAME = 71
 

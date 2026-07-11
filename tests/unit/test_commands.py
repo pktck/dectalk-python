@@ -116,18 +116,39 @@ def test_rate_is_absolute_wpm() -> None:
 
 
 def test_rate_clamps_out_of_range_to_legal_wpm() -> None:
-    """Out-of-range WPM is clamped to [75, 600] before conversion.
+    """Out-of-range WPM is clamped before conversion.
 
-    Matches the C binary's MIN_SPEAKING_RATE / MAX_SPEAKING_RATE
-    behaviour (see :mod:`dectalk.cmd.cmd_states`).
+    ``cm_cmd_rate`` clamps its argument to [75, 600] (``cm_copt.c`` lines
+    2379-2388), but the *shipped binary* — the parity spec — saturates the
+    downstream rate→duration mapping at ~550 WPM: every rate >= 550 renders
+    byte-identically to ``[:rate 550]`` (issue #330). The effective ceiling
+    is therefore 550, so ``[:rate 600]`` / ``[:rate 1000]`` all collapse
+    onto the 550 multiplier.
     """
     # Below 75 WPM → clamped to 75 → multiplier 180/75 = 2.4
     segs = parse("[:rate 10] hello")
     assert math.isclose(segs[0].state.rate, 180.0 / 75.0, abs_tol=_RATE_EPS)
 
-    # Above 600 WPM → clamped to 600 → multiplier 180/600 = 0.3
+    # Above the 550 saturation point → clamped to 550 → 180/550.
     segs = parse("[:rate 1000] hello")
-    assert math.isclose(segs[0].state.rate, 180.0 / 600.0, abs_tol=_RATE_EPS)
+    assert math.isclose(segs[0].state.rate, 180.0 / 550.0, abs_tol=_RATE_EPS)
+    # 600 and 700 (issue #330 representatives) land on the same multiplier.
+    assert math.isclose(
+        parse("[:rate 600] x")[0].state.rate, 180.0 / 550.0, abs_tol=_RATE_EPS
+    )
+    assert math.isclose(
+        parse("[:rate 700] x")[0].state.rate, 180.0 / 550.0, abs_tol=_RATE_EPS
+    )
+
+
+def test_rate_missing_arg_clamps_to_minimum() -> None:
+    """``[:rate]`` with no argument is not an error: the C parameter builder
+    defaults ``params[0] = 0``, which the clamp lifts to the minimum WPM.
+    The binary renders ``[:rate]`` identically to ``[:rate 50]`` (issue
+    #330), so the multiplier is ``180/75``."""
+    segs = parse("[:rate] hello")
+    assert math.isclose(segs[0].state.rate, 180.0 / 75.0, abs_tol=_RATE_EPS)
+    assert segs[0].phoneme_prefix == b""  # missing arg is NOT an error
 
 
 def test_rate_composes_multiplicatively_with_initial_state() -> None:
@@ -145,9 +166,15 @@ def test_rate_composes_multiplicatively_with_initial_state() -> None:
     assert math.isclose(segs[0].state.rate, 0.25, abs_tol=_RATE_EPS)
 
 
-def test_invalid_rate_value_is_ignored() -> None:
+def test_invalid_rate_value_speaks_parameter_error() -> None:
+    """A present-but-non-numeric ``[:rate N]`` arg leaves the rate unchanged
+    and, in the default speak error mode, injects the "Command error in
+    parameter." message (issue #330; C ``CMD_bad_param``)."""
+    from dectalk.cmd.commands import _ERR_PH_PARAMETER
+
     segs = parse("[:rate notnumeric] hi")
-    assert segs[0].state.rate == 1.0  # unchanged from default
+    assert segs[0].state.rate == 1.0  # rate itself unchanged
+    assert segs[0].phoneme_prefix == _ERR_PH_PARAMETER
 
 
 def test_phoneme_mode_toggle() -> None:
@@ -208,12 +235,51 @@ def test_initial_state_seeds_first_segment() -> None:
     assert segs[0].state == initial
 
 
-def test_unknown_command_passes_through() -> None:
-    """Unrecognised commands should be silently dropped, not crash."""
+def test_unknown_command_speaks_command_error() -> None:
+    """An unrecognised command keyword injects "Command error in command."
+    in the default speak error mode (issue #330; C ``CMD_bad_command``),
+    merged with the following text into one utterance. The synthesizer state
+    is otherwise unchanged."""
+    from dectalk.cmd.commands import _ERR_PH_COMMAND
+
     segs = parse("[:bogus xxx] hello")
     assert len(segs) == 1
     assert segs[0].body.strip() == "hello"
-    assert segs[0].state == SpeechState()  # state unchanged
+    assert segs[0].phoneme_prefix == _ERR_PH_COMMAND
+    assert segs[0].state.voice is None
+    assert segs[0].state.rate == 1.0
+
+
+def test_empty_command_speaks_command_error() -> None:
+    """``[:]`` (empty keyword) is ``CMD_bad_command`` -> "Command error in
+    command." (issue #330)."""
+    from dectalk.cmd.commands import _ERR_PH_COMMAND
+
+    segs = parse("[:] hello")
+    assert len(segs) == 1
+    assert segs[0].phoneme_prefix == _ERR_PH_COMMAND
+
+
+def test_error_ignore_and_escape_modes_suppress_message() -> None:
+    """``[:error ignore]`` / ``[:error escape]`` render a malformed command
+    silently — no injected phonemes — matching the binary, which speaks the
+    error only in the default ``speak`` mode (issue #330)."""
+    for mode in ("ignore", "escape", "text"):
+        segs = parse(f"[:error {mode}] [:bogus] hello")
+        assert len(segs) == 1, mode
+        assert segs[0].phoneme_prefix == b"", mode
+        assert segs[0].body.strip() == "hello", mode
+
+
+def test_error_speak_is_the_default_and_explicit() -> None:
+    """The default error mode is ``speak``; ``[:error speak]`` is a no-op on
+    top of it, and a following malformed command still speaks the error."""
+    from dectalk.cmd.commands import _ERR_PH_COMMAND
+
+    default = parse("[:bogus] hi")
+    explicit = parse("[:error speak] [:bogus] hi")
+    assert default[0].phoneme_prefix == _ERR_PH_COMMAND
+    assert explicit[0].phoneme_prefix == _ERR_PH_COMMAND
 
 
 def test_empty_input() -> None:
