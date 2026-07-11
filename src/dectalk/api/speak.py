@@ -2413,6 +2413,10 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         _digits_strict = _re.compile(r"^\d[\d,]*$")
         _title_chunk = _re.compile(r"^([A-Za-z]+)\.$")
         _leading_alpha = _re.compile(r"^[A-Za-z]+")
+        # Dotted single-UPPERCASE-letter run (``U.S.A``/``U.K`` after the
+        # trailing dot is stripped into ``trailing``) — issue #327's R44
+        # letter-per-dot acronym.
+        _dotted_letters = _re.compile(r"^[A-Z](?:\.[A-Z])+$")
 
         def _clause_initial(toks: list[Token]) -> bool:
             """True when no WORD has been emitted since the last pause.
@@ -2605,6 +2609,32 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         elif last in (",", ";", ":"):
                             tokens.append(Token(TokenKind.PAUSE_SHORT, last))
                     continue
+            # --- Dotted single-letter acronyms (issue #327) ---------
+            # R44 (par_rule.par:176-177, comment "let the single upper
+            # case character like U.S.A. go through") preserves an
+            # uppercase letter/dot run; ls_task_single_letter_spell_rules
+            # (ls_task.c:2650-2680) then eats each dot and spells the
+            # letter. So ``U.S.A.``/``U.K.`` read letter-by-letter
+            # ("you ess ay" / "you kay") with the dots consumed --
+            # distinct from the dedotted word ``USA`` (`` `yuehs ' ey``).
+            # The acronym's own trailing dot is absorbed (no clause
+            # break); any further trailing punctuation still pauses.
+            if inner and _dotted_letters.match(inner):
+                letter_flat: list[str] = []
+                for i_letter, ch in enumerate(inner.replace(".", "")):
+                    if i_letter > 0:
+                        letter_flat.append("_")
+                    letter_flat.extend(letter_names.get(ch, [ch]))
+                spelled = encode_to_dectalk(letter_flat).decode("latin-1")
+                tokens.append(Token(TokenKind.WORD, raw_prefix + spelled))
+                rest = trailing[:-1] if trailing and trailing[-1] == "." else trailing
+                if rest:
+                    last = rest[-1]
+                    if last in (".", "!", "?"):
+                        tokens.append(Token(TokenKind.PAUSE_LONG, last))
+                    elif last in (",", ";", ":"):
+                        tokens.append(Token(TokenKind.PAUSE_SHORT, last))
+                continue
             # --- Roman numeral contextual ordinal (issue #324) ------
             # NWS rule R387 (par_rule.par:417) rewrites a roman numeral to
             # its ordinal value ("the Nth") when — and only when — it
@@ -2662,6 +2692,42 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     )
             if numeric_expansion is None and inner and _digits_strict.match(inner):
                 tokens.extend(_digit_expand(int(inner.replace(",", ""))))
+                # A following ``a.m.``/``p.m.`` spells letter-by-letter after
+                # ANY number, not just a clock time (issue #327): "9 a.m." ->
+                # "nine A M", "100 a.m." -> "one hundred A M". C deletes the
+                # dots via R45 (par_rule.par:179-180) then spells through the
+                # after-time lookahead (ls_task.c:3616-3646), so dedot the
+                # candidate before ``am_pm_phonemes``. The abbreviation's own
+                # trailing dot is consumed (no clause break); other trailing
+                # punctuation still pauses.
+                if not trailing and chunk_queue:
+                    ampm_chunk = chunk_queue[0]
+                    ai = ampm_chunk
+                    ai_trailing: list[str] = []
+                    ai_has_leading = False
+                    while ai and not ai[0].isalnum():
+                        ai_has_leading = True
+                        ai = ai[1:]
+                    while ai and not ai[-1].isalnum():
+                        ai_trailing.insert(0, ai[-1])
+                        ai = ai[:-1]
+                    ampm_spelled = None if ai_has_leading else am_pm_phonemes(ai.replace(".", ""))
+                    if ampm_spelled is not None:
+                        chunk_queue.popleft()
+                        tokens.append(
+                            Token(TokenKind.WORD, raw_prefix + ampm_spelled.decode("latin-1"))
+                        )
+                        ai_rest = (
+                            ai_trailing[:-1]
+                            if ai_trailing and ai_trailing[-1] == "."
+                            else ai_trailing
+                        )
+                        if ai_rest:
+                            ai_last = ai_rest[-1]
+                            if ai_last in (".", "!", "?"):
+                                tokens.append(Token(TokenKind.PAUSE_LONG, ai_last))
+                            elif ai_last in (",", ";", ":"):
+                                tokens.append(Token(TokenKind.PAUSE_SHORT, ai_last))
             elif numeric_expansion is not None:
                 tokens.append(
                     Token(
