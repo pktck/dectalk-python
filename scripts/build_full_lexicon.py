@@ -49,16 +49,18 @@ from pathlib import Path
 from dectalk.dic.dectalk_phonemes_multi import decode_lang
 
 
-def _convert(source_path: Path, lang: str) -> list[tuple[str, str, list[str]]]:
+def _convert(source_path: Path, lang: str) -> list[tuple[str, str, list[str], str]]:
     """Parse one DECtalk dictionary file.
 
-    Returns a list of ``(word_upper, form_class, phonemes)`` tuples in
-    source order. Multiple entries for the same word with different
-    form-class letters (e.g. the ``record,P,...`` / ``record,S,...``
-    noun/verb minimal pair) are kept as separate rows so the lookup
-    layer can pick by context.
+    Returns a list of ``(word_upper, form_class, phonemes, source_word)``
+    tuples in source order. ``source_word`` preserves the original casing
+    so :func:`_resolve_case_collisions` can pick the right reading when the
+    same word appears under several cases (see that function). Multiple
+    entries for the same word with different form-class letters (e.g. the
+    ``record,P,...`` / ``record,S,...`` noun/verb minimal pair) are kept
+    as separate rows so the lookup layer can pick by context.
     """
-    out: list[tuple[str, str, list[str]]] = []
+    out: list[tuple[str, str, list[str], str]] = []
     # The non-English dictionaries (fr, de, sp, la) use Latin-1 encoding
     # for accented characters; UTF-8 decoding with errors="replace" loses
     # them. Try Latin-1 first, fall back to UTF-8.
@@ -90,8 +92,43 @@ def _convert(source_path: Path, lang: str) -> list[tuple[str, str, list[str]]]:
         decoded = decode_lang(parts[2], lang=lang)
         if not decoded:
             continue
-        out.append((word.upper(), fc_letter, decoded))
+        out.append((word.upper(), fc_letter, decoded, word))
     return out
+
+
+def _resolve_case_collisions(
+    rows: list[tuple[str, str, list[str], str]],
+) -> list[tuple[str, str, list[str]]]:
+    r"""Collapse case-distinct duplicate keys to the runtime reading.
+
+    ``Dic_us.txt`` is *case-sensitive*: it carries separate entries for
+    e.g. ``new,N,n'uw`` (the common adjective, primary stress) and
+    ``New,N,n\`uw`` (the proper-noun/compound form, secondary stress).
+    The C runtime looks the input token up case-sensitively, so lowercased
+    corpus text (``the new book``) resolves to the lowercase reading —
+    verified against the oracle: ``new`` -> ``n ' uww``, ``New`` ->
+    ``n \` uww``. Our lexicon is keyed by upper-case word only, so the two
+    collide on ``NEW``. Keeping the wrong one flips 300+ common words to
+    secondary stress (issue #332 stress-collision regression).
+
+    Resolution, per ``(WORD, form-class)`` group: prefer the entry whose
+    source word is all-lower-case (the citation/common-word reading);
+    tie-break toward a primary-stress vowel, then source order. Groups
+    without a lower-case member (pure proper nouns) keep their first
+    entry. Different form-class letters never merge, so the ``record|P`` /
+    ``record|S`` homograph pairs are untouched.
+    """
+    best: dict[tuple[str, str], tuple[str, str, list[str]]] = {}
+    rank: dict[tuple[str, str], tuple[int, int]] = {}
+    for word_upper, fc_letter, decoded, source_word in rows:
+        key = (word_upper, fc_letter)
+        is_lower = 1 if source_word.islower() else 0
+        has_primary = 1 if any(tok.endswith("1") for tok in decoded) else 0
+        score = (is_lower, has_primary)
+        if key not in best or score > rank[key]:
+            best[key] = (word_upper, fc_letter, decoded)
+            rank[key] = score
+    return list(best.values())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -118,20 +155,64 @@ def main(argv: list[str] | None = None) -> int:
         choices=("us", "uk", "fr", "de", "sp", "la"),
         help="Source dictionary language. Selects the per-language phoneme map.",
     )
+    parser.add_argument(
+        "--corrections",
+        type=Path,
+        default=None,
+        help=(
+            "Optional CMUDict-style overlay applied AFTER decoding: each "
+            "``WORD[|FC] PHONEME ...`` line overrides (or adds) that key. "
+            "Carries the runtime-alignment fixes that are not derivable from "
+            "the source dictionary text (LTS-override entries the source omits, "
+            "binary-wins pronunciations). Replaces the previous manual "
+            "diff-and-re-apply step; see the module docstring."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not args.source.exists():
         print(f"error: source not found: {args.source}", file=sys.stderr)
         return 2
 
-    rows = _convert(args.source, lang=args.lang)
+    resolved = _resolve_case_collisions(_convert(args.source, lang=args.lang))
+    # Keyed by the on-disk display key so a corrections overlay can override.
+    entries: dict[str, list[str]] = {}
+    for word, fc_letter, phonemes in resolved:
+        entries[word if fc_letter == "N" else f"{word}|{fc_letter}"] = phonemes
+
+    n_override = n_add = 0
+    if args.corrections is not None:
+        if not args.corrections.exists():
+            print(f"error: corrections not found: {args.corrections}", file=sys.stderr)
+            return 2
+        for raw in args.corrections.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:  # noqa: PLR2004 — key + >=1 phoneme
+                continue
+            key = parts[0].upper()
+            if key in entries:
+                n_override += 1
+            else:
+                n_add += 1
+            entries[key] = parts[1:]
+
     # Sort by word, then by form-class (N before P before S) so the file
     # is deterministic and reproducible.
     fc_order = {"N": 0, "P": 1, "S": 2}
-    rows.sort(key=lambda row: (row[0], fc_order.get(row[1], 0)))
+
+    def _sort_key(item: tuple[str, list[str]]) -> tuple[str, int]:
+        key = item[0]
+        word, _, fc = key.partition("|")
+        return (word, fc_order.get(fc, 0))
+
     with args.out.open("w", encoding="utf-8") as fh:
         fh.write("# Generated by scripts/build_full_lexicon.py\n")
         fh.write(f"# Source: {args.source}\n")
+        if args.corrections is not None:
+            fh.write(f"# Corrections overlay: {args.corrections}\n")
         fh.write(
             "# Subject to the licence of the source dictionary; keep private unless\n"
             "# you have explicit redistribution permission from the rights holder.\n"
@@ -145,10 +226,12 @@ def main(argv: list[str] | None = None) -> int:
             "# letters are kept separate so the lookup layer can disambiguate by\n"
             "# context. See dectalk.dic.lexicon for the parser.\n\n"
         )
-        for word, fc_letter, phonemes in rows:
-            key = word if fc_letter == "N" else f"{word}|{fc_letter}"
+        for key, phonemes in sorted(entries.items(), key=_sort_key):
             fh.write(f"{key} {' '.join(phonemes)}\n")
-    print(f"wrote {len(rows)} entries to {args.out}", file=sys.stderr)
+    msg = f"wrote {len(entries)} entries to {args.out}"
+    if args.corrections is not None:
+        msg += f" ({n_override} overridden, {n_add} added from {args.corrections.name})"
+    print(msg, file=sys.stderr)
     return 0
 
 
