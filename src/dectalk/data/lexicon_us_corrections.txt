@@ -77,6 +77,12 @@ DONT D OW1 N T
 DRAFT D R AE1 F T
 EGRESS|P IY1 G R EH0 S
 EGRESS|S IY0 G R EH1 S
+# "example" has no Dic_us.txt row; the C runtime speaks it from its own
+# letter-to-sound rules as "ixg z ' aem p el" (IX G Z AE1 M P EL). The
+# Python LTS diverges ("' ehk s aem p el"), which also blocks the e.g.
+# dict expansion (-> "for example") and www.example.com. Pin the C reading
+# so example/examples/for example render byte-exact (issue #346 §2).
+EXAMPLE IX G Z AE1 M P EL
 ESP AH0 S P EH1 SH L IY0
 EXCEED EH0 K S IY1 D
 FEWER F Y UW1 ER0
