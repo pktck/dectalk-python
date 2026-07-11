@@ -1166,7 +1166,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
     :func:`dectalk._capi.CAPI.convert_to_phonemes` -- the LTS+dic
     stage-boundary oracle on the path to pure-Python bit parity.
     """
-    from dectalk.dic.dectalk_phonemes import encode_to_dectalk  # noqa: PLC0415
+    from dectalk.dic.dectalk_phonemes import (  # noqa: PLC0415
+        DECTALK_PRIMARY_STRESS,
+        DECTALK_SECONDARY_STRESS,
+        encode_to_dectalk,
+    )
 
     # DECtalk's punctuation markers come from src/dapi/src/include/
     # usa_phon.tab (the PERIOD/QUEST/EXCLAIM/COMMA/RELSTART entries near
@@ -1983,6 +1987,84 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 _maybe_convert(last - 1)
         return out
 
+    arp_vowel_bases: frozenset[str] = frozenset(
+        {"AA", "AE", "AH", "AO", "AX", "AY", "AW", "EH", "ER", "EY",
+         "IH", "IX", "IY", "OW", "OY", "UH", "UW"}
+    )  # fmt: skip
+    # DECtalk vowel codes emitted by ``encode_to_dectalk`` (the values of
+    # the arpabet vowels in its ARPABET_TO_DECTALK table) plus the ``yu``
+    # collapse, used to pick vowel tokens out of a re-encoded stem. Kept
+    # local rather than importing the module-private ``_VOWEL_DECTALK_CODES``.
+    dt_vowel_codes: frozenset[str] = frozenset(
+        {"iy", "ih", "ey", "eh", "ae", "aa", "ay", "aw", "ah", "ao", "ow",
+         "oy", "uh", "uw", "ax", "rr", "ix", "ir", "er", "ar", "or", "ur", "yu"}
+    )  # fmt: skip
+
+    def _freeze_stem_weak_vowels(stem_phones: list[str], *, silent_e: bool = False) -> list[str]:
+        """Lock the stem's reducible weak vowels to their bare-word value (issue #322).
+
+        The encoder's ``AH0``/``IH0`` -> ``IX``/``AX`` reductions
+        (``ah_before_final_t`` / ``_s`` / ``_st`` / ``_sh`` ... in
+        :func:`encode_to_dectalk`) all gate on the vowel being
+        **word-final**. When an inflectional suffix is appended the
+        stem's final weak vowel is no longer word-final, so the reduction
+        fires in the *assembled* context instead of the stem's own:
+        ``edits`` loses ``edit``'s IX (``ehd axt`` vs C ``ehd ixt``) and
+        ``focused`` gains a spurious IX because the appended ``S T`` looks
+        like the ``-est`` superlative pattern (``owk ixs t`` vs C
+        ``owk axs t``). The C engine renders the stem as its own word and
+        concatenates the suffix afterwards, so the stem keeps its *bare*
+        weak vowel regardless of what follows.
+
+        Mirror that: encode the stem alone, read back each weak vowel's
+        realisation (:func:`encode_to_dectalk` emits exactly two bytes per
+        unit, so a plain stem tokenises cleanly), and rewrite ``AH0`` /
+        ``IH0`` to the concrete ``IX`` / ``AX`` the bare stem produced.
+        ``IX`` / ``AX`` are inert under re-encoding, so the appended suffix
+        can no longer shift them. Weak vowels that stay full (``ah`` /
+        ``ih``) are left untouched.
+
+        ``silent_e`` marks a stem recovered from a ``base + "E"`` lexicon
+        lookup -- the silent-e sibilant class (``promise`` / ``practice`` /
+        ``notice`` / ``service``). C reduces those to IX from orthography
+        the phoneme-level encoder can't see, so Python's *bare* reduction
+        is unreliable (it under-reduces to AX) and freezing it would demote
+        ``promised`` from the correct IX to AX. For that class we skip the
+        freeze and let the assembled context stand (its ``AH0 S T`` -> IX
+        path happens to match C). ``focus`` is *not* silent-e (no
+        ``FOCUSE`` entry), so ``focused`` still freezes to its bare AX.
+        """
+        if silent_e:
+            return list(stem_phones)
+        weak_idxs = {i for i, p in enumerate(stem_phones) if p in ("AH0", "IH0")}
+        if not weak_idxs:
+            return list(stem_phones)
+        raw = encode_to_dectalk(stem_phones)
+        if len(raw) % 2:  # a __RAW__ payload broke the 2-byte invariant
+            return list(stem_phones)
+        codes = [raw[j : j + 2].decode("ascii", "replace") for j in range(0, len(raw), 2)]
+        stress_marks = (f"{DECTALK_PRIMARY_STRESS} ", f"{DECTALK_SECONDARY_STRESS} ")
+        emitted = [
+            c.rstrip(" ")
+            for c in codes
+            if c not in stress_marks and c.rstrip(" ") in dt_vowel_codes
+        ]
+        in_vpos = [
+            i for i, p in enumerate(stem_phones) if p.rstrip("0123456789") in arp_vowel_bases
+        ]
+        if len(in_vpos) != len(emitted):
+            # Alignment uncertain (e.g. an unexpected collapse) -- leave
+            # the stem untouched rather than mis-assign a vowel.
+            return list(stem_phones)
+        out = list(stem_phones)
+        for k, i in enumerate(in_vpos):
+            if i in weak_idxs:
+                if emitted[k] == "ix":
+                    out[i] = "IX"
+                elif emitted[k] == "ax":
+                    out[i] = "AX"
+        return out
+
     def _lts_inflection_stem(stem: str, *, attach_e: bool) -> list[str] | None:
         """LTS phonemes for an inflectional-suffix stem (issues #310, #320).
 
@@ -2796,6 +2878,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         and not token.text.endswith(("SS", "US", "IS"))
                     ):
                         stem = token.text[:-1]
+                        s_silent_e = False
                         if homo_stem_reading is not None:
                             # Runtime homograph root (``tears`` →
                             # TEAR, ``lives`` → LIVE): use the reading
@@ -2809,7 +2892,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         elif stem.endswith("E") and len(stem) > 2:  # noqa: PLR2004
                             # ``minutes`` -> ``minute`` (drop the trailing
                             # E along with the S so we hit the stem entry).
-                            stem_phones = lookup(stem, lang=lang) or lookup(stem[:-1], lang=lang)
+                            stem_e_phones = lookup(stem, lang=lang)
+                            s_silent_e = stem_e_phones is not None
+                            stem_phones = stem_e_phones or lookup(stem[:-1], lang=lang)
                         else:
                             stem_phones = lookup(stem, lang=lang)
                         # ``cities`` -> ``citie`` (lookup fails) -> ``city``
@@ -2859,6 +2944,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             # rewriting the relevant phoneme in the stem
                             # before concatenation.
                             stem_phones = _apply_pre_inflection_syllabic(stem_phones)
+                            # Freeze the stem's weak vowel to its bare
+                            # value so the appended ``-s`` doesn't shift
+                            # the reduction context (``edits`` -> IX,
+                            # ``limits`` -> IX; issue #322).
+                            stem_phones = _freeze_stem_weak_vowels(stem_phones, silent_e=s_silent_e)
                             # Sibilant-final stems take an epenthetic
                             # IX before the inflectional Z (``classes``
                             # -> CLASS + IX + Z; ``horses`` -> HORSE +
@@ -2904,7 +2994,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             and len(token.text) > _y_strip + 1
                             and token.text[-(_y_strip + 1)] not in "AEIOU"
                         ):
-                            y_base = token.text[: -_y_strip] + "Y"
+                            y_base = token.text[:-_y_strip] + "Y"
                             y_phones = lookup(y_base, lang=lang)
                             if y_phones is None and lts_fallback:
                                 y_phones = _dedupe_consecutive_phonemes(lts(y_base)) or None
@@ -2920,7 +3010,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         and not token.text.endswith(("EER", "IER"))
                     ):
                         stem = token.text[:-2]
-                        stem_phones = lookup(stem + "E", lang=lang) or lookup(stem, lang=lang)
+                        stem_e_phones = lookup(stem + "E", lang=lang)
+                        er_silent_e = stem_e_phones is not None
+                        stem_phones = stem_e_phones or lookup(stem, lang=lang)
                         # Doubled-final-consonant stems re-derive the
                         # runtime-dictionary root via the ACTIVE
                         # ``l_us_suf.c`` ``-er`` rule's un-doubling
@@ -2937,6 +3029,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         if stem_phones is None and lts_fallback:
                             stem_phones = _lts_inflection_stem(stem, attach_e=True)
                         if stem_phones is not None:
+                            stem_phones = _freeze_stem_weak_vowels(
+                                stem_phones, silent_e=er_silent_e
+                            )
                             phones = [*stem_phones, "ER0"]
                             if (
                                 not vpstart_emitted
@@ -3106,9 +3201,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         # recover their long vowel (``cutest`` -> CUTE not
                         # CUT, ``finest`` -> FINE not FIN), matching the
                         # ``-ed`` / ``-ing`` lookup order (issue #320).
-                        stem_phones = lookup(est_stem + "E", lang=lang) or lookup(
-                            est_stem, lang=lang
-                        )
+                        stem_e_phones = lookup(est_stem + "E", lang=lang)
+                        est_silent_e = stem_e_phones is not None
+                        stem_phones = stem_e_phones or lookup(est_stem, lang=lang)
                         if (
                             stem_phones is None
                             and len(est_stem) >= 2  # noqa: PLR2004
@@ -3123,6 +3218,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         if stem_phones is None and lts_fallback:
                             stem_phones = _lts_inflection_stem(est_stem, attach_e=True)
                         if stem_phones is not None:
+                            stem_phones = _freeze_stem_weak_vowels(
+                                stem_phones, silent_e=est_silent_e
+                            )
                             phones = [*stem_phones, "IX", "S", "T"]
                     # ``-ing`` gerund / present-participle suffix: strip
                     # and append ``IX + NG`` (the standard ``-ing`` form).
@@ -3130,6 +3228,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         phones is None and token.text.endswith("ING") and len(token.text) > 4  # noqa: PLR2004
                     ):
                         ing_stem = token.text[:-3]
+                        ing_silent_e = False
                         if homo_stem_reading is not None:
                             # Runtime homograph root (``winding`` →
                             # WIND): use the ls_homo_homo reading.
@@ -3138,9 +3237,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                                 homo_root, lang=lang, form_class=homo_fc
                             ) or lookup(homo_root, lang=lang)
                         else:
-                            stem_phones = lookup(ing_stem + "E", lang=lang) or lookup(
-                                ing_stem, lang=lang
-                            )
+                            stem_e_phones = lookup(ing_stem + "E", lang=lang)
+                            ing_silent_e = stem_e_phones is not None
+                            stem_phones = stem_e_phones or lookup(ing_stem, lang=lang)
                         # Doubled-final-consonant stems re-derive the
                         # runtime-dictionary root via the ACTIVE
                         # ``l_us_suf.c`` ``-ing`` rule's un-doubling
@@ -3160,6 +3259,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         if stem_phones is None and lts_fallback:
                             stem_phones = _lts_inflection_stem(ing_stem, attach_e=True)
                         if stem_phones is not None:
+                            stem_phones = _freeze_stem_weak_vowels(
+                                stem_phones, silent_e=ing_silent_e
+                            )
                             phones = [*stem_phones, "IX", "NG"]
                             if (
                                 not vpstart_emitted
@@ -3181,6 +3283,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         # then fall back to the Y -> I alternation
                         # (``married`` -> ``marry``).
                         ed_stem = token.text[:-2]
+                        ed_silent_e = False
                         if homo_stem_reading is not None:
                             # Runtime homograph root (``contrasted`` →
                             # CONTRAST): use the ls_homo_homo reading.
@@ -3189,9 +3292,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                                 homo_root, lang=lang, form_class=homo_fc
                             ) or lookup(homo_root, lang=lang)
                         else:
-                            stem_phones = lookup(ed_stem + "E", lang=lang) or lookup(
-                                ed_stem, lang=lang
-                            )
+                            stem_e_phones = lookup(ed_stem + "E", lang=lang)
+                            ed_silent_e = stem_e_phones is not None
+                            stem_phones = stem_e_phones or lookup(ed_stem, lang=lang)
                         if stem_phones is None and ed_stem.endswith("I"):
                             stem_phones = lookup(ed_stem[:-1] + "Y", lang=lang)
                             # Out-of-lexicon -y base (``pitied`` -> PITY,
@@ -3222,6 +3325,9 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         if stem_phones is None and lts_fallback:
                             stem_phones = _lts_inflection_stem(ed_stem, attach_e=True)
                         if stem_phones is not None:
+                            stem_phones = _freeze_stem_weak_vowels(
+                                stem_phones, silent_e=ed_silent_e
+                            )
                             last_base = stem_phones[-1].rstrip("0123456789")
                             if last_base in ("T", "D"):
                                 phones = [*stem_phones, "IX", "D"]

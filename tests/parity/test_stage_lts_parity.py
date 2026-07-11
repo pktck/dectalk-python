@@ -403,6 +403,67 @@ def test_inflection_y_mutation_family_matches_c(text: str, capi: CAPI) -> None:
     )
 
 
+# Issue #322 representatives: the re-rendered stem's weak vowel (IX vs
+# AX) on the suffix-strip path. The encoder's word-final AH0 -> IX/AX
+# reductions gate on the vowel being word-final, so an appended suffix
+# shifts the reduction context; C freezes the stem's *bare* weak vowel.
+# Each row names a direction / guard:
+#   - "edits" / "edited" / "limits" / "limiting": IX direction -- the
+#     bare stem's word-final -it IX is kept under the suffix (``ehd ixt``
+#     not ``ehd axt``).
+#   - "finishing" / "finishes" / "finished" / "polished" / "punished" /
+#     "vanished": the -ish IX kept under -ing/-es/-ed.
+#   - "focused": AX direction -- FOCUS's bare AX is kept, not the
+#     spurious IX the appended ``S T`` (-est-like) pattern would add.
+#   - "satisfies": the -sfy IX kept under -ies.
+#   - "promised" / "practiced" / "noticed": the silent-e sibilant class
+#     (PROMISE / PRACTICE / NOTICE) where the bare Python reduction is
+#     unreliable -- the freeze is skipped so the assembled IX stands.
+_INFLECTION_WEAK_VOWEL_FAMILY: tuple[str, ...] = (
+    "edits",
+    "edited",
+    "limits",
+    "limiting",
+    "finishing",
+    "finishes",
+    "finished",
+    "polished",
+    "punished",
+    "vanished",
+    "focused",
+    "focuses",
+    "satisfies",
+    "promised",
+    "practiced",
+    "noticed",
+    "he edited it",
+    "she was finishing up",
+    "we focused on it",
+)
+
+
+@pytest.mark.parametrize(
+    "text", _INFLECTION_WEAK_VOWEL_FAMILY, ids=list(_INFLECTION_WEAK_VOWEL_FAMILY)
+)
+def test_inflection_weak_vowel_family_matches_c(text: str, capi: CAPI) -> None:
+    """Weak-vowel (IX vs AX) freeze on the inflection-stem path (issue #322).
+
+    Pins both directions of the stem weak-vowel selection: the stem
+    keeps its *bare* reduction under an appended suffix (``edits`` keeps
+    ``edit``'s IX; ``focused`` keeps ``focus``'s AX rather than gaining a
+    spurious IX from the -est-like ``S T``), while the silent-e sibilant
+    class (``promised`` / ``practiced`` / ``noticed``) defers to the
+    assembled context so it is not demoted to AX.
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"weak-vowel inflection mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
+
+
 # Issue #225 representatives: the C front end's numeric-format
 # expansion, routed through ``lts.numeric_formats``. Each row names a
 # distinct mechanism:

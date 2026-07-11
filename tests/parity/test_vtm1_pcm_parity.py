@@ -297,6 +297,17 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "Henry VIII",
     "Book XIV",
     "Apple II",
+    # issues #320/#321/#322 — LTS inflection stem massaging, each
+    # byte-verified (whole-WAV) against the shipped binary before
+    # pinning: silent-e / doubled-stem (-ing/-er/-est), y-mutation
+    # (-ier/-iest/-ies), and the weak-vowel (IX/AX) stem freeze.
+    "poking",
+    "bravest",
+    "stressing",
+    "happier",
+    "happiest",
+    "edited",
+    "focused",
 )
 
 
