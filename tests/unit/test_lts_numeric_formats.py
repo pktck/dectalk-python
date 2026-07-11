@@ -170,6 +170,50 @@ def test_dd_mon_date() -> None:
     assert result.phonemes == b"' aog axs t   t w ' ehn t iy  th' rrd , ' eyt iy  f ' or"
 
 
+# ---- bare 4-digit year form (issue #335) ----
+
+
+def test_bare_year_reads_as_do_4_digits() -> None:
+    """``1984`` → the year form "nineteen eighty four" (ls_util_is_year)."""
+    result = numeric_chunk_phonemes("1984")
+    assert result is not None
+    assert result.phonemes == b"n ' ayn * t ' iyn   ' eyt iy  f ' or"
+
+
+def test_bare_year_tens_top_half() -> None:
+    """``1066`` → "ten sixty six" (top half reads as tens, not a teen)."""
+    result = numeric_chunk_phonemes("1066")
+    assert result is not None
+    assert result.phonemes == b"t ' ehn   s ' ihk s t iy  s ' ihk s "
+
+
+def test_bare_year_xy00_hundred_form() -> None:
+    """``1900`` → "nineteen hundred" (the XY00 do_4_digits branch)."""
+    result = numeric_chunk_phonemes("1900")
+    assert result is not None
+    assert result.phonemes == b"n ' ayn * t ' iyn   hx' ahn d r axd "
+
+
+def test_bare_year_leading_zero_second_pair_spells() -> None:
+    """``1905`` → "nineteen zero five" — the ``05`` second pair SPELLS.
+
+    Pins the ``ls_proc_do_4_digits_full`` fix: C calls the full
+    ``ls_proc_do_2_digits`` on the second pair, which spells a leading
+    zero; the list-based ``speak_4_digits`` used to drop it.
+    """
+    result = numeric_chunk_phonemes("1905")
+    assert result is not None
+    assert result.phonemes == b"n ' ayn * t ' iyn   z ' iyr ow  f ' ayv "
+
+
+def test_signed_4digit_is_not_a_year() -> None:
+    """A signed 4-digit token is cardinal (C sign-gates ``is_year``)."""
+    result = numeric_chunk_phonemes("1984", sign_prefix="-")
+    assert result is not None
+    assert result.phonemes.startswith(b"m ' ayn axs")  # "minus ..."
+    assert b"th' awz axn d" in result.phonemes  # "... thousand ..." (cardinal)
+
+
 # ---- fall-through gates (legacy path must keep these) ----
 
 
@@ -177,7 +221,10 @@ def test_dd_mon_date() -> None:
     "chunk",
     [
         "5",  # pure digits — _digit_expand owns them
-        "1984",  # bare year form — out of scope
+        "2000",  # round thousand — is_year excludes X000, stays cardinal
+        "2001",  # X00Y — is_year excludes embedded "00", stays cardinal
+        "5000",  # round thousand — cardinal
+        "12345",  # 5 digits — not a year, cardinal
         "3.14",  # dotted decimal — legacy branch
         "1,000th",  # kernel splits digit-comma+suffix upstream
         "3/4%",  # '%' splits into its own word upstream

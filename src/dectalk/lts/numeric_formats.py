@@ -34,8 +34,10 @@ Scope gates (deliberate fall-through to the legacy path, returning
 - non-ASCII chunks (the C library reads UTF-8 bytes as Latin-1;
   ``¢ £ ° ± ¼ ½`` behaviour is an encoding question, not a numeric
   one),
-- pure digit strings (the corpus-proven ``_digit_expand`` path in
-  ``speak.py`` owns those, including 4-digit year forms),
+- pure non-year digit strings (the corpus-proven ``_digit_expand``
+  path in ``speak.py`` owns those); a sign-free bare 4-digit **year**
+  (``ls_util_is_year``) is the exception — it is read here as
+  ``ls_proc_do_4_digits`` ("nineteen eighty four", issue #335),
 - NANP phone-number shapes (``DDD-DDDD`` / ``DDD-DDD-DDDD`` /
   ``D{1,3}-DDD-DDD-DDDD``) — the C handles those in the CMD-level
   NWS pre-processor, not the LTS number dispatch,
@@ -68,10 +70,10 @@ from dectalk.lts.parse_number import ls_task_parse_number
 from dectalk.lts.part_number_emit import ls_proc_do_part_number_full
 from dectalk.lts.phoneme_words import pand, pcent, pdollar
 from dectalk.lts.pluralize import ls_util_pluralize
-from dectalk.lts.proc_emit import ls_proc_do_sign_full
+from dectalk.lts.proc_emit import ls_proc_do_4_digits_full, ls_proc_do_sign_full
 from dectalk.lts.spell_emit import ls_spel_spell
 from dectalk.lts.time_emit import ls_proc_do_time
-from dectalk.lts.util_helpers import ls_util_is_ordinal
+from dectalk.lts.util_helpers import ls_util_is_ordinal, ls_util_is_year
 
 _US_Z: Final[int] = int(USPhoneme.Z)
 _US_S: Final[int] = int(USPhoneme.S)
@@ -371,12 +373,32 @@ def numeric_chunk_phonemes(  # noqa: PLR0911, PLR0912 — mirrors the C dispatch
             return None
         if end == len(rest):
             # Pure number. Signed integers are C's do_sign + do_number
-            # (the year form is explicitly sign-gated in C); unsigned
-            # pure digits stay with the legacy corpus-proven path.
+            # (the year form is explicitly sign-gated in C, so it never
+            # applies here).
             if sign != 0:
                 ls_proc_do_sign_full(emitter, sign)
                 ls_proc_do_number_full(emitter, rest)
                 return NumericExpansion(_render(emitter))
+            # C's ls_task_plain_number_processing (ls_task.c:3777-3795):
+            # a sign-free bare all-digit token that ls_util_is_year
+            # accepts is spoken as a YEAR ("nineteen eighty four") via
+            # ls_proc_do_4_digits, ahead of the generic cardinal path.
+            # ls_util_is_year gates on the C guards (ls_util.c:593-617):
+            # exactly 4 digits, no leading '0', and not "X00Y" (embedded
+            # "00" after the first digit) — so 2000/2001/1001 and every
+            # other non-year 4-digit token falls through to the cardinal
+            # _digit_expand reading, matching the oracle.
+            if ls_util_is_year(rest):
+                ls_proc_do_4_digits_full(
+                    emitter,
+                    rest[0] - ord("0"),
+                    rest[1] - ord("0"),
+                    rest[2] - ord("0"),
+                    rest[3] - ord("0"),
+                )
+                return NumericExpansion(_render(emitter))
+            # Unsigned non-year pure digits stay with the legacy
+            # corpus-proven _digit_expand path.
             return None
         suffix = rest[end:]
         if len(suffix) == _ORDINAL_SUFFIX_LEN:

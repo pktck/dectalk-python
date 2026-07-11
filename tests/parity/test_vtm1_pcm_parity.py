@@ -308,6 +308,12 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "happiest",
     "edited",
     "focused",
+    # issue #335 — bare 4-digit year wordization (is_year -> do_4_digits):
+    # "nineteen eighty four" / "ten sixty six" and the in-carrier form,
+    # each byte-verified (whole-WAV) against the shipped binary.
+    "1984",
+    "1066",
+    "in 1984 we",
 )
 
 
