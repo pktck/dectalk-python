@@ -73,18 +73,21 @@ from dectalk._capi import CAPI
 # now run the ``ls_task_Dr_St_process`` context rule (isolated ->
 # drive/street) and ``mr. / mrs. / ms. / vs.`` hit their period-keyed
 # runtime-dictionary rows — those six now BYTE-MATCH the C column
-# below. The rest (``i.e.`` / ``Inc.`` / ``etc.`` / ``e.g.`` /
-# ``Mt.`` / ``a.m.`` / ``p.m.``) still have no expansion logic in the
-# Python kernel: the abbreviation letters are read out (often via the
-# lexicon's word-form entry for the merged spelling) and the trailing
-# period leaks through as a clause-terminal marker.
+# below. Issue #346 added the ``e.g.`` -> "for example" / ``i.e.`` ->
+# "this is" chunk-level expansion (the C ``Dic_us.txt`` opaque dict
+# rows), so those two now byte-match the C column too. The rest
+# (``Inc.`` / ``etc.`` / ``Mt.`` / ``a.m.`` / ``p.m.``) still have no
+# expansion logic in the Python kernel: the abbreviation letters are
+# read out (often via the lexicon's word-form entry for the merged
+# spelling) and the trailing period leaks through as a clause-terminal
+# marker.
 # ---------------------------------------------------------------------------
 _PY_EXPECTED: dict[str, bytes] = {
     "Dr.": b"d r ' ayv ",  # == C ("drive", issue #246)
-    "i.e.": b"' ih. ",
+    "i.e.": b"dh` ihs   ihz ",  # == C ("this is", issue #346)
     "Inc.": b"' ihnxk . ",
     "etc.": b"' eht k . ",
-    "e.g.": b"' ehg . ",
+    "e.g.": b"^ ( f rr  ixg z ' aem p el",  # == C ("for example", issue #346)
     "vs.": b"v rrs ixs ",  # == C ("versus", issue #246)
     "Mr.": b"m ihs t rr",  # == C ("mister", issue #246)
     "Mrs.": b"m ihs ixz ",  # == C ("missus", issue #246)
@@ -186,25 +189,28 @@ def test_isolated_abbrev_c_oracle_pinned(prompt: str) -> None:
     )
 
 
-# The title family ported by issue #246 (the ``ls_task_Dr_St_process``
-# context rule + the period-keyed runtime-dictionary rows). These are
-# the pinned prompts whose Python output now byte-matches the C
-# oracle; the rest still await the broader ``abbrp_words`` port.
-_PORTED_MATCHING: frozenset[str] = frozenset({"Dr.", "St.", "Mr.", "Mrs.", "Ms.", "vs."})
+# The abbreviations whose Python output now byte-matches the C oracle:
+# the issue #246 title family (the ``ls_task_Dr_St_process`` context
+# rule + the period-keyed runtime-dictionary rows) plus the issue #346
+# ``e.g.``/``i.e.`` dict-expansion. The rest still await the broader
+# ``abbrp_words`` port.
+_PORTED_MATCHING: frozenset[str] = frozenset(
+    {"Dr.", "St.", "Mr.", "Mrs.", "Ms.", "vs.", "e.g.", "i.e."}
+)
 
 
 def test_isolated_abbrev_python_and_c_divergence_ledger() -> None:
     """Document exactly which pinned inputs match C and which still diverge.
 
     The issue #146 policy pinned every isolated abbreviation as
-    divergent. Issue #246 ported the title family
-    (:data:`_PORTED_MATCHING`) — those six now byte-match the C
-    oracle. The remainder (``i.e.`` / ``Inc.`` / ``etc.`` / ``e.g.``
-    / ``Mt.`` / ``a.m.`` / ``p.m.``) still await the ``abbrp_words``
-    port and their divergence stays **expected** and **pinned**. Any
-    membership change in either direction is a deliberate, reviewed
-    event: update :data:`_PY_EXPECTED` and :data:`_PORTED_MATCHING`
-    together.
+    divergent. Issue #246 ported the title family and issue #346 added
+    the ``e.g.``/``i.e.`` dict-expansion — those entries
+    (:data:`_PORTED_MATCHING`) now byte-match the C oracle. The
+    remainder (``Inc.`` / ``etc.`` / ``Mt.`` / ``a.m.`` / ``p.m.``)
+    still await the ``abbrp_words`` port and their divergence stays
+    **expected** and **pinned**. Any membership change in either
+    direction is a deliberate, reviewed event: update
+    :data:`_PY_EXPECTED` and :data:`_PORTED_MATCHING` together.
     """
     assert set(_PY_EXPECTED) == set(_C_EXPECTED), (
         "_PY_EXPECTED and _C_EXPECTED must cover the same prompt set"

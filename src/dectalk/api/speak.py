@@ -2417,6 +2417,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         # trailing dot is stripped into ``trailing``) — issue #327's R44
         # letter-per-dot acronym.
         _dotted_letters = _re.compile(r"^[A-Z](?:\.[A-Z])+$")
+        # Lower-case dotted abbreviations that Dic_us.txt keys WITH both
+        # dots to an opaque word expansion (issue #346 §2). The key is the
+        # ``inner`` form after the trailing dot is stripped into
+        # ``trailing`` (``e.g.`` -> inner ``e.g``); the value is the word
+        # phrase the C runtime speaks, re-injected so the existing
+        # function-word + lexicon paths reproduce it byte-exact.
+        _eg_ie_expand = {"e.g": "for example", "i.e": "this is"}
 
         def _clause_initial(toks: list[Token]) -> bool:
             """True when no WORD has been emitted since the last pause.
@@ -2609,6 +2616,28 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         elif last in (",", ";", ":"):
                             tokens.append(Token(TokenKind.PAUSE_SHORT, last))
                     continue
+            # --- e.g. / i.e. dotted-abbreviation expansion (#346 §2) --
+            # ``Dic_us.txt`` keys ``e.g.``/``i.e.`` WITH both dots to an
+            # opaque expansion (``fR|gz'@mpL`` = "for example";
+            # ``D'IsIz`` = "this is"). For the bare lower-case chunk the C
+            # runtime speaks the phrase-marked reading
+            # ``^ ( f rr  ixg z ' aem p el`` / ``dh` ihs   ihz`` -- byte-
+            # identical to typing the words themselves (the ``^ (`` comes
+            # from the function-word markers on "for"; the "example"
+            # reading is the #346 lexicon pin). But the tokenizer strips
+            # the trailing dot before lexicon lookup, so the ``E.G.`` key
+            # never matches, and an upper-case ``E.G.`` would letter-spell
+            # via ``_dotted_letters`` below. Intercept the exact lower-case
+            # ``e.g.``/``i.e.`` chunk (trailing dot absorbed, no other
+            # surrounding punctuation) and re-inject the expansion words so
+            # the existing function-word + lexicon paths reproduce the
+            # binary. Upper-case, comma-attached (``e.g.,``) and
+            # parenthesised (``(e.g.``) forms take C's distinct raw
+            # single-token dict reading (``f rrixg z ' aem p el``, no
+            # ``^ (``) -- an opaque LTS path left as-is (see issue #346).
+            if not leading and trailing == ["."] and inner in _eg_ie_expand:
+                chunk_queue.extendleft(reversed(_eg_ie_expand[inner].split()))
+                continue
             # --- Dotted single-letter acronyms (issue #327) ---------
             # R44 (par_rule.par:176-177, comment "let the single upper
             # case character like U.S.A. go through") preserves an
