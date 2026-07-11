@@ -283,6 +283,20 @@ _BYTE_EXACT_PROMPTS: tuple[str, ...] = (
     "[:phoneme silent] hello",
     "[:phoneme on] hello world",
     "[:phoneme on] the quick brown fox",
+    # issue #323 — mixed alphanumeric clusters split at digit/letter
+    # boundaries (A1 -> "a one", 42kg -> "forty two kay gee"), each
+    # byte-verified against the shipped binary before pinning.
+    "A1",
+    "3M",
+    "42kg",
+    "1E10",
+    "Buy 42kg now.",
+    # issue #324 — contextual roman numerals read as ordinals after a
+    # capitalized word (Chapter IV -> "the fourth"), byte-verified.
+    "Chapter IV",
+    "Henry VIII",
+    "Book XIV",
+    "Apple II",
 )
 
 
