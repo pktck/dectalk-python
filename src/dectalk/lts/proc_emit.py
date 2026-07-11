@@ -209,14 +209,39 @@ def ls_proc_do_4_digits_full(
     d3: int,
     d4: int,
 ) -> None:
-    """``ls_proc_do_4_digits`` with leading-zero spell-out wired up."""
+    """Complete C ``ls_proc_do_4_digits`` (``l_us_pr1.c:370-405``).
+
+    Faithful to the whole C function, including the two spell cases the
+    list-based :func:`~dectalk.lts.number_words.speak_4_digits` cannot
+    express (it returns ``list[int]`` and so has no way to reach
+    ``ls_spel_spell``):
+
+    * ``0XXX`` (``d1 == 0``) — spell all four digits.
+    * ``XXYY`` whose second pair leads with a zero — the C source calls
+      the full ``ls_proc_do_2_digits`` on ``lp+2``, which spells it, so
+      ``1805`` reads "eighteen zero five" and ``1905`` "nineteen zero
+      five" (not "eighteen" / "nineteen" with the ``0Y`` dropped).
+
+    ``X000`` / ``XY00`` need no spelling, so they delegate to the plain
+    :func:`ls_proc_do_4_digits` (the single source of the "X thousand" /
+    "XY hundred" readings). The plain reader keeps its lossy no-spell
+    behaviour for its part-number caller.
+    """
     from dectalk.lts.spell_emit import ls_spel_spell  # noqa: PLC0415 — cycle break
 
     if d1 == 0:
         digits = bytes([ord("0") + di for di in (d1, d2, d3, d4)])
         ls_spel_spell(emitter, digits)
         return
-    ls_proc_do_4_digits(emitter, d1, d2, d3, d4)
+    if d3 == 0 and d4 == 0:
+        # X000 ("X thousand") / XY00 ("XY hundred") — no spelling.
+        ls_proc_do_4_digits(emitter, d1, d2, d3, d4)
+        return
+    # XXYY — two 2-digit groups; the full 2-digit reader spells a
+    # leading-zero second pair, matching C's ls_proc_do_2_digits(lp+2).
+    ls_proc_do_2_digits_full(emitter, d1, d2)
+    emitter.send_phone(WBOUND)
+    ls_proc_do_2_digits_full(emitter, d3, d4)
 
 
 def ls_proc_do_digit_group(
