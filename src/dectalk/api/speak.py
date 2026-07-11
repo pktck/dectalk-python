@@ -2202,6 +2202,11 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             am_pm_phonemes,
             numeric_chunk_phonemes,
         )
+        from dectalk.lts.token_shapes import (  # noqa: PLC0415 — local like the helpers above
+            is_mixed_alnum,
+            spell_form,
+            split_alnum_runs,
+        )
 
         raw_prefix = "__RAW__"
         # Tokenize with C-faithful digit-string handling: for each
@@ -2408,6 +2413,24 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                     tokens.append(Token(TokenKind.WORD, "POINT"))
                     for digit in part:
                         tokens.extend(_digit_expand(int(digit)))
+            elif inner and is_mixed_alnum(inner):
+                # --- Mixed alphanumeric split (issue #323) ----------
+                # NWS rules R390/R391 (par_rule.par:430-432) insert a
+                # space at every digit/letter boundary; re-process each
+                # run as its own word. Digit runs read as numbers, letter
+                # runs pronounce via LTS or (for unpronounceable all-caps
+                # clusters like ``kg`` -> "kay gee") spell. Reached only
+                # when the numeric dispatch declined, which is exactly the
+                # R389 ordinal/plural guard (``1st`` / ``1990s`` / ``70s``
+                # stay with numeric_formats). ``spell_form`` upper-cases
+                # the runs the say-it predicate spells so the all-caps
+                # path below renders them; ``.`` binds to its digit run so
+                # ``6.02e23`` keeps its decimal.
+                runs = [spell_form(r) for r in split_alnum_runs(inner)]
+                runs[0] = "".join(leading) + runs[0]
+                runs[-1] = runs[-1] + "".join(trailing)
+                chunk_queue.extendleft(reversed(runs))
+                continue
             elif (
                 inner and inner.isalpha() and inner.isupper() and 2 <= len(inner) <= 4  # noqa: PLR2004
             ):
