@@ -2583,6 +2583,28 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
             while inner and not inner[-1].isalnum():
                 trailing.insert(0, inner[-1])
                 inner = inner[:-1]
+            # --- Apostrophe-initial contractions (issue #326) -------
+            # The C LTS looks a word up WITH its leading apostrophe
+            # (``ls_task_dictionary_search`` at ls_task.c:755 runs before
+            # ``ls_task_strip_left_punctuation`` at :2322). Dic_us.txt keys
+            # ``'em``/``'n`` WITH the apostrophe, and the corrections overlay
+            # pins ``'tis``/``'twas`` (C reads them from LTS rules, not a dict
+            # row). So a chunk whose leading punct ends in a lone ``'`` and
+            # whose apostrophe-preserved upper form hits the lexicon resolves
+            # there rather than falling to the letter-spelling the stripped
+            # stem would otherwise trigger. Other leading-apostrophe shapes
+            # (``'90s``, quoted words) miss the lexicon and fall through.
+            if inner and leading and leading[-1] == "'":
+                apos_key = "'" + inner.upper()
+                if lookup(apos_key, lang=lang) is not None:
+                    tokens.append(Token(TokenKind.WORD, apos_key))
+                    if trailing:
+                        last = trailing[-1]
+                        if last in (".", "!", "?"):
+                            tokens.append(Token(TokenKind.PAUSE_LONG, last))
+                        elif last in (",", ";", ":"):
+                            tokens.append(Token(TokenKind.PAUSE_SHORT, last))
+                    continue
             # --- Roman numeral contextual ordinal (issue #324) ------
             # NWS rule R387 (par_rule.par:417) rewrites a roman numeral to
             # its ordinal value ("the Nth") when — and only when — it

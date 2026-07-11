@@ -20,6 +20,12 @@
 #     --corrections src/dectalk/data/lexicon_us_corrections.txt \
 #     --out src/dectalk/data/lexicon_us_full.txt
 
+# Apostrophe-initial contractions (issue #326): the C LTS pronounces these
+# from its letter-to-sound rules (no Dic_us.txt row exists), so the Python
+# LTS's letter-spelling diverges. Pin the byte-exact C readings ('twas ->
+# "t w ' aos", 'tis -> "t ' ihs"). 'em/'n already come from Dic_us.txt.
+'TIS T IH1 S
+'TWAS T W AO1 S
 (C) K AA1 P IY0 R AY0 T
 (R) R EH1 JH AH0 S T AH0 R D T R EY1 D M AA2 R K
 1/2 W AH0 N HH AE1 F
