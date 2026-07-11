@@ -28,10 +28,21 @@ Supported commands (subset of the full DECtalk command vocabulary):
   bitfield that governs how ``[...]`` bracket blocks are read (see
   :func:`_cmd_phoneme`). Plain text outside brackets is always spoken via
   LTS regardless, so ``[:phoneme on] hello`` still says the word "hello".
-- ``[:say TYPE]`` — segmentation hint (currently parsed and ignored).
+- ``[:say TYPE]`` — text-breakup granularity (issue #329): ``clause`` /
+  ``line`` (default per-clause), ``word`` (each word its own clause),
+  ``letter`` / ``filtered_letter`` (spell every character), ``syllable``
+  (renders silence on the shipped binary).
+- ``[:mode spell on|off]`` — spell every following word letter-by-letter
+  (issue #329).
+- ``[:error ignore|text|escape|speak|tone]`` — how a malformed inline
+  command is reported (issue #330); the DECtalk default is ``speak``.
 
-Unrecognised commands are passed through silently rather than aborting,
-matching the documented DECtalk behaviour.
+A malformed inline command (unknown keyword, empty ``[:]``, or a bad
+numeric parameter) is not dropped silently: in the default ``speak`` error
+mode the DECtalk front end SPEAKS "Command error in command" / "…in
+parameter" at the command's position (issue #330), matching the shipped
+binary. Valid commands the light parser does not yet model are still
+no-ops.
 """
 
 from __future__ import annotations
@@ -42,18 +53,26 @@ from dataclasses import dataclass, field, replace
 from typing import Final
 
 from dectalk.cmd.cmd_states import (
-    ERROR_escape,
-    ERROR_ignore,
-    ERROR_speak,
-    ERROR_text,
-    ERROR_tone,
     MAX_PERIOD_PAUSE,
     MIN_PERIOD_PAUSE,
     PHONEME_ASCKY,
     PHONEME_OFF,
     PHONEME_SPEAK,
+    ERROR_escape,
+    ERROR_ignore,
+    ERROR_speak,
+    ERROR_text,
+    ERROR_tone,
 )
 from dectalk.cmd.option_tables import define_options
+from dectalk.cmd.say_flags import (
+    SAY_CLAUSE,
+    SAY_FLETTER,
+    SAY_LETTER,
+    SAY_LINE,
+    SAY_SYLLABLE,
+    SAY_WORD,
+)
 from dectalk.kernel.volume_table import software_volume_offset
 
 _Handler = Callable[["SpeechState", list[str]], "SpeechState"]
@@ -104,6 +123,21 @@ _PHONEME_MODE_OPS: Final[dict[str, tuple[int, bool]]] = {
     "silent": (PHONEME_SPEAK, False),  # case 3: &= ~PHONEME_SPEAK
     "off": (PHONEME_OFF, True),  # case 4: |= PHONEME_OFF
     "on": (PHONEME_OFF, False),  # case 5: &= ~PHONEME_OFF
+}
+
+# ``[:say <kw>]`` keyword -> ``sayflag`` value (issue #329). Order matches
+# ``say_options`` (``c_us_cde.h`` lines 99-107); the ``SAY_*`` bit values are
+# from ``esc.h`` lines 149-154 (``cm_cmd_say``, ``cm_copt.c`` lines 771-806).
+# The mode is kernel-global (``pKsd_t->sayflag``) and governs how the
+# following text is broken up / spelled (dispatch in ``cm_pars.c`` lines
+# 1604-1660).
+_SAY_MODE_OPS: Final[dict[str, int]] = {
+    "clause": SAY_CLAUSE,
+    "word": SAY_WORD,
+    "letter": SAY_LETTER,
+    "filtered_letter": SAY_FLETTER,
+    "line": SAY_LINE,
+    "syllable": SAY_SYLLABLE,
 }
 
 # ``[:error <kw>]`` keyword -> ``error_mode`` value (issue #330). Order and
@@ -167,9 +201,7 @@ _NUMERIC_ARG_COMMANDS: Final[frozenset[str]] = frozenset(
 # command-matching internals (partial-match / handler-specific failures) that
 # the light parser does not reproduce and no parity-corpus prompt exercises.
 _ERR_PH_COMMAND: Final[bytes] = b"k axm ' aen d   ' ehr rr  ihn   k axm ' aen d . "
-_ERR_PH_PARAMETER: Final[bytes] = (
-    b"k axm ' aen d   ' ehr rr  ihn   p axr ' aem ixt rr. "
-)
+_ERR_PH_PARAMETER: Final[bytes] = b"k axm ' aen d   ' ehr rr  ihn   p axr ' aem ixt rr. "
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +246,16 @@ class SpeechState:
             spoken). ``ERROR_ignore`` / ``ERROR_escape`` / ``ERROR_text``
             render no audio for the error; ``ERROR_tone`` plays a beep (not
             modelled). Set by ``[:error <kw>]``.
+        say_mode: ``pKsd_t->sayflag`` — the text-breakup granularity from
+            ``[:say <kw>]`` (issue #329). One of the ``SAY_*`` values
+            (``esc.h``); default ``SAY_CLAUSE``. ``SAY_WORD`` breaks each
+            word into its own clause, ``SAY_LETTER`` / ``SAY_FLETTER`` spell
+            every character, ``SAY_SYLLABLE`` renders silence on the shipped
+            binary, ``SAY_LINE`` matches ``SAY_CLAUSE`` for newline-free text.
+        spell_mode: ``pKsd_t->modeflag & MODE_SPELL`` from ``[:mode spell
+            on|off]`` (issue #329). When set, every word is spelled out
+            letter-by-letter with a COMMA pause between words
+            (``ls_task.c`` lines 1341, 1888).
     """
 
     voice: str | None = None
@@ -224,6 +266,8 @@ class SpeechState:
     dv_overrides: tuple[tuple[int, int], ...] = ()
     sw_volume: int = 0
     error_mode: int = ERROR_speak
+    say_mode: int = SAY_CLAUSE
+    spell_mode: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -482,6 +526,47 @@ def _cmd_error(state: SpeechState, args: list[str]) -> SpeechState:
     return replace(state, error_mode=mode)
 
 
+def _cmd_say(state: SpeechState, args: list[str]) -> SpeechState:
+    """Handle ``[:say <kw>]`` — text-breakup granularity (issue #329).
+
+    Faithful to ``cm_cmd_say`` (``cm_copt.c`` lines 771-806): the option
+    keyword selects ``pKsd_t->sayflag``. ``clause`` (default) and ``line``
+    (identical for newline-free input) chunk normally; ``word`` makes each
+    word its own clause; ``letter`` / ``filtered_letter`` spell every
+    character; ``syllable`` renders silence on the shipped binary. An unknown
+    keyword makes the C handler return ``CMD_bad_string`` and leaves the mode
+    unchanged; we mirror the unchanged-mode part.
+    """
+    if not args:
+        return state
+    mode = _SAY_MODE_OPS.get(args[0].lower())
+    if mode is None or mode == state.say_mode:
+        return state
+    return replace(state, say_mode=mode)
+
+
+def _cmd_mode(state: SpeechState, args: list[str]) -> SpeechState:
+    """Handle ``[:mode <opt> <on|off|set>]`` — currently only ``spell``.
+
+    ``cm_cmd_mode`` (``cm_copt.c`` lines 2184-2284) sets a ``modeflag`` bit
+    via the LTS pipe. Only ``spell`` (``MODE_SPELL``) is modelled (issue
+    #329): ``on`` sets it, ``off`` clears it; the LTS then spells every word
+    letter-by-letter (``ls_task.c`` line 1888). Other mode families (``math``
+    / ``europe`` / ``citation`` / …) are not modelled and leave the state
+    unchanged, matching the pre-#329 no-op.
+    """
+    if len(args) < 2:  # noqa: PLR2004 — option keyword + on/off/set
+        return state
+    if args[0].lower() != "spell":
+        return state
+    action = args[1].lower()
+    if action == "on" and not state.spell_mode:
+        return replace(state, spell_mode=True)
+    if action == "off" and state.spell_mode:
+        return replace(state, spell_mode=False)
+    return state
+
+
 def _cmd_comma(state: SpeechState, args: list[str]) -> SpeechState:
     """Handle ``[:comma N]`` / ``[:cp N]`` — comma-pause milliseconds.
 
@@ -638,7 +723,9 @@ _HANDLERS: Final[dict[str, _Handler]] = {
     "phoneme": _cmd_phoneme,
     # Malformed-command error reporting mode (issue #330).
     "error": _cmd_error,
-    "say": _cmd_noop,
+    # Text-breakup / spell modes (issue #329).
+    "say": _cmd_say,
+    "mode": _cmd_mode,
     "ap": _cmd_noop,  # average pitch — future: drive preset.f0_x10 directly
     "pr": _cmd_noop,  # pitch range
     "hs": _cmd_noop,  # head size (head_scale on the preset)

@@ -6,6 +6,15 @@ import math
 
 from dectalk.cmd import SpeechState, parse
 from dectalk.cmd.cmd_states import PHONEME_ASCKY, PHONEME_OFF, PHONEME_SPEAK
+from dectalk.cmd.commands import _ERR_PH_COMMAND, _ERR_PH_PARAMETER
+from dectalk.cmd.say_flags import (
+    SAY_CLAUSE,
+    SAY_FLETTER,
+    SAY_LETTER,
+    SAY_LINE,
+    SAY_SYLLABLE,
+    SAY_WORD,
+)
 
 # Generous epsilon for the float multiplier comparisons -- the values
 # being compared are exact ratios of small ints so 1e-9 is plenty
@@ -133,12 +142,8 @@ def test_rate_clamps_out_of_range_to_legal_wpm() -> None:
     segs = parse("[:rate 1000] hello")
     assert math.isclose(segs[0].state.rate, 180.0 / 550.0, abs_tol=_RATE_EPS)
     # 600 and 700 (issue #330 representatives) land on the same multiplier.
-    assert math.isclose(
-        parse("[:rate 600] x")[0].state.rate, 180.0 / 550.0, abs_tol=_RATE_EPS
-    )
-    assert math.isclose(
-        parse("[:rate 700] x")[0].state.rate, 180.0 / 550.0, abs_tol=_RATE_EPS
-    )
+    assert math.isclose(parse("[:rate 600] x")[0].state.rate, 180.0 / 550.0, abs_tol=_RATE_EPS)
+    assert math.isclose(parse("[:rate 700] x")[0].state.rate, 180.0 / 550.0, abs_tol=_RATE_EPS)
 
 
 def test_rate_missing_arg_clamps_to_minimum() -> None:
@@ -170,8 +175,6 @@ def test_invalid_rate_value_speaks_parameter_error() -> None:
     """A present-but-non-numeric ``[:rate N]`` arg leaves the rate unchanged
     and, in the default speak error mode, injects the "Command error in
     parameter." message (issue #330; C ``CMD_bad_param``)."""
-    from dectalk.cmd.commands import _ERR_PH_PARAMETER
-
     segs = parse("[:rate notnumeric] hi")
     assert segs[0].state.rate == 1.0  # rate itself unchanged
     assert segs[0].phoneme_prefix == _ERR_PH_PARAMETER
@@ -240,8 +243,6 @@ def test_unknown_command_speaks_command_error() -> None:
     in the default speak error mode (issue #330; C ``CMD_bad_command``),
     merged with the following text into one utterance. The synthesizer state
     is otherwise unchanged."""
-    from dectalk.cmd.commands import _ERR_PH_COMMAND
-
     segs = parse("[:bogus xxx] hello")
     assert len(segs) == 1
     assert segs[0].body.strip() == "hello"
@@ -253,8 +254,6 @@ def test_unknown_command_speaks_command_error() -> None:
 def test_empty_command_speaks_command_error() -> None:
     """``[:]`` (empty keyword) is ``CMD_bad_command`` -> "Command error in
     command." (issue #330)."""
-    from dectalk.cmd.commands import _ERR_PH_COMMAND
-
     segs = parse("[:] hello")
     assert len(segs) == 1
     assert segs[0].phoneme_prefix == _ERR_PH_COMMAND
@@ -274,12 +273,47 @@ def test_error_ignore_and_escape_modes_suppress_message() -> None:
 def test_error_speak_is_the_default_and_explicit() -> None:
     """The default error mode is ``speak``; ``[:error speak]`` is a no-op on
     top of it, and a following malformed command still speaks the error."""
-    from dectalk.cmd.commands import _ERR_PH_COMMAND
-
     default = parse("[:bogus] hi")
     explicit = parse("[:error speak] [:bogus] hi")
     assert default[0].phoneme_prefix == _ERR_PH_COMMAND
     assert explicit[0].phoneme_prefix == _ERR_PH_COMMAND
+
+
+# -- issue #329: [:say <mode>] / [:mode spell on] ---------------------------
+
+
+def test_say_mode_sets_sayflag() -> None:
+    """``[:say <kw>]`` records the ``SAY_*`` granularity on the state."""
+    cases = {
+        "clause": SAY_CLAUSE,
+        "word": SAY_WORD,
+        "letter": SAY_LETTER,
+        "filtered_letter": SAY_FLETTER,
+        "line": SAY_LINE,
+        "syllable": SAY_SYLLABLE,
+    }
+    for kw, value in cases.items():
+        segs = parse(f"[:say {kw}] hello")
+        assert segs[0].state.say_mode == value, kw
+    # Default (no [:say]) is SAY_CLAUSE.
+    assert parse("hello")[0].state.say_mode == SAY_CLAUSE
+    # An unknown say option leaves the mode unchanged (C CMD_bad_string).
+    assert parse("[:say bogus] hi")[0].state.say_mode == SAY_CLAUSE
+
+
+def test_mode_spell_on_off_toggles_spell_mode() -> None:
+    """``[:mode spell on|off]`` toggles ``spell_mode``; other mode families
+    are no-ops (issue #329)."""
+    assert parse("[:mode spell on] read")[0].state.spell_mode is True
+    # off after on clears it (mid-stream: two segments).
+    segs = parse("[:mode spell on] a [:mode spell off] b")
+    assert segs[0].state.spell_mode is True
+    assert segs[1].state.spell_mode is False
+    # default is False; unmodelled mode families leave it unchanged.
+    assert parse("hello")[0].state.spell_mode is False
+    assert parse("[:mode math on] hi")[0].state.spell_mode is False
+    # a bare [:mode spell] (no on/off) is a no-op.
+    assert parse("[:mode spell] hi")[0].state.spell_mode is False
 
 
 def test_empty_input() -> None:

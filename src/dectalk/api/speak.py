@@ -504,6 +504,8 @@ def _speak_via_python_full(
             dv_overrides=seg.state.dv_overrides,
             sw_volume=seg.state.sw_volume,
             phoneme_prefix=seg.phoneme_prefix,
+            say_mode=seg.state.say_mode,
+            spell_mode=seg.state.spell_mode,
         )
         if chunk.size:
             chunks.append(chunk)
@@ -511,6 +513,92 @@ def _speak_via_python_full(
     if not chunks:
         return np.zeros(0, dtype=np.int16)
     return np.concatenate(chunks)
+
+
+def _say_word_to_dectalk_phonemes(text: str, *, lts_fallback: bool = True) -> bytes:
+    """Phoneme stream for ``[:say word]`` — each word its own clause (#329).
+
+    ``cm_pars.c`` lines 1618-1624 rewrite every inter-word whitespace to
+    ``0xb``, which forces a clause break + SYNC (and, on the
+    ``OLD_INTONATION_AND_TIMING`` build, a ``BREATH_BREAK``). Each word is
+    therefore spoken as its own clause with a word-final fall. We reproduce
+    the breakup by phonemizing each whitespace-delimited word on its own and
+    joining the streams with a PERIOD clause delimiter, which
+    ``split_dectalk_stream_clauses`` turns into the same per-word clause runs.
+    """
+    words = text.split()
+    if not words:
+        return b""
+    # Each word phonemized on its own and joined with a PERIOD clause
+    # delimiter: ``split_dectalk_stream_clauses`` then hands one word per
+    # clause run to the PH chain, and each word gets the clause-final fall
+    # the ``0xb`` SYNC produces in C. Byte-verified vs the binary.
+    parts = [text_to_dectalk_phonemes(w, lang="us", lts_fallback=lts_fallback) for w in words]
+    return b". ".join(parts)
+
+
+def _phones_to_dectalk_bytes(phones: list[int]) -> bytes:
+    """Serialize LTS phoneme codes to the DECtalk ASCII stream.
+
+    Each code indexes ``usa_arpa`` two bytes at a time; spell/type-out paths
+    carry font bits in the high byte (``0x1E00 | code``), so mask to the low
+    byte first — the same stringification the numeric-format expansion uses
+    (``dectalk.lts.numeric_formats._render``).
+    """
+    from dectalk.include.usa_arpa import usa_arpa  # noqa: PLC0415
+
+    return b"".join(usa_arpa[2 * (c & 0xFF) : 2 * (c & 0xFF) + 2] for c in phones)
+
+
+def _spell_mode_to_dectalk_phonemes(text: str) -> bytes:
+    """Phoneme stream for ``[:mode spell on]`` — spell every word (#329).
+
+    ``ls_task_spell_mode`` (``ls_task.c`` line 1888) runs ``ls_spel_spell``
+    on each word (letters via the typing table, digits via ``punits``, math
+    symbols via the typing table), and inter-word whitespace is spoken as a
+    COMMA "longer pause" (``ls_task.c`` line 1341) rather than the usual
+    WBOUND. Byte-verified vs the binary across letters / digits / symbols.
+    """
+    from dectalk.include.phoneme_codes import COMMA  # noqa: PLC0415
+    from dectalk.lts.emitter import LtsEmitter  # noqa: PLC0415
+    from dectalk.lts.spell_emit import ls_spel_spell  # noqa: PLC0415
+
+    emitter = LtsEmitter()
+    for word_index, word in enumerate(text.split()):
+        if word_index:
+            emitter.send_phone(COMMA)
+        ls_spel_spell(emitter, word.encode("latin-1", errors="replace"))
+    return _phones_to_dectalk_bytes(emitter.phones)
+
+
+def _say_letter_to_dectalk_phonemes(text: str, *, filtered: bool = False) -> bytes:
+    """Phoneme stream for ``[:say letter]`` / ``[:say filtered_letter]`` (#329).
+
+    ``cm_pars.c`` lines 1625-1651 type each character out via
+    ``cm_util_type_out`` (``cm_util.c`` lines 681-741): the letter-name
+    phonemes from the typing table followed by a trailing COMMA, per
+    character. ``filtered_letter`` skips control characters (``c < 32``),
+    ``letter`` does not (the only difference — ``cm_pars.c`` line 1644).
+
+    NOTE (issue #329): this is a best-effort spelling render, NOT byte-exact.
+    The shipped binary's ``cm_util_type_out`` direct-PH-pipe path produces an
+    anomalous ~144000 samples PER CHARACTER (``[:say letter] a`` = 144130
+    samples, 91% non-silent), a degenerate per-char artifact of this build
+    that is not reproduced here. The letters are spelled intelligibly; the
+    per-character timing does not match the binary.
+    """
+    from dectalk.include.phoneme_codes import COMMA  # noqa: PLC0415
+    from dectalk.lts.emitter import LtsEmitter  # noqa: PLC0415
+    from dectalk.lts.spell_emit import ls_spel_spell  # noqa: PLC0415
+
+    emitter = LtsEmitter()
+    for ch in text:
+        code = ord(ch)
+        if filtered and code < 32:  # noqa: PLR2004 — control-char filter
+            continue
+        ls_spel_spell(emitter, ch.encode("latin-1", errors="replace"))
+        emitter.send_phone(COMMA)
+    return _phones_to_dectalk_bytes(emitter.phones)
 
 
 def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsically long
@@ -525,6 +613,8 @@ def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsi
     dv_overrides: tuple[tuple[int, int], ...] = (),
     sw_volume: int = 0,
     phoneme_prefix: bytes = b"",
+    say_mode: int = 0,
+    spell_mode: bool = False,
 ) -> NDArray[np.int16]:
     """Render a single parser segment's body through the full PH pipeline.
 
@@ -549,6 +639,15 @@ def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsi
             into the speaker chip's voicing / frication / aspiration gains
             by :func:`~dectalk.ph.setspdef.spd_chip_from_row`. ``0`` is
             unity (byte-exact default path).
+        phoneme_prefix: Pre-computed DECtalk phoneme bytes prepended to the
+            body's phonemes and rendered as one utterance — the malformed-
+            command error message (issue #330). Empty for ordinary segments.
+        say_mode: ``[:say <mode>]`` ``SAY_*`` granularity (issue #329):
+            ``SAY_SYLLABLE`` renders silence, ``SAY_WORD`` chunks per word,
+            ``SAY_LETTER`` / ``SAY_FLETTER`` spell every character;
+            ``SAY_CLAUSE`` (0, default) / ``SAY_LINE`` use the normal path.
+        spell_mode: ``[:mode spell on]`` — spell every word letter-by-letter
+            (issue #329). Overrides ``say_mode`` when set.
     """
     from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
     from dectalk.kernel.lang_codes import LANG_english  # noqa: PLC0415
@@ -607,9 +706,38 @@ def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsi
     # verbatim, bypassing the Python LTS (which mispronounces "error" /
     # "parameter"). Prepending keeps the error + following text one
     # continuous stream, matching the C engine's single PH thread.
-    raw_phonemes = phoneme_prefix + text_to_dectalk_phonemes(
-        text, lang=lang, lts_fallback=lts_fallback
+    # ``[:say <mode>]`` / ``[:mode spell on]`` text-processing hook (issue
+    # #329). The kernel ``sayflag`` / ``MODE_SPELL`` change how the body is
+    # broken up or spelled BEFORE phonemization:
+    #   - SAY_SYLLABLE: the shipped binary renders silence (a bare 44-byte
+    #     WAV) for syllable mode — the ``ph_syl.c`` segmentation produces no
+    #     audio on this build. Reproduce it by emitting no samples.
+    #   - MODE_SPELL / SAY_LETTER / SAY_FLETTER: spell every word / character
+    #     via the DECtalk typing table instead of the dictionary.
+    #   - SAY_WORD: break each whitespace-delimited word into its own clause.
+    # ``SAY_CLAUSE`` (default) and ``SAY_LINE`` (identical for newline-free
+    # input) fall through to the normal per-clause path.
+    from dectalk.cmd.say_flags import (  # noqa: PLC0415
+        SAY_FLETTER,
+        SAY_LETTER,
+        SAY_SYLLABLE,
+        SAY_WORD,
     )
+
+    if say_mode == SAY_SYLLABLE:
+        return np.zeros(0, dtype=np.int16)
+
+    body_phonemes: bytes
+    if spell_mode:
+        body_phonemes = _spell_mode_to_dectalk_phonemes(text)
+    elif say_mode in (SAY_LETTER, SAY_FLETTER):
+        body_phonemes = _say_letter_to_dectalk_phonemes(text, filtered=(say_mode == SAY_FLETTER))
+    elif say_mode == SAY_WORD:
+        body_phonemes = _say_word_to_dectalk_phonemes(text, lts_fallback=lts_fallback)
+    else:
+        body_phonemes = text_to_dectalk_phonemes(text, lang=lang, lts_fallback=lts_fallback)
+
+    raw_phonemes = phoneme_prefix + body_phonemes
     if not raw_phonemes:
         return np.zeros(0, dtype=np.int16)
 

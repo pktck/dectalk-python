@@ -580,6 +580,67 @@ def test_vtm1_pcm_byte_identical_malformed_command(
 # --- end issue #330 lane ---------------------------------------------
 
 
+# --- issue #329: [:say <mode>] / [:mode spell on] text-processing -----
+# ``[:say <mode>]`` sets the kernel ``sayflag`` (``cm_copt.c`` 771-806) and
+# ``[:mode spell on]`` sets ``MODE_SPELL``; both change how the following
+# text is broken up / spelled BEFORE phonemization (``cm_pars.c`` 1604-1660,
+# ``ls_task.c`` 1888). Each row is byte-verified against the binary:
+#   - ``[:say clause]`` (default) / ``[:say line]`` (identical for newline-
+#     free text): unchanged from the plain prompt — regression guards.
+#   - ``[:say word]``: each whitespace becomes a ``0xb`` clause break + SYNC,
+#     so every word is its own clause with a clause-final fall. Reproduced by
+#     phonemizing each word alone and joining with a PERIOD delimiter.
+#   - ``[:say syllable]``: the shipped binary renders SILENCE (a bare 44-byte
+#     WAV) for syllable mode on this build — matched by emitting no samples.
+#   - ``[:mode spell on]``: every word is spelled letter-by-letter via
+#     ``ls_spel_spell`` (letters via the typing table, digits via ``punits``,
+#     math symbols via the typing table), with a COMMA "longer pause" between
+#     words. Covers letters, single digits, and the ``+`` / ``=`` symbols.
+# DELIBERATELY NOT pinned (documented, out of byte-exact reach here):
+#   - ``[:say letter]`` / ``[:say filtered_letter]``: the shipped binary's
+#     ``cm_util_type_out`` direct-PH-pipe path renders an ANOMALOUS ~144000
+#     samples PER CHARACTER (91% non-silent — e.g. ``[:say letter] a`` = 144130
+#     samples, then only ~4700 per extra char), a degenerate per-char artifact
+#     of this build (spiritually like the syllable=silence quirk). Python
+#     spells the letters intelligibly (best effort) but does not reproduce the
+#     artifact, so these are not byte-exact and are excluded.
+#   - ``[:mode spell on]`` on a letters+digits mix (e.g. ``abc 123``): the
+#     spelled phoneme stream is correct, but the FULL-pipeline rendering of
+#     that specific stream diverges — a downstream synth gap outside the
+#     command/text-processing layer.
+_SAY_MODE_BYTE_EXACT_PROMPTS: tuple[str, ...] = (
+    "[:say clause] hello world one.",
+    "[:say line] hello world one.",
+    "[:say word] hello world one.",
+    "[:say word] cat dog bird",
+    "[:say word] one two three",
+    "[:say syllable] hello world one.",
+    "[:say syllable] cat",
+    "[:mode spell on] read 3 + 4 = 7",
+    "[:mode spell on] read cat",
+    "[:mode spell on] hello world",
+    "[:mode spell on] FBI",
+)
+
+
+@pytest.mark.parametrize("text", _SAY_MODE_BYTE_EXACT_PROMPTS)
+def test_vtm1_pcm_byte_identical_say_mode(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``[:say <mode>]`` / ``[:mode spell on]`` are byte-exact vs the binary.
+
+    The #329 lane: clause/line pass through, word chunks per word, syllable
+    renders silence, and spell mode spells every word (letters/digits/
+    symbols). See the block comment for the per-row rationale and the
+    documented exclusions (letter/filtered_letter binary anomaly).
+    """
+    ref = _binary_pcm_int16(text)
+    py = _python_vtm1_pcm(text, monkeypatch)
+    assert py.size == ref.size, f"length mismatch {py.size} vs {ref.size}"
+    np.testing.assert_array_equal(py, ref)
+
+
+# --- end issue #329 lane ---------------------------------------------
+
+
 # Frame size at the active 11025 Hz build (vtm1.c uiNumberOfSamplesPerFrame).
 _SAMPLES_PER_FRAME = 71
 
