@@ -2808,16 +2808,69 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                 tokens.extend(tokenize(chunk))
                 continue
             elif inner and "-" in inner and not inner.startswith("-"):
-                # Hyphenated compound (``forty-two``, ``self-taught``):
-                # tokenise each part separately so we can insert the
-                # ``#`` syllable-break marker the C source emits in
-                # place of the regular word break.
-                parts = inner.split("-")
-                for i_part, part in enumerate(parts):
-                    if i_part > 0:
-                        tokens.append(Token(TokenKind.PAUSE_SHORT, "#"))
-                    if part:
-                        tokens.extend(tokenize(part))
+                # Hyphenated token. The C command tokenizer forwards a
+                # word-internal ``-`` to the LTS "to send compound noun"
+                # (``cm_pars.c:790-819``), so the WHOLE token is looked
+                # up in the dictionary before any splitting. Compound
+                # dictionary entries keyed *with* the hyphen win and
+                # carry their own MBOUND ``*`` / stress from the runtime
+                # ``Dic_us.txt`` row -- ``x-ray`` -> ``'Eksre`` (no
+                # boundary glyph), ``t-shirt`` -> ``t'i*S`Rt``,
+                # ``so-called`` -> ``s'o*k`cld`` -- so no per-hyphen
+                # ``#`` (the ``HYPHEN`` phoneme, ``l_com_ph.h:55``, that
+                # renders as a literal ``#``) leaks into the stream where
+                # C never emitted one (issue #328). A whole-token hit
+                # routes through the same marker-lexicon / ``lookup``
+                # path the main loop uses for ``breakfast`` etc., so the
+                # ``*`` MBOUND survives. Only a token that is NOT a
+                # dictionary entry (``forty-two``, ``self-taught``,
+                # ``well-known``) falls through to the compound split,
+                # which inserts the ``#`` boundary marker the LTS rule
+                # engine emits (``PFHASH`` -> ``HYPHEN``,
+                # ``l_us_ru1.c:363``).
+                whole = inner.upper()
+                if whole == "E-MAIL":
+                    # Lexical one-off: C renders the exact string
+                    # ``e-mail`` as the two words "e mail" (a plain word
+                    # break, ``' iy  m ' eyll``), NOT with a "dash" or a
+                    # compound ``#`` -- while ``e-book`` / ``e-cat`` /
+                    # ``e-mails`` / ``x-mail`` all verbalize "dash". Emit
+                    # the two components as bare words so the main loop's
+                    # automatic word break joins them (issue #328).
+                    for part in inner.split("-"):
+                        if part:
+                            tokens.extend(tokenize(part))
+                elif whole in compound_marker_lex or lookup(whole, lang=lang) is not None:
+                    tokens.append(Token(TokenKind.WORD, whole))
+                else:
+                    parts = inner.split("-")
+                    # Per-boundary decision between the left and right
+                    # component. C emits the compound ``#`` (HYPHEN,
+                    # ``l_com_ph.h:55``) only when the *left* side is a
+                    # multi-letter alphabetic word and the *right* side
+                    # is alphabetic -- ``well-known`` -> ``ehll# n``,
+                    # ``co-op``, ``twenty-one``, and even ``cat-a`` ->
+                    # ``k ' aet # ' ey`` (word then bare letter). Every
+                    # other combination verbalizes the ``-`` as the
+                    # spoken word "dash" (``par_rule.par`` R223/R224
+                    # "change x-y to x dash y"; ``PRO_DASH``): a leading
+                    # single letter (``a-b``, ``u-turn``) or any digit
+                    # run (``1-cat``, ``cat-1``, ``Catch-22``). Emitting
+                    # the compound ``#`` for those was the #328 leak --
+                    # the marker only belongs on a genuine noun-compound
+                    # boundary. Pure digit/dash ranges (``3-2``,
+                    # ``10-20``) never reach here; the numeric
+                    # part-number dispatch (issue #225) claims them
+                    # first.
+                    for i_part, part in enumerate(parts):
+                        if i_part > 0:
+                            left = parts[i_part - 1]
+                            if left.isalpha() and len(left) >= 2 and part.isalpha():  # noqa: PLR2004
+                                tokens.append(Token(TokenKind.PAUSE_SHORT, "#"))
+                            else:
+                                tokens.append(Token(TokenKind.WORD, "DASH"))
+                        if part:
+                            tokens.extend(tokenize(part))
             else:
                 tokens.extend(tokenize(chunk))
                 continue
