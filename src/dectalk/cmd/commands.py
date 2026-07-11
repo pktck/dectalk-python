@@ -42,6 +42,11 @@ from dataclasses import dataclass, field, replace
 from typing import Final
 
 from dectalk.cmd.cmd_states import (
+    ERROR_escape,
+    ERROR_ignore,
+    ERROR_speak,
+    ERROR_text,
+    ERROR_tone,
     MAX_PERIOD_PAUSE,
     MIN_PERIOD_PAUSE,
     PHONEME_ASCKY,
@@ -67,11 +72,19 @@ _DV_PARAM_KEYWORDS: Final[frozenset[str]] = frozenset(define_options)
 _DEFAULT_WPM: Final[int] = 180
 
 # Inclusive WPM clamps applied to ``[:rate N]`` before converting to a
-# multiplier. The C binary clamps to the same [75, 600] range
-# (verified empirically; matches ``MIN_SPEAKING_RATE`` /
-# ``MAX_SPEAKING_RATE`` in :mod:`dectalk.cmd.cmd_states`).
+# multiplier. ``cm_cmd_rate`` (``cm_copt.c`` lines 2379-2388) clamps the
+# argument to [``MIN_SPEAKING_RATE`` = 75, ``MAX_SPEAKING_RATE`` = 600], but
+# the *shipped binary* — the parity spec — saturates the downstream
+# LTS→duration mapping at ~546 WPM: ``[:rate 546]`` … ``[:rate 700]`` all
+# render byte-identically to ``[:rate 550]`` (measured 2026-07-11, issue
+# #330), while ``[:rate 545]`` is distinctly longer. The Python
+# rate→duration path does not saturate (it faithfully makes 600 shorter than
+# 550), so an unclamped 600/700 diverged (``delta_samples = -1349``). Clamping
+# the effective WPM to 550 — a *verified* byte-exact saturation point — maps
+# every rate ≥ 550 onto the same output the binary produces, with no
+# regression below 550 (all of [75, 550] already matched byte-for-byte).
 _MIN_WPM: Final[int] = 75
-_MAX_WPM: Final[int] = 600
+_MAX_WPM: Final[int] = 550
 
 # ``[:phoneme ...]`` mode bitfield (mirrors the C ``pKsd_t->phoneme_mode``
 # 3-bit field). The DECtalk front-end initialises it to
@@ -92,6 +105,71 @@ _PHONEME_MODE_OPS: Final[dict[str, tuple[int, bool]]] = {
     "off": (PHONEME_OFF, True),  # case 4: |= PHONEME_OFF
     "on": (PHONEME_OFF, False),  # case 5: &= ~PHONEME_OFF
 }
+
+# ``[:error <kw>]`` keyword -> ``error_mode`` value (issue #330). Order and
+# indices match ``error_options`` (``c_us_cde.h`` lines 114-121) and the
+# ``ERROR_*`` constants (``cm_defs.h`` lines 162-166); the option index maps
+# 1:1 to the mode constant (``cm_cmd_error``, ``cm_copt.c`` lines 826-854).
+_ERROR_MODE_OPS: Final[dict[str, int]] = {
+    "ignore": ERROR_ignore,  # 0: silent
+    "text": ERROR_text,  # 1: log/stdout only (silent audio)
+    "escape": ERROR_escape,  # 2: no switch case in C -> silently dropped
+    "speak": ERROR_speak,  # 3: DEFAULT — speak the error message
+    "tone": ERROR_tone,  # 4: play a tone (beep) instead
+}
+
+# Every command keyword the shipped US ``command_table`` accepts
+# (``c_us_cde.h`` lines 396-493, non-MSDOS / non-EPSON_ARM7 / non-HLSYN
+# build — the active shipped ``libtts_us.so``). A ``[:KEYWORD ...]`` whose
+# keyword is neither here nor a modelled handler is a genuine unknown
+# command: ``cm_cmd_do_command`` raises ``CMD_bad_command`` and the
+# default error mode speaks "Command error in command" (issue #330). Keeping
+# this in exact sync with C is what stops the error injection from firing on
+# a valid-but-unmodelled command and corrupting the parity corpus. ``nc``
+# (HLSYN/CHANGES_AFTER_V43-gated) is intentionally absent — it is not in the
+# shipped table.
+_KNOWN_COMMANDS: Final[frozenset[str]] = frozenset(
+    {
+        "rate", "latin", "name", "np", "nb", "nh", "nf", "nd", "nk", "nu",
+        "nr", "nw", "nv", "comma", "cp", "period", "pp", "volume", "vs",
+        "index", "error", "phoneme", "log", "mode", "say", "punctuation",
+        "skip", "pause", "play", "resume", "sync", "dial", "tone",
+        "pronounce", "pitch", "define_voice", "dv", "debug", "setv", "loadv",
+        "gender", "preamble", "version", "spf",
+    }
+)  # fmt: skip
+
+# Keywords whose first parameter is the ``"d"`` (decimal) format in the
+# command table: a present-but-non-integer first argument fails
+# ``cm_cmd_build_param`` and raises ``CMD_bad_param`` -> "Command error in
+# parameter" (``cm_cmd.c`` lines 717/742). Verified against the binary:
+# ``[:rate abc]`` and ``[:rate 12x]`` both speak the parameter error, while
+# ``[:rate 12]`` clamps normally. A *missing* argument is not an error (the
+# builder defaults ``params[0] = 0``, which the handler then clamps).
+_NUMERIC_ARG_COMMANDS: Final[frozenset[str]] = frozenset(
+    {"rate", "comma", "cp", "period", "pp", "vs", "pause", "pitch", "latin"}
+)
+
+# Exact DECtalk phoneme streams for the fixed ``usa_error[]`` messages
+# (``usa_err.tab`` lines 32-45), captured verbatim from the C
+# ``convert_to_phonemes`` oracle (issue #330). The C error path
+# (``cm_cmd.c`` lines 878-894, ``ERROR_speak``) injects the message
+# char-by-char into the LTS pipe as ASCII-font text, then a ``0xb`` clause
+# break — the trailing " . " reproduces that break. Embedded as phonemes
+# rather than LTS-rendered from English because the Python LTS mispronounces
+# "error" (``' rrr aor`` vs C ``' ehr rr``) and "parameter" — a pre-existing
+# lexicon gap outside the command layer. Prepending the stream to the
+# following text's phonemes (:func:`_render_clause_full`'s ``phoneme_prefix``)
+# and rendering as ONE utterance is byte-identical to the binary. Only the
+# two error codes the modelled paths raise are embedded — ``CMD_bad_command``
+# and ``CMD_bad_param``. The other ``usa_error[]`` messages ("string value" =
+# ``s t r ' ihnx  v ' aellyxuw``, "numeric value", "phoneme") come from C
+# command-matching internals (partial-match / handler-specific failures) that
+# the light parser does not reproduce and no parity-corpus prompt exercises.
+_ERR_PH_COMMAND: Final[bytes] = b"k axm ' aen d   ' ehr rr  ihn   k axm ' aen d . "
+_ERR_PH_PARAMETER: Final[bytes] = (
+    b"k axm ' aen d   ' ehr rr  ihn   p axr ' aem ixt rr. "
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +207,13 @@ class SpeechState:
             voicing / frication / aspiration gains by the full-pipeline
             renderer (``ph_vset.c`` lines 776-783). Independent of the
             voice, so it is *not* reset on a voice change.
+        error_mode: ``pCmd_t->error_mode`` — how a malformed inline command
+            is reported (issue #330). One of the ``ERROR_*`` values
+            (``cm_defs.h`` lines 162-166); the DECtalk default is
+            :data:`~dectalk.cmd.cmd_states.ERROR_speak` (the error message is
+            spoken). ``ERROR_ignore`` / ``ERROR_escape`` / ``ERROR_text``
+            render no audio for the error; ``ERROR_tone`` plays a beep (not
+            modelled). Set by ``[:error <kw>]``.
     """
 
     voice: str | None = None
@@ -138,6 +223,7 @@ class SpeechState:
     period_pause: int | None = None
     dv_overrides: tuple[tuple[int, int], ...] = ()
     sw_volume: int = 0
+    error_mode: int = ERROR_speak
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,10 +234,18 @@ class Segment:
         body: The text to speak (always plain text; the
             ``[:phoneme ...]`` modes never turn a body into phonemes).
         state: The :class:`SpeechState` active for this segment.
+        phoneme_prefix: A pre-computed DECtalk phoneme stream prepended to
+            ``body``'s phonemes and rendered as one continuous utterance
+            (issue #330). Non-empty only for the malformed-command error
+            messages ("Command error in command.", …), whose exact C
+            pronunciations are injected verbatim to bypass the Python LTS.
+            Empty (the default) for every ordinary segment, so no-error
+            input is byte-identical to the pre-#330 segmentation.
     """
 
     body: str
     state: SpeechState = field(default_factory=SpeechState)
+    phoneme_prefix: bytes = b""
 
 
 _COMMAND_RE: Final[re.Pattern[str]] = re.compile(r"\[:\s*([^\]]*?)\s*\]")
@@ -169,33 +263,82 @@ def parse(source: str, *, initial_state: SpeechState | None = None) -> list[Segm
         Ordered list of :class:`Segment` instances. Empty bodies are
         suppressed; consecutive commands collapse into a single state
         transition with no preceding segment.
+
+    A malformed inline command (unknown keyword, empty ``[:]``, or a bad
+    numeric parameter) in the default ``ERROR_speak`` mode injects the
+    DECtalk error message ("Command error in command." / "…in parameter.")
+    into the phoneme stream at its position (issue #330), merged with the
+    following text into one utterance — matching the shipped binary, whose
+    default error mode speaks the message. In ``ERROR_ignore`` /
+    ``ERROR_escape`` / ``ERROR_text`` / ``ERROR_tone`` modes no message is
+    injected (silent), so those inputs stay byte-identical to today.
     """
     state = initial_state if initial_state is not None else SpeechState()
     out: list[Segment] = []
     last_end = 0
+    # Error phonemes from a malformed command, held until the next text run so
+    # the message renders as one utterance with the text that follows it.
+    pending_prefix = b""
     for m in _COMMAND_RE.finditer(source):
         body = source[last_end : m.start()]
         if body.strip():
-            out.append(Segment(body=body, state=state))
-        state = _apply_command(state, m.group(1))
+            out.append(Segment(body=body, state=state, phoneme_prefix=pending_prefix))
+            pending_prefix = b""
+        state, err = _apply_command(state, m.group(1))
+        pending_prefix += err
         last_end = m.end()
     tail = source[last_end:]
     if tail.strip():
-        out.append(Segment(body=tail, state=state))
+        out.append(Segment(body=tail, state=state, phoneme_prefix=pending_prefix))
+    elif pending_prefix:
+        # A trailing malformed command with no text after it: the error
+        # message is still spoken, as an otherwise-empty segment.
+        out.append(Segment(body="", state=state, phoneme_prefix=pending_prefix))
     return out
 
 
-def _apply_command(state: SpeechState, body: str) -> SpeechState:
-    """Apply one command body (the text between ``[:`` and ``]``) to ``state``."""
+def _is_decimal(s: str) -> bool:
+    """True when ``s`` is a valid decimal integer (C ``"d"`` param format).
+
+    The C parameter builder is strict: ``[:rate 12x]`` fails exactly like
+    ``[:rate abc]`` (both speak "Command error in parameter"), so a lenient
+    ``atoi``-style leading-digit test would over-accept. ``int(s, 10)``
+    matches the binary.
+    """
+    try:
+        int(s, 10)
+    except ValueError:
+        return False
+    return True
+
+
+def _apply_command(state: SpeechState, body: str) -> tuple[SpeechState, bytes]:
+    """Apply one command body (between ``[:`` and ``]``) to ``state``.
+
+    Returns the (possibly mutated) state and any error phonemes to inject
+    (empty unless the command is malformed *and* the active error mode is
+    ``ERROR_speak``). Mirrors ``cm_cmd_do_command`` (``cm_cmd.c`` lines
+    334-371): an unknown keyword or empty command raises ``CMD_bad_command``,
+    a bad numeric parameter raises ``CMD_bad_param``.
+    """
+    speak = state.error_mode == ERROR_speak
     parts = body.split()
     if not parts:
-        return state
+        # Empty command ``[:]`` -> CMD_bad_command.
+        return state, (_ERR_PH_COMMAND if speak else b"")
     cmd = parts[0].lower()
     args = parts[1:]
+    if cmd not in _KNOWN_COMMANDS and cmd not in _HANDLERS:
+        # Unknown keyword -> CMD_bad_command ("Command error in command").
+        return state, (_ERR_PH_COMMAND if speak else b"")
+    if cmd in _NUMERIC_ARG_COMMANDS and args and not _is_decimal(args[0]):
+        # Present-but-non-numeric "d"-format arg -> CMD_bad_param.
+        return state, (_ERR_PH_PARAMETER if speak else b"")
     handler = _HANDLERS.get(cmd)
     if handler is None:
-        return state
-    return handler(state, args)
+        # Valid C command with no Python model yet: no-op, no error.
+        return state, b""
+    return handler(state, args), b""
 
 
 def _cmd_dv(state: SpeechState, args: list[str]) -> SpeechState:
@@ -296,22 +439,47 @@ def _cmd_rate(state: SpeechState, args: list[str]) -> SpeechState:
     ``rate=`` and an inline ``[:rate N]`` combine multiplicatively
     (matching the legacy approximate path's behaviour).
 
-    Numeric parse failures and non-positive values leave the state
-    unchanged.
+    A *missing* argument is not an error: ``cm_cmd_build_param`` defaults
+    ``params[0] = 0``, which the ``[MIN, MAX]`` clamp below lifts to
+    ``_MIN_WPM`` — the binary renders ``[:rate]`` identically to
+    ``[:rate 0]`` / ``[:rate 50]`` (issue #330). A *present* non-numeric
+    argument is rejected upstream in :func:`_apply_command`
+    (``CMD_bad_param``) before reaching here, so ``args[0]`` is always a
+    valid decimal.
+    """
+    if args:
+        try:
+            wpm = float(args[0])
+        except ValueError:
+            return state
+    else:
+        wpm = 0.0
+    # Clamp to the binary's effective WPM range before computing the
+    # multiplier so the resulting rate maps deterministically back to
+    # a clamped WPM downstream (avoids float drift in the round-trip).
+    # ``_MAX_WPM`` is 550 (the shipped binary's saturation point), so
+    # ``[:rate 600]`` / ``[:rate 700]`` collapse onto ``[:rate 550]``.
+    wpm = max(_MIN_WPM, min(_MAX_WPM, wpm))
+    return replace(state, rate=state.rate * (_DEFAULT_WPM / wpm))
+
+
+def _cmd_error(state: SpeechState, args: list[str]) -> SpeechState:
+    """Handle ``[:error <kw>]`` — set the malformed-command error mode.
+
+    Faithful to ``cm_cmd_error`` (``cm_copt.c`` lines 826-854): the option
+    keyword (``ignore`` / ``text`` / ``escape`` / ``speak`` / ``tone``)
+    selects ``pCmd_t->error_mode``. The DECtalk default is ``ERROR_speak``
+    (issue #330). An unknown keyword makes the C handler return
+    ``CMD_bad_string`` and leaves the mode unchanged; we mirror the
+    unchanged-mode part (its own error report is out of the modelled set).
+    A missing keyword also leaves the mode unchanged.
     """
     if not args:
         return state
-    try:
-        wpm = float(args[0])
-    except ValueError:
+    mode = _ERROR_MODE_OPS.get(args[0].lower())
+    if mode is None or mode == state.error_mode:
         return state
-    if wpm <= 0:
-        return state
-    # Clamp to DECtalk's legal WPM range before computing the
-    # multiplier so the resulting rate maps deterministically back to
-    # a clamped WPM downstream (avoids float drift in the round-trip).
-    wpm = max(_MIN_WPM, min(_MAX_WPM, wpm))
-    return replace(state, rate=state.rate * (_DEFAULT_WPM / wpm))
+    return replace(state, error_mode=mode)
 
 
 def _cmd_comma(state: SpeechState, args: list[str]) -> SpeechState:
@@ -468,6 +636,8 @@ _HANDLERS: Final[dict[str, _Handler]] = {
     # non-deterministic (see ``_cmd_volume``).
     "volume": _cmd_volume,
     "phoneme": _cmd_phoneme,
+    # Malformed-command error reporting mode (issue #330).
+    "error": _cmd_error,
     "say": _cmd_noop,
     "ap": _cmd_noop,  # average pitch — future: drive preset.f0_x10 directly
     "pr": _cmd_noop,  # pitch range
