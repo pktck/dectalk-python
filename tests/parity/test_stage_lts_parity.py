@@ -664,3 +664,63 @@ def test_roman_numeral_ordinal_matches_c(text: str, capi: CAPI) -> None:
         f"  expected (C): {expected!r}\n"
         f"  actual (Py):  {actual!r}"
     )
+
+
+# Issue #328 representatives: the compound ``#`` (HYPHEN, l_com_ph.h:55)
+# marker in hyphen-joined tokens. Each row names a distinct mechanism in
+# the fix:
+#   - "x-ray" / "t-shirt" / "so-called": whole-token dictionary compound
+#     entries keyed WITH the hyphen (Dic_us.txt rows ``'Eksre`` /
+#     ``t'i*S`Rt`` / ``s'o*k`cld``) win over any split -- the CORE fix.
+#     ``x-ray`` carries no boundary glyph, ``t-shirt``/``so-called`` the
+#     ``*`` MBOUND; the per-hyphen ``#`` no longer leaks.
+#   - "well-known" / "twenty-one" / "self-taught" / "high-end": two
+#     multi-letter words -> the genuine compound ``#`` boundary
+#     (regression guard; these were already byte-exact).
+#   - "cat-a": word then a bare single letter still takes ``#`` -- the
+#     asymmetry that distinguishes it from a leading letter.
+#   - "Catch-22" / "1-cat" / "cat-1": a digit run on either side
+#     verbalizes the ``-`` as the spoken word "dash" (par_rule.par
+#     R223/R224), never ``#``.
+#   - "x-cat" / "u-turn": a leading single letter verbalizes "dash".
+#   - "e-mail": the lexical one-off C renders as the two words "e mail"
+#     (a plain word break, no dash and no ``#``).
+#   - "3-2" / "1-10": pure digit/dash ranges owned by the numeric
+#     part-number dispatch (issue #225) -- regression guard that the
+#     hyphen change did not disturb them.
+_HYPHEN_COMPOUND_FAMILY_328: tuple[str, ...] = (
+    "x-ray",
+    "t-shirt",
+    "so-called",
+    "well-known",
+    "twenty-one",
+    "self-taught",
+    "high-end",
+    "cat-a",
+    "Catch-22",
+    "1-cat",
+    "cat-1",
+    "x-cat",
+    "u-turn",
+    "e-mail",
+    "3-2",
+    "1-10",
+)
+
+
+@pytest.mark.parametrize("text", _HYPHEN_COMPOUND_FAMILY_328, ids=list(_HYPHEN_COMPOUND_FAMILY_328))
+def test_hyphen_compound_marker_matches_c(text: str, capi: CAPI) -> None:
+    """Hyphen tokens no longer leak the compound ``#`` marker (issue #328).
+
+    Pins the hyphen-branch decision: whole-token dictionary compounds
+    win, two multi-letter words take the ``#`` (HYPHEN) boundary, and a
+    digit run or a leading single letter verbalizes "dash" -- byte-
+    compared against ``TextToSpeechConvertToPhonemes``.
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"hyphen-compound mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
