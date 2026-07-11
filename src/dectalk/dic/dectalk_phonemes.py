@@ -79,17 +79,36 @@ US_MAP: Final[dict[str, tuple[str, ...]]] = {
     "C": ("CH",),
     "J": ("JH",),
     "G": ("NG",),
-    "N": ("N",),  # syllabic N — we approximate as N
-    "L": ("L",),  # syllabic L — we approximate as L
+    # Capital ``N`` / ``L`` are the DECtalk dictionary's *syllabic*
+    # consonants (US_EN / US_EL in usa_ascky[]) — the vowel-less
+    # syllable nuclei in ``button`` (``b'ahtN``) and ``baloney``
+    # (``bL'oni``). The lexicon must preserve that distinction: the C
+    # runtime speaks these as ``en`` / ``el`` (syllabic), NOT plain
+    # ``n`` / ``ll``. Decoding them to the dedicated ARPABET syllabic
+    # tokens EN / EL (which the encoder emits directly as ``en`` / ``el``)
+    # keeps the dictionary's own syllabicity marking instead of
+    # re-deriving it from context — the fix for issue #332 families 2
+    # and the reversed-EN cluster, where the previous plain-``N``/``L``
+    # collapse produced ``ll'`` for ``bL'oni`` and ``n s`` for capital-N
+    # entries the runtime speaks ``el'`` / ``en s``.
+    "N": ("EN",),  # syllabic N (US_EN)
+    "L": ("EL",),  # syllabic L (US_EL)
     # ---- Other phonemes ----
     # ``|`` is US_IX in the C table (usa_ascky[18]). It is the
     # high-front-centralised schwa heard in "roses", "hospital", "civil".
     # Previously collapsed to AH; restored as IX per issue #133.
     "|": ("IX",),  # high schwa marker (US_IX)
+    # ---- Compound / morpheme boundary ----
+    # ``#`` marks a compound-element boundary in the dictionary
+    # (``cheesecloth`` ``C'iz#kl`cT``, ``grapefruit`` ``gr'ep#fr`ut``).
+    # The C runtime keeps it in the phoneme stream as a standalone
+    # ``#`` token (``ch' iyz # k ll` aoth``); the encoder emits it as a
+    # one-char code (``# ``). Previously dropped, which lost the marker
+    # on all 45 ``#`` dictionary compounds (issue #332 compound cluster).
+    "#": ("#",),  # compound boundary — emitted verbatim
     # ---- Markers we silently skip (don't emit a phoneme) ----
     " ": (),  # word break in multi-word entries (we already split on ',')
     "*": (),  # letter-separator in initialisms
-    "#": (),  # syllable boundary
     "&": (),  # rare, glottal-related
 }
 
@@ -234,6 +253,11 @@ ARPABET_TO_DECTALK: Final[dict[str, str]] = {
     "CH": "ch",
     "JH": "jh",
     "Q": "q",
+    # Compound-element boundary — emitted verbatim as a one-char code
+    # (``# ``) between the halves of a dictionary compound, matching the
+    # C runtime (``cheesecloth`` -> ``ch' iyz # k ll` aoth``). See the
+    # ``#`` entry in ``US_MAP`` (issue #332 compound cluster).
+    "#": "#",
 }
 
 
@@ -802,7 +826,23 @@ def encode_to_dectalk(  # noqa: PLR0912, PLR0915 — branches mirror C output's 
                     k -= 1
                 if k >= 0:
                     prev_emit = out_parts[k].rstrip(" ")
-                    if prev_emit and prev_emit not in _VOWEL_DECTALK_CODES:
+                    # A preceding plain-consonant ``r`` (or the ``rx`` tap)
+                    # blocks syllabification: DECtalk keeps ``r n`` / ``r ll``
+                    # plain in coda clusters (``born`` -> ``b ' owr n``,
+                    # ``carl`` -> ``k ' aar ll``), never the syllabic
+                    # ``r en`` / ``r el``. The r-coloured *vowels*
+                    # (``rr`` = ER, ``ar`` / ``or`` / ``ir`` / ``ur``) are
+                    # already in ``_VOWEL_DECTALK_CODES`` and never reach
+                    # here. Dictionary entries that DO want a syllabic
+                    # consonant after r spell it with a capital ``L`` / ``N``
+                    # (``carol`` ``k'erL`` -> ``r el``, ``warren`` -> ``r en``),
+                    # which decodes to EL / EN and bypasses this context
+                    # rule. (issue #332 family 3 + the reversed-EL cluster.)
+                    if (
+                        prev_emit
+                        and prev_emit not in _VOWEL_DECTALK_CODES
+                        and prev_emit not in ("r", "rx")
+                    ):
                         syllabic_after_consonant_word_final = True
             if base == "AH" and stress_digit == "0":
                 # Multi-syllable words: AH0 reduces to AX. In
