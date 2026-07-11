@@ -334,6 +334,75 @@ def test_inflection_silent_e_family_matches_c(text: str, capi: CAPI) -> None:
     )
 
 
+# Issue #321 representatives: consonant + y stems inflected -ier / -iest
+# / -ies / -ied. The orthographic y -> i mutation (happy -> happier)
+# reads in C as the base's final /iy/, not the whole-word LTS /ay/. Each
+# row recovers the -Y base and appends the inflection:
+#   - "happier" / "easier" / "busier" / "funnier" / "heavier" /
+#     "uglier" / "angrier" / "lazier": -ier -> base + ER0 (HAPPY + ER).
+#     "heavier" also pins the lexicon-EA stem (HEAV -> ...EH V, not the
+#     whole-word LTS /iy/); "angrier" pins the retained G (ANGR + IY).
+#   - "happiest" / "easiest" / "busiest" / "funniest": -iest -> base +
+#     IX S T (the ``iy ix s t`` tail).
+#   - "envies" / "pities": -ies -> base + Z on an out-of-lexicon -Y root.
+#   - "pitied" / "envied": -ied -> base + D on an out-of-lexicon -Y root.
+#   - "babies" / "carries" / "cities" / "cries" / "flies" / "carried" /
+#     "married" / "tried" / "soldier": regression guards -- the LTS
+#     y-rule keeps single-syllable bases /ay/ (FLY) and lexicon bases
+#     correct, and "soldier" (a lexicon root, not happy->happier) is
+#     untouched.
+_INFLECTION_Y_MUTATION_FAMILY: tuple[str, ...] = (
+    "happier",
+    "easier",
+    "busier",
+    "funnier",
+    "heavier",
+    "uglier",
+    "angrier",
+    "lazier",
+    "happiest",
+    "easiest",
+    "busiest",
+    "funniest",
+    "envies",
+    "pities",
+    "pitied",
+    "envied",
+    "babies",
+    "carries",
+    "cities",
+    "cries",
+    "flies",
+    "carried",
+    "married",
+    "tried",
+    "soldier",
+    "the happiest day",
+    "she felt busier now",
+)
+
+
+@pytest.mark.parametrize(
+    "text", _INFLECTION_Y_MUTATION_FAMILY, ids=list(_INFLECTION_Y_MUTATION_FAMILY)
+)
+def test_inflection_y_mutation_family_matches_c(text: str, capi: CAPI) -> None:
+    """-ier/-iest/-ies/-ied y-mutation family is byte-identical (issue #321).
+
+    Pins the y -> i mutation reading: the mutated ``i`` is rendered as
+    the -Y base word's final /iy/ (``happier`` -> ``hx aep iyrr``), not
+    the whole-word LTS /ay/ ("happ-eye-er"). Single-syllable bases
+    (``flies`` -> FLY) stay /ay/ via the LTS y-rule, and lexicon roots
+    like ``soldier`` are left alone.
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"y-mutation inflection mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
+
+
 # Issue #225 representatives: the C front end's numeric-format
 # expansion, routed through ``lts.numeric_formats``. Each row names a
 # distinct mechanism:
