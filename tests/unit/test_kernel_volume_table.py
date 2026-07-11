@@ -10,10 +10,12 @@ from pathlib import Path
 import pytest
 
 from dectalk.kernel.volume_table import (
+    DB_TABLE,
     MAX_VOLUME,
     VOLUME_TABLE,
     decode_dectalk_volume,
     encode_dectalk_volume,
+    software_volume_offset,
 )
 
 _C_SRC_ENV = "DECTALK_SRC"
@@ -105,3 +107,35 @@ def test_table_monotonic_non_decreasing() -> None:
     """The table is non-decreasing across all indices."""
     for prev, cur in pairwise(VOLUME_TABLE):
         assert cur >= prev
+
+
+def test_db_table_shape() -> None:
+    """DBtable is the 100-entry services.c dB-offset curve (issue #331)."""
+    assert len(DB_TABLE) == 100
+    assert DB_TABLE[0] == -40
+    assert DB_TABLE[49] == -6
+    assert DB_TABLE[94] == 0  # unity from index 94 on
+    assert DB_TABLE[99] == 0
+    # Monotonic non-decreasing (louder index => less attenuation), all <= 0.
+    for prev, cur in pairwise(DB_TABLE):
+        assert prev <= cur <= 0
+
+
+def test_software_volume_offset_known_values() -> None:
+    """``[:volume set N]`` dB offsets match the values verified byte-exact.
+
+    Anchors from the issue #331 oracle probe: ``set 0`` -> -40 dB,
+    ``set 50`` -> -6 dB, ``set 100`` (and any N >= 100) -> 0 dB (unity).
+    """
+    assert software_volume_offset(0) == -40
+    assert software_volume_offset(25) == -12
+    assert software_volume_offset(50) == -6
+    assert software_volume_offset(75) == -2
+    assert software_volume_offset(90) == -1
+    assert software_volume_offset(100) == 0
+    # N >= 100 saturates to unity (Encode clamps to MAX_VOLUME).
+    assert software_volume_offset(140) == 0
+    assert software_volume_offset(1000) == 0
+    # Never amplifies.
+    for n in range(0, 200):
+        assert software_volume_offset(n) <= 0

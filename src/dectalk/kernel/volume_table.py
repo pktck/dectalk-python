@@ -124,6 +124,27 @@ VOLUME_TABLE: Final[tuple[int, ...]] = (
     64512,
 )
 
+# services.c lines 1023-1124: ``DBtable[100]`` maps a decoded 0..99 volume
+# index to the dB gain offset the ``SOFTWARE_VOLUME`` build adds to the
+# speaker-def voicing / frication / aspiration gains (``r1ca`` / ``afgain``
+# / ``apgain``) in ``ph_vset.c`` lines 776-783 (each then floored at 0).
+# Index 0 = -40 dB (near mute); indices >= 94 = 0 dB (unity). This is how
+# ``[:volume set N]`` attenuates the ``say -fo`` WAV render: not a
+# post-multiply of the output but a retune of the synth input gains, which
+# is why the effect is non-linear across the spectrum (issue #331).
+DB_TABLE: Final[tuple[int, ...]] = (
+    -40, -34, -30, -28, -26, -24, -23, -22, -21, -20,
+    -19, -18, -18, -17, -16, -16, -15, -15, -14, -14,
+    -14, -13, -13, -12, -12, -12, -11, -11, -11, -10,
+    -10, -10, -10, -9, -9, -9, -9, -8, -8, -8,
+    -8, -8, -7, -7, -7, -7, -7, -6, -6, -6,
+    -6, -6, -6, -5, -5, -5, -5, -5, -5, -4,
+    -4, -4, -4, -4, -4, -4, -3, -3, -3, -3,
+    -3, -3, -3, -3, -2, -2, -2, -2, -2, -2,
+    -2, -2, -2, -2, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, 0, 0, 0, 0, 0, 0,
+)  # fmt: skip
+
 
 def encode_dectalk_volume(volume: int) -> int:
     """Map a 0..99 volume to its 16-bit DAC code.
@@ -201,15 +222,53 @@ def decode_dectalk_volume(volume: int) -> int:
     return mid
 
 
+def software_volume_offset(volume: int) -> int:
+    """Decibel gain offset (``pKsd_t->iSwVolume``) for ``[:volume set N]``.
+
+    On the active Linux build ``SOFTWARE_VOLUME`` is defined, so
+    ``[:volume set N]`` does **not** post-scale the output samples.
+    Instead ``StereoVolumeControl`` (``services.c``) sets both stereo
+    channels to ``EncodeDectalkVolume(N)``, averages them back to a 0..99
+    index via ``DecodeDectalkVolume``, and looks the index up in
+    :data:`DB_TABLE`; the resulting dB offset is added to three speaker-def
+    chip gains at synth-def build time (``ph_vset.c`` lines 776-783). For a
+    ``set`` (both channels to the same value) the L/R average collapses to
+    ``DecodeDectalkVolume(EncodeDectalkVolume(N))``, which this reproduces.
+
+    ``N`` is clamped to ``[0, MAX_VOLUME]`` by the encode step (values
+    >= 100 saturate to unity, matching ``[:volume set 100]`` /
+    ``set 140`` being no-ops). Empirically verified byte-exact against the
+    shipped binary for ``set`` at ``0/10/25/40/50/60/75/90/100`` (issue
+    #331).
+
+    The ``up`` / ``down`` / ``lset`` / ``rset`` ops read-modify-write the
+    device's *current* stereo volume, which is uninitialised for a fresh
+    ``say`` handle — the shipped binary renders them **non-deterministically**
+    (different WAV bytes every run), so they are intentionally not modelled.
+    ``att`` / ``sset`` drive the hardware ``vol_att`` path, which the
+    ``say -fo`` WAV render never applies (WAV no-ops).
+
+    Args:
+        volume: The ``[:volume set N]`` argument.
+
+    Returns:
+        The dB gain offset (<= 0) to add to the speaker chip gains.
+    """
+    idx = decode_dectalk_volume(encode_dectalk_volume(max(volume, 0)))
+    return DB_TABLE[min(max(idx, 0), MAX_VOLUME)]
+
+
 # Aliases under the original C-source names for inventory tests.
 EncodeDectalkVolume = encode_dectalk_volume
 DecodeDectalkVolume = decode_dectalk_volume
 
 __all__ = [
+    "DB_TABLE",
     "MAX_VOLUME",
     "VOLUME_TABLE",
     "DecodeDectalkVolume",
     "EncodeDectalkVolume",
     "decode_dectalk_volume",
     "encode_dectalk_volume",
+    "software_volume_offset",
 ]

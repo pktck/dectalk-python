@@ -420,7 +420,50 @@ def test_vtm1_pcm_byte_identical_dv_params(text: str, monkeypatch: pytest.Monkey
     np.testing.assert_array_equal(py, ref)
 
 
-# --- end issue #331 [:dv] lane ---------------------------------------
+# --- issue #331: [:volume set N] output-gain lane --------------------
+# On the SOFTWARE_VOLUME build (the shipped Linux libtts) [:volume set N]
+# does NOT post-scale the output — StereoVolumeControl converts N to a dB
+# offset (DBtable[Decode(Encode(N))]) that ph_vset.c folds into the
+# speaker chip's voicing / frication / aspiration gains, so the effect is
+# a non-linear retune of the synth, not a uniform scale. Sample count is
+# unchanged. ``set 100`` (and any N >= 100) is unity because Encode
+# saturates at MAX_VOLUME=99 -> DBtable 0 dB. ``att`` / ``sset`` drive the
+# hardware vol_att path, which the ``say -fo`` WAV render never applies,
+# so they are WAV no-ops pinned here as regression guards. ``up`` / ``down``
+# / ``lset`` / ``rset`` are deliberately absent: the fresh-handle device
+# volume is uninitialised, so the binary renders them non-deterministically
+# (different WAV bytes each run) and there is no byte-exact target.
+_VOLUME_BYTE_EXACT_PROMPTS: tuple[str, ...] = (
+    "[:volume set 100] hello",  # unity / no-op regression guard
+    "[:volume set 140] hello",  # N >= 100 saturates to unity
+    "[:volume att 50] hello",  # hardware path -> WAV no-op
+    "[:volume sset 50] hello",  # hardware path -> WAV no-op
+    "[:volume set 0] hello",  # near-mute (-40 dB)
+    "[:volume set 25] hello",
+    "[:volume set 50] hello",
+    "[:volume set 50] hello world",  # longer body
+    "[:volume set 75] testing",
+    "[:volume set 90] hello",
+    "[:volume set 60] the quick brown fox",
+)
+
+
+@pytest.mark.parametrize("text", _VOLUME_BYTE_EXACT_PROMPTS)
+def test_vtm1_pcm_byte_identical_volume(text: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``[:volume set N]`` output gain is byte-exact vs the binary.
+
+    The #331 lane: ``set N`` retunes the speaker chip gains by the
+    ``SOFTWARE_VOLUME`` dB offset (``services.c`` DBtable ->
+    ``ph_vset.c``); ``att`` / ``sset`` are WAV no-ops. Sample count is
+    unchanged (back-end-content).
+    """
+    ref = _binary_pcm_int16(text)
+    py = _python_vtm1_pcm(text, monkeypatch)
+    assert py.size == ref.size, f"length mismatch {py.size} vs {ref.size}"
+    np.testing.assert_array_equal(py, ref)
+
+
+# --- end issue #331 [:dv] / [:volume] lane ---------------------------
 
 
 # Frame size at the active 11025 Hz build (vtm1.c uiNumberOfSamplesPerFrame).

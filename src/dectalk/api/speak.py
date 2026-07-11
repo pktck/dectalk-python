@@ -502,6 +502,7 @@ def _speak_via_python_full(
             comma_pause=seg.state.comma_pause,
             period_pause=seg.state.period_pause,
             dv_overrides=seg.state.dv_overrides,
+            sw_volume=seg.state.sw_volume,
         )
         if chunk.size:
             chunks.append(chunk)
@@ -521,6 +522,7 @@ def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsi
     comma_pause: int | None = None,
     period_pause: int | None = None,
     dv_overrides: tuple[tuple[int, int], ...] = (),
+    sw_volume: int = 0,
 ) -> NDArray[np.int16]:
     """Render a single parser segment's body through the full PH pipeline.
 
@@ -541,6 +543,10 @@ def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsi
             ordered ``(spd_index, raw_value)`` pairs; overlaid (tunedef +
             ``limit[]`` clamp) onto the voice's ``SPDEF`` row before the
             speaker reload (issue #331). Empty tuple = no overrides.
+        sw_volume: ``[:volume set N]`` dB gain offset (issue #331), folded
+            into the speaker chip's voicing / frication / aspiration gains
+            by :func:`~dectalk.ph.setspdef.spd_chip_from_row`. ``0`` is
+            unity (byte-exact default path).
     """
     from dectalk.kernel.ksd_t import KsdT  # noqa: PLC0415
     from dectalk.kernel.lang_codes import LANG_english  # noqa: PLC0415
@@ -631,7 +637,11 @@ def _render_clause_full(  # noqa: PLR0915, PLR0912 — orchestration is intrinsi
     # speaker seed (gains / nopen / aturb / t0jit / fnscale). For Paul
     # this equals the oracle-packet-verified ``default_us_paul_spd()``
     # block (issue #284).
-    _spd_chip = spd_chip_from_row(voice_row, speaker=C_SPEAKER_INDEX.get(voice_name, 0))
+    # ``sw_volume`` folds the ``[:volume set N]`` dB offset into the chip's
+    # voicing / frication / aspiration gains (issue #331); 0 = unity.
+    _spd_chip = spd_chip_from_row(
+        voice_row, speaker=C_SPEAKER_INDEX.get(voice_name, 0), sw_volume=sw_volume
+    )
     # Seed F0 to the speaker's f0minimum so the very first ``pht0draw``
     # frame's ``f0prime = f0 + f0s`` reflects the voice's baseline rather
     # than the calloc'd zero (which scales below LOWEST_F0 = 500 deciHz

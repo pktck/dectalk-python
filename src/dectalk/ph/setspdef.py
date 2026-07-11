@@ -164,7 +164,7 @@ def seed_dph_scalars(p_dph_t: DphT, row: Sequence[int]) -> None:
     p_dph_t.fnscale = (200 - row[SPD_HS]) * 41
 
 
-def spd_chip_from_row(row: Sequence[int], speaker: int = 0) -> SpdChip:
+def spd_chip_from_row(row: Sequence[int], speaker: int = 0, sw_volume: int = 0) -> SpdChip:
     """Build the ``SPD_CHIP`` block from a ``SPDEF`` voice row.
 
     Faithful translation of the ``spdef->*`` assignments in ``setspdef``
@@ -173,7 +173,7 @@ def spd_chip_from_row(row: Sequence[int], speaker: int = 0) -> SpdChip:
     freq/bw field convention (frequency in ``r4cc``/``r5cc``, bandwidth
     in ``r4cb``/``r5cb`` — see module docstring).
 
-    For Paul's row this reproduces
+    For Paul's row (``sw_volume == 0``) this reproduces
     :func:`dectalk.vtm.spd_chip.default_us_paul_spd` exactly (the
     oracle-packet-verified block from issue #284).
 
@@ -184,11 +184,25 @@ def spd_chip_from_row(row: Sequence[int], speaker: int = 0) -> SpdChip:
             :data:`C_SPEAKER_INDEX`). Not consumed by the synthesis
             loop — ``vtm1.c`` line 1895 only copies it back into
             ``uiCurrentSpeaker``.
+        sw_volume: ``pKsd_t->iSwVolume`` dB offset from ``[:volume set N]``
+            on the ``SOFTWARE_VOLUME`` build (issue #331). Added to the
+            voicing / frication / aspiration gains ``r1ca`` / ``afgain`` /
+            ``apgain`` and floored at 0, exactly as ``ph_vset.c`` lines
+            776-783 do after building the chip. ``0`` (unity) leaves the
+            gains untouched — the byte-exact default path.
 
     Returns:
         A fully-derived :class:`SpdChip` for the voice.
     """
     fnscale = (200 - row[SPD_HS]) * 41  # line 638
+
+    # SOFTWARE_VOLUME (ph_vset.c 776-783): fold the [:volume set N] dB
+    # offset into the voicing (r1ca / SPD_LO), frication (afgain / SPD_GF)
+    # and aspiration (apgain / SPD_GH) gains, each floored at 0. sw_volume
+    # is <= 0 (attenuation); 0 is the untouched default.
+    r1ca = max(0, row[SPD_LO] + sw_volume)  # line 713 (+ 776/779)
+    afgain = max(0, row[SPD_GF] + sw_volume)  # line 770 (+ 777/781)
+    apgain = max(0, row[SPD_GH] + sw_volume)  # line 771 (+ 778/783)
 
     # F4 cascade chip word (lines 640-660): pre-scale by fnscale unless
     # the row zaps the formant; oversize frequencies zap both words.
@@ -219,15 +233,15 @@ def spd_chip_from_row(row: Sequence[int], speaker: int = 0) -> SpdChip:
         r4ca=row[SPD_G2],  # line 704
         r3ca=row[SPD_G3],  # line 705
         r2ca=row[SPD_G4],  # line 710 (non-NEW_VOLUME branch)
-        r1ca=row[SPD_LO],  # line 713
+        r1ca=r1ca,  # line 713 (+ SOFTWARE_VOLUME 776/779)
         nopen1=4000 + 160 * (100 - row[SPD_RI]),  # line 717
         nopen2=row[SPD_NF] * 4,  # line 718
         aturb=row[SPD_BR] + 9,  # line 722 (non-HLSYN branch)
         fnscale=fnscale,
-        afgain=row[SPD_GF],  # line 770 (non-HLSYN, non-post-v43)
+        afgain=afgain,  # line 770 (+ SOFTWARE_VOLUME 777/781)
         rnpgain=row[SPD_GN],  # line 749
         azgain=row[SPD_GV],  # line 748 (non-LOWCOMPUTE)
-        apgain=row[SPD_GH],  # line 771
+        apgain=apgain,  # line 771 (+ SOFTWARE_VOLUME 778/783)
         notused=0,
         osgain=row[SPD_OS],  # line 789
         speaker=speaker,  # line 790: curspdef[SPD_NM]

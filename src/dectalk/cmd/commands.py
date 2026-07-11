@@ -49,6 +49,7 @@ from dectalk.cmd.cmd_states import (
     PHONEME_SPEAK,
 )
 from dectalk.cmd.option_tables import define_options
+from dectalk.kernel.volume_table import software_volume_offset
 
 _Handler = Callable[["SpeechState", list[str]], "SpeechState"]
 
@@ -122,6 +123,12 @@ class SpeechState:
             whenever a preset voice is (re)selected, mirroring the C
             ``usevoice`` reload that wipes prior ``[:dv]`` writes to
             ``curspdef``.
+        sw_volume: ``pKsd_t->iSwVolume`` dB gain offset (<= 0) from
+            ``[:volume set N]`` on the ``SOFTWARE_VOLUME`` build
+            (issue #331). ``0`` is unity. Folded into the speaker-def
+            voicing / frication / aspiration gains by the full-pipeline
+            renderer (``ph_vset.c`` lines 776-783). Independent of the
+            voice, so it is *not* reset on a voice change.
     """
 
     voice: str | None = None
@@ -130,6 +137,7 @@ class SpeechState:
     comma_pause: int | None = None
     period_pause: int | None = None
     dv_overrides: tuple[tuple[int, int], ...] = ()
+    sw_volume: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +355,42 @@ def _cmd_period(state: SpeechState, args: list[str]) -> SpeechState:
     return replace(state, period_pause=pause_ms)
 
 
+def _cmd_volume(state: SpeechState, args: list[str]) -> SpeechState:
+    """Handle ``[:volume set N]`` output gain (``SOFTWARE_VOLUME`` build).
+
+    ``cm_cmd_volume`` (``cm_copt.c``, the ``#ifndef MSDOS`` definition)
+    routes each op through ``StereoVolumeControl``. On the Linux build
+    ``SOFTWARE_VOLUME`` is defined, so ``set`` converts ``N`` to a dB gain
+    offset that ``ph_vset.c`` folds into the speaker chip's voicing /
+    frication / aspiration gains — it does **not** post-scale the output
+    samples. Only ``set`` is modelled:
+
+    - ``set N`` — deterministic; recorded as
+      :attr:`SpeechState.sw_volume` via
+      :func:`dectalk.kernel.volume_table.software_volume_offset` and
+      applied at the speaker reload (byte-exact vs the binary, issue #331).
+    - ``up`` / ``down`` / ``lset`` / ``lup`` / ``ldown`` / ``rset`` /
+      ``rup`` / ``rdown`` — read-modify-write the device's *current*
+      stereo volume, which is uninitialised for a fresh ``say`` handle;
+      the shipped binary renders them **non-deterministically** (different
+      WAV bytes each run), so there is no byte-exact target to match and
+      they are intentionally left as no-ops.
+    - ``att`` / ``sset`` — drive the hardware ``vol_att`` path, which the
+      ``say -fo`` WAV render never applies (WAV no-ops).
+
+    Missing arguments or non-numeric values leave the state unchanged.
+    """
+    if len(args) < 2:  # noqa: PLR2004 — op keyword + one numeric value
+        return state
+    if args[0].lower() != "set":
+        return state
+    try:
+        n = int(args[1], 10)
+    except ValueError:
+        return state
+    return replace(state, sw_volume=software_volume_offset(n))
+
+
 def _cmd_phoneme(state: SpeechState, args: list[str]) -> SpeechState:
     """Handle ``[:phoneme <kw> ...]`` by mutating the phoneme-mode bitfield.
 
@@ -419,6 +463,10 @@ _HANDLERS: Final[dict[str, _Handler]] = {
     "cp": _cmd_comma,
     "period": _cmd_period,
     "pp": _cmd_period,
+    # Output gain (issue #331): ``[:volume set N]`` on the SOFTWARE_VOLUME
+    # build retunes the speaker gains; other ops are WAV no-ops or
+    # non-deterministic (see ``_cmd_volume``).
+    "volume": _cmd_volume,
     "phoneme": _cmd_phoneme,
     "say": _cmd_noop,
     "ap": _cmd_noop,  # average pitch — future: drive preset.f0_x10 directly
