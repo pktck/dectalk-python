@@ -257,6 +257,83 @@ def test_ed_suffix_family_matches_c(text: str, capi: CAPI) -> None:
     )
 
 
+# Issue #320 representatives: silent-e / doubled-stem massaging for the
+# vowel-initial suffixes -ing / -es / -er / -est (the #316 census
+# residual after #310 handled -ed). Each row names a distinct mechanism:
+#   - "poking" / "hiking" / "gliding" / "moping" / "roving": magic-e
+#     lengthening on the -ing stem (POKE -> ...OW K, not the short
+#     whole-word LTS vowel) via _lts_inflection_stem's silent-e attach.
+#   - "pokes" / "hikes" / "glides": the same magic-e stem through the
+#     -es path (keep the orthographic E rather than stripping it).
+#   - "braver" / "paler": magic-e on the -er stem (BRAVE -> ...EY V).
+#   - "bravest" / "palest" / "cutest" / "finest" / "ripest" / "latest" /
+#     "widest": magic-e on the -est stem, preferring the silent-e base
+#     (CUTE not CUT), with the C-faithful IX S T suffix.
+#   - "fittest" / "dimmest" / "slimmest" / "maddest": doubled-stem
+#     un-doubling on -est (FITT -> FIT) plus the IX S T suffix vowel.
+#   - "stressing" / "stressed" / "blessing" / "pressing": root -SS is a
+#     cluster the C engine keeps voiceless -- it is NOT un-doubled (that
+#     would voice the S to Z).
+#   - "roses" / "foxes" / "masses" / "classes" / "bushes": epenthetic
+#     IX Z on sibilant-final -es stems (regression guards for the
+#     keep-the-E change).
+_INFLECTION_SILENT_E_FAMILY: tuple[str, ...] = (
+    "poking",
+    "hiking",
+    "gliding",
+    "moping",
+    "roving",
+    "pokes",
+    "hikes",
+    "glides",
+    "braver",
+    "paler",
+    "bravest",
+    "palest",
+    "cutest",
+    "finest",
+    "ripest",
+    "latest",
+    "widest",
+    "fittest",
+    "dimmest",
+    "slimmest",
+    "maddest",
+    "stressing",
+    "stressed",
+    "blessing",
+    "pressing",
+    "roses",
+    "foxes",
+    "masses",
+    "classes",
+    "bushes",
+    "she was poking around",
+    "the bravest knight",
+    "it kept stressing me",
+)
+
+
+@pytest.mark.parametrize("text", _INFLECTION_SILENT_E_FAMILY, ids=list(_INFLECTION_SILENT_E_FAMILY))
+def test_inflection_silent_e_family_matches_c(text: str, capi: CAPI) -> None:
+    """Silent-e / doubled-stem -ing/-es/-er/-est family is byte-identical (issue #320).
+
+    Pins the generalisation of the #310 -ed stem massaging to the other
+    vowel-initial suffixes: magic-e lengthening on out-of-lexicon stems
+    (``poking`` -> POKE), the -est superlative's silent-e-preferring
+    lookup + ``IX S T`` suffix, doubled un-doubling (``fittest`` -> FIT),
+    and the root-``SS`` voiceless-keep guard (``stressing`` stays
+    ``ehs``, not ``ehz``).
+    """
+    expected = capi.convert_to_phonemes(text)
+    actual = dectalk.text_to_dectalk_phonemes(text)
+    assert actual == expected, (
+        f"silent-e/doubled inflection mismatch for {text!r}:\n"
+        f"  expected (C): {expected!r}\n"
+        f"  actual (Py):  {actual!r}"
+    )
+
+
 # Issue #225 representatives: the C front end's numeric-format
 # expansion, routed through ``lts.numeric_formats``. Each row names a
 # distinct mechanism:

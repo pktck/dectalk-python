@@ -1984,32 +1984,42 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         return out
 
     def _lts_inflection_stem(stem: str, *, attach_e: bool) -> list[str] | None:
-        """LTS phonemes for an inflectional-suffix stem (issue #310).
+        """LTS phonemes for an inflectional-suffix stem (issues #310, #320).
 
         Mirrors how the C LTS rule engine renders the stem letters of
-        an unknown ``-ed`` / ``-ing`` / ``-er`` word (oracle-verified
-        black-box; the C tables in ``l_us_rta.c`` are compiled and
-        opaque):
+        an unknown ``-ed`` / ``-ing`` / ``-es`` / ``-er`` / ``-est``
+        word (oracle-verified black-box; the C tables in ``l_us_rta.c``
+        are compiled and opaque):
 
-        - Doubled final consonant collapses to one before the rules
-          run (``vrabbed`` reads as ``vrab`` + suffix; C emits a
-          single B and the short stem vowel).
-        - For ``-ed`` (``attach_e=True``) the suffix's ``e`` is part
-          of the letter stream, so silent-e contexts fire: magic-e
-          vowel lengthening (``vraked`` -> V R EY K) and c/g
-          softening (``vaged`` -> V EY JH). Re-attach an ``E`` so the
-          Python rules see the same context -- except after ``X``,
-          where the C rules keep the short vowel (``faxed`` ->
-          F AE K S T).
-        - For ``-ing`` / ``-er`` the ``e``-context does not reliably
-          fire in C (``voning`` keeps the short vowel while
-          ``vroking`` lengthens -- letter-pair specific), so only the
-          un-doubling case is safe to model; return ``None``
-          otherwise and let the whole-word LTS handle it as before.
+        - Doubled final consonant collapses to one before the rules run
+          (``vrabbed`` -> VRAB, ``fittest`` -> FIT; C emits a single
+          consonant and the short stem vowel). A doubled ``S`` is the
+          exception: it is a root cluster the C engine keeps
+          (``stress`` / ``bless`` / ``mass``) -- collapsing ``ss`` to a
+          lone ``s`` would voice it to Z (``stres`` -> S T R EH Z), so
+          keep the pair and let the dedupe fold it to a single
+          voiceless S (issue #320's root-S voicing misfire).
+        - Otherwise the vowel-initial suffix puts the stem's final
+          consonant into a silent-e / open-syllable context, so the C
+          rules lengthen the stem vowel exactly as a re-attached silent
+          ``e`` would: magic-e (``vraked`` / ``poking`` -> ...OW K,
+          ``braver`` -> ...EY V) and c/g softening (``vaged`` ->
+          V EY JH). Re-attach an ``E`` so the Python rules see the same
+          context -- except after ``X``, where the C rules keep the
+          short vowel (``faxed`` -> F AE K S T).
+
+        The ``-ed``-only ``attach_e`` distinction the original #310 port
+        drew (``voning`` keeps its short vowel while ``vroking``
+        lengthens) turned out to matter only for nonsense letter-pairs
+        outside the corpus; every real inflected form the #316 census
+        exercises lengthens, so magic-e now fires for all the
+        vowel-initial suffixes. ``attach_e`` is retained as a hook for a
+        future consonant-suffix caller that must suppress it.
 
         Args:
             stem: Upper-cased orthographic stem (suffix stripped).
-            attach_e: Whether the stripped suffix began with ``e``.
+            attach_e: Whether the suffix opens a silent-e / open-syllable
+                context (true for every vowel-initial inflection).
 
         Returns:
             De-duplicated LTS phonemes for the massaged stem, or
@@ -2027,7 +2037,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
         if stem[-1] in vowels or not any(v in stem for v in vowels):
             return None
         if stem[-1] == stem[-2]:
-            base = stem[:-1]
+            base = stem if stem[-1] == "S" else stem[:-1]
         elif not attach_e:
             return None
         elif stem[-1] == "X":
@@ -2818,14 +2828,16 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         # treatment even when neither the full word nor
                         # the bare stem is in the lexicon.
                         if stem_phones is None and lts_fallback:
-                            ltstem = stem
-                            if ltstem.endswith("E"):
-                                ltstem = ltstem[:-1]
-                            # ``or None``: digit stems (``'90s`` ->
-                            # ``'90``) produce an empty LTS stream;
-                            # treat as no-stem rather than crash on
-                            # ``stem_phones[-1]`` below (issue #316).
-                            stem_phones = _dedupe_consecutive_phonemes(lts(ltstem)) or None
+                            # Keep a trailing orthographic ``E`` so a
+                            # magic-e base renders long (``pokes`` -> POKE,
+                            # ``glides`` -> GLIDE, ``roses`` -> ROSE); a
+                            # sibilant root (``masses`` -> MASSE, ``foxes``
+                            # -> FOXE) still ends in a sibilant and picks up
+                            # the IX+Z epenthesis below (issues #316, #320).
+                            # ``or None``: digit stems (``'90s`` -> ``'90``)
+                            # yield an empty LTS stream; treat as no-stem
+                            # rather than crash on ``stem_phones[-1]`` below.
+                            stem_phones = _dedupe_consecutive_phonemes(lts(stem)) or None
                         if stem_phones is not None:
                             # When the stem ends in a sonorant (L/N)
                             # preceded by a stop ("SECOND" -> S EH K N D
@@ -2886,7 +2898,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         ):
                             stem_phones = lookup(suffix_root, lang=lang)
                         if stem_phones is None and lts_fallback:
-                            stem_phones = _lts_inflection_stem(stem, attach_e=False)
+                            stem_phones = _lts_inflection_stem(stem, attach_e=True)
                         if stem_phones is not None:
                             phones = [*stem_phones, "ER0"]
                             if (
@@ -3053,8 +3065,12 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         phones is None and token.text.endswith("EST") and len(token.text) > 4  # noqa: PLR2004
                     ):
                         est_stem = token.text[:-3]
-                        stem_phones = lookup(est_stem, lang=lang) or lookup(
-                            est_stem + "E", lang=lang
+                        # Prefer the silent-e stem so magic-e superlatives
+                        # recover their long vowel (``cutest`` -> CUTE not
+                        # CUT, ``finest`` -> FINE not FIN), matching the
+                        # ``-ed`` / ``-ing`` lookup order (issue #320).
+                        stem_phones = lookup(est_stem + "E", lang=lang) or lookup(
+                            est_stem, lang=lang
                         )
                         if (
                             stem_phones is None
@@ -3062,6 +3078,13 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             and est_stem[-1] == est_stem[-2]
                         ):
                             stem_phones = lookup(est_stem[:-1], lang=lang)
+                        # LTS fallback so out-of-lexicon superlatives get
+                        # the C stem: silent-e magic-e (``bravest`` ->
+                        # BRAVE, ``palest`` -> PALE) and doubled un-doubling
+                        # (``fittest`` -> FIT). The suffix is always the
+                        # C-faithful ``IX S T`` (issue #320).
+                        if stem_phones is None and lts_fallback:
+                            stem_phones = _lts_inflection_stem(est_stem, attach_e=True)
                         if stem_phones is not None:
                             phones = [*stem_phones, "IX", "S", "T"]
                     # ``-ing`` gerund / present-participle suffix: strip
@@ -3098,7 +3121,7 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         ):
                             stem_phones = lookup(suffix_root, lang=lang)
                         if stem_phones is None and lts_fallback:
-                            stem_phones = _lts_inflection_stem(ing_stem, attach_e=False)
+                            stem_phones = _lts_inflection_stem(ing_stem, attach_e=True)
                         if stem_phones is not None:
                             phones = [*stem_phones, "IX", "NG"]
                             if (
