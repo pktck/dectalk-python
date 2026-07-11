@@ -2816,6 +2816,16 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                         # via the Y -> I orthographic alternation.
                         if stem_phones is None and len(stem) > 1 and stem.endswith("IE"):
                             stem_phones = lookup(stem[:-2] + "Y", lang=lang)
+                            # Out-of-lexicon -y base (``envies`` -> ENVY,
+                            # ``pities`` -> PITY): render the -Y form so the
+                            # mutated ``i`` reads as the base's /iy/ rather
+                            # than the whole-word LTS /ay/ (issue #321). The
+                            # LTS's own y-rule keeps single-syllable bases
+                            # /ay/ (``flies`` -> FLY) automatically.
+                            if stem_phones is None and lts_fallback:
+                                stem_phones = (
+                                    _dedupe_consecutive_phonemes(lts(stem[:-2] + "Y")) or None
+                                )
                         elif stem_phones is None and len(stem) > 1 and stem.endswith("I"):
                             stem_phones = lookup(stem[:-1] + "Y", lang=lang)
                         # Sibilant-final stems take ``-es``: try the
@@ -2873,6 +2883,33 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             ):
                                 phones.insert(0, f"{punct_prefix})")
                                 vpstart_emitted = True
+                    # ``-ier`` / ``-iest`` comparative/superlative on a
+                    # consonant+y adjective: the orthographic y -> i
+                    # mutation (``happy`` -> ``happier``) reads in C as the
+                    # base word's final /iy/, not the whole-word LTS /ay/
+                    # ("happ-eye-er"). Recover the -Y base and append the
+                    # inflection (``happier`` -> HAPPY + ER0, ``happiest``
+                    # -> HAPPY + IX S T, ``heavier`` -> HEAVY + ER0). The
+                    # base's final IY carries the vowel; the LTS y-rule
+                    # keeps single-syllable bases /ay/ on its own. Runs
+                    # before ``-er`` (which excludes ``IER``) and ``-est``
+                    # (which leaves ``phones`` None for these). Issue #321.
+                    for _y_suf, _y_strip, _y_tail in (
+                        ("IEST", 4, ["IX", "S", "T"]),
+                        ("IER", 3, ["ER0"]),
+                    ):
+                        if (
+                            phones is None
+                            and token.text.endswith(_y_suf)
+                            and len(token.text) > _y_strip + 1
+                            and token.text[-(_y_strip + 1)] not in "AEIOU"
+                        ):
+                            y_base = token.text[: -_y_strip] + "Y"
+                            y_phones = lookup(y_base, lang=lang)
+                            if y_phones is None and lts_fallback:
+                                y_phones = _dedupe_consecutive_phonemes(lts(y_base)) or None
+                            if y_phones is not None:
+                                phones = [*y_phones, *_y_tail]
                     # ``-er`` agentive / comparative suffix: strip and
                     # look up the bare stem, then append ER0. Handles
                     # ``LATER`` (LATE+R), ``FASTER`` (FAST+ER), etc.
@@ -3157,6 +3194,14 @@ def text_to_dectalk_phonemes(  # noqa: PLR0912, PLR0915 — many branches mirror
                             )
                         if stem_phones is None and ed_stem.endswith("I"):
                             stem_phones = lookup(ed_stem[:-1] + "Y", lang=lang)
+                            # Out-of-lexicon -y base (``pitied`` -> PITY,
+                            # ``envied`` -> ENVY): render the -Y form so the
+                            # mutated ``i`` reads as the base's /iy/ rather
+                            # than the whole-word LTS /ay/ (issue #321).
+                            if stem_phones is None and lts_fallback:
+                                stem_phones = (
+                                    _dedupe_consecutive_phonemes(lts(ed_stem[:-1] + "Y")) or None
+                                )
                         # Doubled-final-consonant stems re-derive the
                         # runtime-dictionary root via the ACTIVE
                         # ``l_us_suf.c`` ``-ed`` rule's un-doubling
